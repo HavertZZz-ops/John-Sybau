@@ -61,8 +61,13 @@ def make_placeholder(
     )
 
     if label:
-        font = get_font(18)
-        text = font.render(label, True, settings.COLOR_TEXT_DIM)
+        # encolhe a fonte ate o texto caber na largura do placeholder
+        size = 18
+        while size > 9:
+            text = get_font(size).render(label, True, settings.COLOR_TEXT_DIM)
+            if text.get_width() <= width - 8:
+                break
+            size -= 1
         text_rect = text.get_rect(center=surface.get_rect().center)
         surface.blit(text, text_rect)
 

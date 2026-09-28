@@ -46,6 +46,7 @@ def main() -> int:
         manager.draw()
 
         pygame.display.flip()
+        running = manager.running
 
     pygame.quit()
     return 0

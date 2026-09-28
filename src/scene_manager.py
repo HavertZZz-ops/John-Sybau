@@ -16,6 +16,16 @@ class SceneManager:
         self._scenes: Dict[str, Type[Scene]] = {}
         self._active: Scene | None = None
         self._active_name: str | None = None
+        self._running = True
+
+    @property
+    def running(self) -> bool:
+        """False depois que alguma cena pede para encerrar o jogo."""
+        return self._running
+
+    def quit(self) -> None:
+        """Pede o encerramento do loop principal."""
+        self._running = False
 
     def register(self, name: str, scene_class: Type[Scene]) -> None:
         """Registra uma classe de cena sob um nome."""
