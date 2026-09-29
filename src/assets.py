@@ -74,20 +74,68 @@ def make_placeholder(
     return surface
 
 
+def scale_nearest(surface: pygame.Surface, size: Tuple[int, int]) -> pygame.Surface:
+    """Escala por vizinho mais proximo, sem interpolacao.
+
+    Existe para garantir o comportamento de pixel art independente da
+    versao do pygame. Testado em 2.6.1: `transform.scale` tambem mantem
+    as cores sem misturar, mas `transform.smoothscale` interpola e
+    borra. Fazer isso na mao deixa o comportamento explicito e fixo.
+    So roda uma vez por sprite (o resultado fica em cache), entao o
+    custo nao importa.
+    """
+    src_w, src_h = surface.get_size()
+    dst_w, dst_h = size
+    if src_w <= 0 or src_h <= 0:
+        return surface
+
+    result = pygame.Surface((dst_w, dst_h), pygame.SRCALPHA)
+    for y in range(dst_h):
+        src_y = (y * src_h) // dst_h
+        for x in range(dst_w):
+            src_x = (x * src_w) // dst_w
+            result.set_at((x, y), surface.get_at((src_x, src_y)))
+    return result
+
+
+def fit_box(surface: pygame.Surface, box: Tuple[int, int]) -> pygame.Surface:
+    """Reduz a imagem para caber em `box` preservando a proporcao.
+
+    Um sprite 32x32 dentro de uma area 78x110 vira 78x78 (quadrado
+    mantido), nunca 78x110 esticado. Quando a enlarger cabe em escala
+    inteira, usa escala inteira, que e o visual correto para pixel art.
+    """
+    src_w, src_h = surface.get_size()
+    if src_w <= 0 or src_h <= 0:
+        return surface
+
+    factor = min(box[0] / src_w, box[1] / src_h)
+    if factor >= 1.0:
+        whole = int(factor)
+        if whole * src_w <= box[0] and whole * src_h <= box[1]:
+            factor = float(whole)
+
+    target = (max(1, round(src_w * factor)), max(1, round(src_h * factor)))
+    if target == (src_w, src_h):
+        return surface
+    return scale_nearest(surface, target)
+
+
 def load_sprite(
     name: str,
-    size: Tuple[int, int] | None = None,
+    box: Tuple[int, int] | None = None,
     label: str | None = None,
 ) -> pygame.Surface:
     """Carrega o sprite `name`, ou um placeholder se ele nao existir ainda.
 
-    O resultado e cacheado por (nome, tamanho) para nao reler o disco
-    a cada frame.
+    `box` e a area maxima na tela. A proporcao do sprite e sempre
+    preservada. O resultado e cacheado por (nome, box) para nao reler o
+    disco a cada frame.
     """
-    if size is None:
-        size = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
+    if box is None:
+        box = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
 
-    key = f"{name}@{size[0]}x{size[1]}"
+    key = f"{name}@{box[0]}x{box[1]}"
     cached = _cache.get(key)
     if cached is not None:
         return cached
@@ -96,12 +144,12 @@ def load_sprite(
     if path.is_file():
         try:
             image = pygame.image.load(str(path)).convert_alpha()
-            image = pygame.transform.scale(image, size)
+            image = fit_box(image, box)
         except (pygame.error, OSError) as exc:
             print(f"[assets] falha ao carregar {path}: {exc}")
-            image = make_placeholder(size, label or name)
+            image = make_placeholder(box, label or name)
     else:
-        image = make_placeholder(size, label or name)
+        image = make_placeholder(box, label or name)
 
     _cache[key] = image
     return image

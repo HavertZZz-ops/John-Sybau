@@ -173,14 +173,16 @@ class TitleScreen(Scene):
                 border_color=settings.COLOR_PANEL_LIGHT,
             )
 
-            image_h = 110
+            image_box = (78, 110)
             sprite = assets.load_sprite(
                 sprite_name,
-                size=(78, image_h),
+                box=image_box,
                 label=short_label,
             )
-            sprite_rect = sprite.get_rect()
-            sprite_rect.midtop = (rect.centerx, rect.top + 16)
+            # a proporcao varia por sprite, entao centraliza na area
+            sprite_rect = sprite.get_rect(
+                center=(rect.centerx, rect.top + 16 + image_box[1] // 2)
+            )
             surface.blit(sprite, sprite_rect)
 
             draw_text(surface, label, 20, (rect.centerx, rect.bottom - 34), settings.COLOR_TEXT)

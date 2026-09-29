@@ -7,6 +7,13 @@ env/
 .pytest_cache/
 .mypy_cache/
 
+# chaves e segredos (NUNCA commitar)
+.env
+.env.*
+!.env.example
+*.key
+secrets.json
+
 # build / dist
 build/
 dist/
