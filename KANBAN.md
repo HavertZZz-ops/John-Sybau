@@ -1,27 +1,31 @@
 # Kanban - John Sybau
 
+Espelha o board https://github.com/users/HavertZZz-ops/projects/8
+As issues #N sao as do repositorio. Um item por commit entregue.
+
 ## Backlog
 
-- [ ] Sprite do protagonista -> assets/sprites/protagonista.png
-- [ ] Sprite do estranho -> assets/sprites/estranho.png
-- [ ] Sprite da mulher misteriosa -> assets/sprites/mulher_misteriosa.png
-- [ ] Sprite do rei mago -> assets/sprites/rei_mago.png
-- [ ] Demais sprites
-- [ ] Mapas / cenarios
-- [ ] Cena de jogo (onde "Iniciar jogo" leva)
-- [ ] Tela de opcoes
-- [ ] Trilha sonora
+- [ ] #3  criacao dos sprites
+- [ ] #4  criacao do sprite do protagonista -> assets/sprites/protagonista.png
+- [ ] #5  criacao do sprite da mulher misteriosa -> assets/sprites/mulher_misteriosa.png
+- [ ] #6  criacao do sprite do rei mago -> assets/sprites/rei_mago.png
+- [ ] #7  criacao do sprite do stranger -> assets/sprites/estranho.png
+- [ ] cena de jogo (onde "Iniciar jogo" leva)
+- [ ] tela de opcoes
+- [ ] mapas / cenarios
+- [ ] trilha sonora
 
 ## Em progresso
 
-- [ ] Tela inicial sem sprites (placeholders) - pronta, aguardando sprites
+- [ ] nada
 
 ## Feito
 
-- [x] Repositorio criado
-- [x] Ambiente pygame configurado
-- [x] Loop principal com delta time e FPS
-- [x] Sistema de cenas (SceneManager)
-- [x] Sistema de assets com placeholder automatico
-- [x] Tela inicial (menu) com placeholders
-- [x] Teste headless (SDL dummy)
+- [x] #1  criar repositorio
+- [x] #2  criar ambiente pro pygame
+- [x] #8  Kanban do projeto e .gitignore              (`2d98938`)
+- [x] #9  Estrutura do projeto, requirements e settings (`fccd6d6`)
+- [x] #10 Loop principal e sistema de cenas            (`a91f0ff`)
+- [x] #11 Carregador de assets com placeholders e UI    (`14e831e`)
+- [x] #12 Tela inicial com elenco placeholder e menu   (`3281755`)
+- [x] #13 Documentacao: README e mapa de sprites       (`206f18b`)
