@@ -145,12 +145,26 @@ class TitleScreen(Scene):
         center_x = settings.SCREEN_WIDTH // 2
         bounce = int(abs(_pulse(self.time, 1.6)) * 6)
         draw_text(surface, settings.GAME_TITLE, 72, (center_x, 120 - bounce), settings.COLOR_ACCENT)
+
+        total = len(CHARACTER_LABELS)
+        ready = self._sprites_ready()
+        if ready == total:
+            subtitle = "prototipo"
+        else:
+            subtitle = f"prototipo - {ready}/{total} sprites"
         draw_text(
             surface,
-            "prototipo - sem sprites",
+            subtitle,
             22,
             (center_x, 182),
             settings.COLOR_TEXT_DIM,
+        )
+
+    @staticmethod
+    def _sprites_ready() -> int:
+        """Quantos dos personagens ja tem PNG na pasta."""
+        return sum(
+            1 for sprite_name, _, _ in CHARACTER_LABELS if assets.has_sprite(sprite_name)
         )
 
     def _draw_cast(self, surface: pygame.Surface) -> None:
@@ -232,15 +246,24 @@ class TitleScreen(Scene):
             settings.COLOR_TEXT_DIM,
         )
 
-        # linha de onde os sprites devem ser colocados
-        draw_text(
-            surface,
-            "coloque os PNGs em assets/sprites/ (protagonista, estranho, "
-            "mulher_misteriosa, rei_mago)",
-            16,
-            (center_x, settings.SCREEN_HEIGHT - 30),
-            (110, 104, 126),
-        )
+        # so mostra onde colocar os PNGs enquanto faltar algum
+        if self._sprites_ready() < len(CHARACTER_LABELS):
+            draw_text(
+                surface,
+                "coloque os PNGs em assets/sprites/ (protagonista, estranho, "
+                "mulher_misteriosa, rei_mago)",
+                16,
+                (center_x, settings.SCREEN_HEIGHT - 30),
+                (110, 104, 126),
+            )
+        else:
+            draw_text(
+                surface,
+                "python tools/make_pixelart.py  gera os sprites de novo",
+                16,
+                (center_x, settings.SCREEN_HEIGHT - 30),
+                (110, 104, 126),
+            )
 
         if self.notice:
             draw_text(
