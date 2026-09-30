@@ -24,9 +24,42 @@ SPRITE_KING_MAGE = "rei_mago"
 Cache = Dict[str, pygame.Surface]
 _cache: Cache = {}
 
+# multiplicador global aplicado aos sprites, controlado pelas opcoes
+_sprite_scale = 1
+
+
+def get_sprite_scale() -> int:
+    return _sprite_scale
+
+
+def set_sprite_scale(value: int) -> None:
+    """Muda a escala global dos sprites e limpa o cache.
+
+    O cache precisa ser limpo porque as superficies ja escaladas no
+    tamanho antigo ficariam erradas na tela.
+    """
+    global _sprite_scale
+    value = max(1, int(value))
+    if value == _sprite_scale:
+        return
+    _sprite_scale = value
+    clear_cache()
+
+
+
+
 
 def get_font(size: int) -> pygame.font.Font:
-    """Fonte padrao. Usa o arquivo do sistema se existir."""
+    """Fonte padrao. Usa o arquivo do projeto se existir.
+
+    `pygame.font.init()` e chamado aqui porque da para carregar fonte
+    depois de pygame.init() ter rodado; quem chama pode ter inicializado
+    so o display. Sem isso, usar fonte estoura em "font not
+    initialized".
+    """
+    if not pygame.font.get_init():
+        pygame.font.init()
+
     path = settings.FONTS_DIR / "default.ttf"
     if path.is_file():
         return pygame.font.Font(str(path), size)
@@ -74,6 +107,19 @@ def make_placeholder(
     return surface
 
 
+def _load_image(path) -> pygame.Surface:
+    """Carrega um PNG, convertendo o formato quando ha display.
+
+    `convert_alpha` acelera o desenho, mas exige display inicializado.
+    Sem display (carregando asset antes de abrir a janela) ele falha,
+    entao nesse caso devolve a imagem sem conversao.
+    """
+    image = pygame.image.load(str(path))
+    if pygame.display.get_init() and pygame.display.get_surface() is not None:
+        return image.convert_alpha()
+    return image
+
+
 def scale_nearest(surface: pygame.Surface, size: Tuple[int, int]) -> pygame.Surface:
     """Escala por vizinho mais proximo, sem interpolacao.
 
@@ -98,22 +144,33 @@ def scale_nearest(surface: pygame.Surface, size: Tuple[int, int]) -> pygame.Surf
     return result
 
 
-def fit_box(surface: pygame.Surface, box: Tuple[int, int]) -> pygame.Surface:
-    """Reduz a imagem para caber em `box` preservando a proporcao.
+def fit_box(
+    surface: pygame.Surface,
+    box: Tuple[int, int],
+    max_scale: int | None = None,
+) -> pygame.Surface:
+    """Ajusta a imagem para caber em `box`, preservando a proporcao.
 
-    Um sprite 32x32 dentro de uma area 78x110 vira 78x78 (quadrado
-    mantido), nunca 78x110 esticado. Quando a enlarger cabe em escala
-    inteira, usa escala inteira, que e o visual correto para pixel art.
+    Dois tetos, e vale o menor dos dois:
+      - `box`      : a area disponivel na tela
+      - `max_scale` : o enlarge pedido nas opcoes
+
+    Enlarge e sempre em escala inteira, porque e assim que pixel art
+    fica nitido. Reduzir (sprite maior que a area) usa fracao, porque
+    nesse caso nao ha como preservar a grade.
     """
     src_w, src_h = surface.get_size()
     if src_w <= 0 or src_h <= 0:
         return surface
 
-    factor = min(box[0] / src_w, box[1] / src_h)
+    limit_w, limit_h = box
+    if max_scale is not None and max_scale >= 1:
+        limit_w = min(limit_w, src_w * max_scale)
+        limit_h = min(limit_h, src_h * max_scale)
+
+    factor = min(limit_w / src_w, limit_h / src_h)
     if factor >= 1.0:
-        whole = int(factor)
-        if whole * src_w <= box[0] and whole * src_h <= box[1]:
-            factor = float(whole)
+        factor = float(int(factor))  # enlarge so em escala inteira
 
     target = (max(1, round(src_w * factor)), max(1, round(src_h * factor)))
     if target == (src_w, src_h):
@@ -125,6 +182,7 @@ def load_sprite(
     name: str,
     box: Tuple[int, int] | None = None,
     label: str | None = None,
+    max_scale: int | None = None,
 ) -> pygame.Surface:
     """Carrega o sprite `name`, ou um placeholder se ele nao existir ainda.
 
@@ -134,8 +192,10 @@ def load_sprite(
     """
     if box is None:
         box = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
+    if max_scale is None:
+        max_scale = _sprite_scale
 
-    key = f"{name}@{box[0]}x{box[1]}"
+    key = f"{name}@{box[0]}x{box[1]}@{max_scale}"
     cached = _cache.get(key)
     if cached is not None:
         return cached
@@ -143,8 +203,8 @@ def load_sprite(
     path = sprite_path(name)
     if path.is_file():
         try:
-            image = pygame.image.load(str(path)).convert_alpha()
-            image = fit_box(image, box)
+            image = _load_image(path)
+            image = fit_box(image, box, max_scale=max_scale)
         except (pygame.error, OSError) as exc:
             print(f"[assets] falha ao carregar {path}: {exc}")
             image = make_placeholder(box, label or name)
@@ -174,21 +234,27 @@ def list_expected_sprites() -> Tuple[str, ...]:
 HERO_DIR = settings.SPRITES_DIR / "hero"
 HERO_DIRECTIONS: Tuple[str, ...] = ("norte", "sul", "leste", "oeste")
 HERO_FPS = 6
+# proporcao do quadro do heroi (largura / altura), usada para caber na tela
+HERO_ASPECT = 32.0 / 38.0
 
 
 def load_animation(
     direction: str,
     box: Tuple[int, int] | None = None,
+    max_scale: int | None = None,
 ) -> list[pygame.Surface]:
     """Carrega os quadros de `direction` do heroi, ja escalados.
 
-    Devolve lista vazia se a pasta de animacao nao existir, para o jogo
+    A escala global configurada nas opcoes e aplicada aqui. Devolve
+    lista vazia se a pasta de animacao nao existir, para o jogo
     continuar funcionando com o placeholder.
     """
     if direction not in HERO_DIRECTIONS:
         raise ValueError(f"direcao invalida: {direction!r}")
     if box is None:
         box = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
+    if max_scale is None:
+        max_scale = _sprite_scale
 
     if not HERO_DIR.is_dir():
         return []
@@ -196,8 +262,8 @@ def load_animation(
     frames = []
     for path in sorted(HERO_DIR.glob(f"hero_{direction}_*.png")):
         try:
-            image = pygame.image.load(str(path)).convert_alpha()
-            frames.append(fit_box(image, box))
+            image = _load_image(path)
+            frames.append(fit_box(image, box, max_scale=max_scale))
         except (pygame.error, OSError) as exc:
             print(f"[assets] falha ao carregar {path}: {exc}")
     return frames

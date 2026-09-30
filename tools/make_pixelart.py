@@ -122,6 +122,25 @@ class Canvas:
                 if c[3] > 0:
                     self.set(x + ox, y + oy, c)
 
+    def upscale(self, factor: int) -> "Canvas":
+        """Replica cada pixel num bloco de `factor` x `factor`.
+
+        Escala exata por vizinho mais proximo, entao o pixel art continua
+        com as bordas duras (nada de interpolar).
+        """
+        if factor < 2:
+            return self
+        out = Canvas(self.w * factor, self.h * factor)
+        for y in range(self.h):
+            for x in range(self.w):
+                c = self.get(x, y)
+                if c[3] == 0:
+                    continue
+                for dy in range(factor):
+                    for dx in range(factor):
+                        out.set(x * factor + dx, y * factor + dy, c)
+        return out
+
     def to_png(self, path: Path) -> None:
         raw = bytearray()
         for row in self.px:

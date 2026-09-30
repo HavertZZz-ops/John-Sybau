@@ -21,6 +21,15 @@ class Scene:
         self.manager = manager
         self.window = manager.window
 
+    @property
+    def size(self) -> tuple[int, int]:
+        """Tamanho atual da janela.
+
+        Consulta a cada uso em vez de usar settings.SCREEN_WIDTH, porque
+        a resolucao muda quando o jogador ajusta nas opcoes.
+        """
+        return self.window.get_size()
+
     # ciclo de vida -------------------------------------------------
     def on_enter(self) -> None:
         """Chamado uma vez quando a cena vira a ativa."""

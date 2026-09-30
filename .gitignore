@@ -26,3 +26,9 @@ Thumbs.db
 
 # screenshots e testes temporarios
 *.log
+
+# configuracao local (preferencias do jogador) e artefatos de teste
+config.json
+_test_config.json
+_s*.png
+_preview*.png

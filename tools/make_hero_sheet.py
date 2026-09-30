@@ -25,9 +25,15 @@ sys.path.insert(0, str(ROOT))
 from src import settings  # noqa: E402
 from tools.make_pixelart import Canvas  # noqa: E402
 
-FW, FH = 32, 38  # tamanho de cada quadro
+FW, FH = 32, 38  # tamanho de cada quadro desenhado
 FRAMES = 8
 FPS = 6
+
+# fator com que os PNGs sao gravados. Mantido em 1 de proposito: os
+# arquivos ficam no tamanho de desenho, e quem aplica o enlarge e o
+# jogo, com vizinho mais proximo. Gravar ja escalado aqui faria a
+# escala das opcoes acted duas vezes.
+OUTPUT_SCALE = 1
 
 DIRECTIONS = ("norte", "sul", "leste", "oeste")
 COL = {"norte": 0, "sul": 1, "leste": 2, "oeste": 3}
@@ -249,19 +255,38 @@ def build_all() -> dict[str, list[Canvas]]:
     }
 
 
-def sheet_of(frames: dict[str, list[Canvas]]) -> Canvas:
-    sheet = Canvas(FW * len(DIRECTIONS), FH * FRAMES)
+def sheet_of(frames: dict[str, list[Canvas]], scale: int = 1) -> Canvas:
+    """Folha: colunas = direcoes, linhas = quadros."""
+    fw, fh = FW * scale, FH * scale
+    sheet = Canvas(fw * len(DIRECTIONS), fh * FRAMES)
     for direction, canvases in frames.items():
         col = COL[direction]
         for row, canvas in enumerate(canvases):
-            sheet.draw(canvas, col * FW, row * FH)
+            sheet.draw(canvas.upscale(scale), col * fw, row * fh)
     return sheet
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sprites do John Sybau, 4 direcoes")
     parser.add_argument("--preview", action="store_true", help="gera folha ampliada")
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=OUTPUT_SCALE,
+        choices=[1, 2, 3, 4],
+        help=(
+            "fator de gravacao dos PNGs. O padrao 1 mantem o tamanho de "
+            "desenho e deixa o jogo aplicar a escala das opcoes"
+        ),
+    )
     args = parser.parse_args()
+
+    scale = args.scale
+    if scale != OUTPUT_SCALE:
+        print(
+            f"aviso: gravando em {scale}x. O jogo espera {OUTPUT_SCALE}x, "
+            f"entao a escala das opcoes vai agir em cima disso."
+        )
 
     frames = build_all()
     out_dir = settings.SPRITES_DIR / "hero"
@@ -270,17 +295,22 @@ def main() -> int:
     for old in out_dir.glob("hero_*.png"):
         old.unlink()
 
-    sheet_of(frames).to_png(out_dir / "hero_sheet.png")
-    print(f"gerado: hero_sheet.png  {FW * len(DIRECTIONS)}x{FH * FRAMES}")
+    sheet_of(frames, scale).to_png(out_dir / "hero_sheet.png")
+    print(
+        f"gerado: hero_sheet.png  "
+        f"{FW * scale * len(DIRECTIONS)}x{FH * scale * FRAMES}"
+    )
 
+    fw, fh = FW * scale, FH * scale
     for direction, canvases in frames.items():
         for i, canvas in enumerate(canvases):
-            canvas.to_png(out_dir / f"hero_{direction}_{i}.png")
+            canvas.upscale(scale).to_png(out_dir / f"hero_{direction}_{i}.png")
 
     meta = {
-        "frame_width": FW,
-        "frame_height": FH,
+        "frame_width": fw,
+        "frame_height": fh,
         "frames": FRAMES,
+        "scale": scale,
         "columns": list(DIRECTIONS),
         "column_index": COL,
         "fps": FPS,
@@ -292,41 +322,46 @@ def main() -> int:
         },
         "sheet": {
             "file": "hero_sheet.png",
-            "width": FW * len(DIRECTIONS),
-            "height": FH * FRAMES,
+            "width": fw * len(DIRECTIONS),
+            "height": fh * FRAMES,
         },
     }
     (out_dir / "hero.json").write_text(
         json.dumps(meta, indent=2) + "\n", encoding="utf-8"
     )
-    print("gerado: hero.json")
+    print(f"gerado: hero.json  (quadro {fw}x{fh})")
     (out_dir / ".gitkeep").write_text("", encoding="utf-8")
 
-    frames["sul"][0].to_png(settings.SPRITES_DIR / "protagonista.png")
+    frames["sul"][0].upscale(scale).to_png(
+        settings.SPRITES_DIR / "protagonista.png"
+    )
     print("gerado: assets/sprites/protagonista.png (sul, quadro 0)")
 
     if args.preview:
         preview = ROOT / "preview_hero.png"
         samples = [0, 2, 4, 6]
-        scale = 3
+        zoom = 2
         pad = 6
         sheet = Canvas(
-            len(samples) * FW * scale + pad * (len(samples) + 1),
-            len(DIRECTIONS) * FH * scale + pad * (len(DIRECTIONS) + 1),
+            len(samples) * fw * zoom + pad * (len(samples) + 1),
+            len(DIRECTIONS) * fh * zoom + pad * (len(DIRECTIONS) + 1),
             (30, 27, 40, 255),
         )
         for r, direction in enumerate(DIRECTIONS):
             for ci, fi in enumerate(samples):
-                canvas = frames[direction][fi]
-                ox = pad + ci * (FW * scale + pad)
-                oy = pad + r * (FH * scale + pad)
-                for y in range(FH * scale):
-                    for x in range(FW * scale):
-                        sheet.set(ox + x, oy + y, canvas.get(x // scale, y // scale))
+                big = frames[direction][fi].upscale(scale)
+                ox = pad + ci * (fw * zoom + pad)
+                oy = pad + r * (fh * zoom + pad)
+                for y in range(fh * zoom):
+                    for x in range(fw * zoom):
+                        sheet.set(ox + x, oy + y, big.get(x // zoom, y // zoom))
         sheet.to_png(preview)
-        print(f"gerado: {preview.name}  (linhas = N/S/L/O, colunas = quadros 0,2,4,6)")
+        print(
+            f"gerado: {preview.name}  "
+            f"(linhas = N/S/L/O, colunas = quadros 0,2,4,6, {fw * zoom}px cada)"
+        )
 
-    print(f"\n{len(DIRECTIONS) * FRAMES} quadros em {out_dir}")
+    print(f"\n{len(DIRECTIONS) * FRAMES} quadros de {fw}x{fh} em {out_dir}")
     return 0
 
 

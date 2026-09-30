@@ -11,12 +11,40 @@ from .scene import Scene
 class SceneManager:
     """Pilha simples de cenas com troca instantanea."""
 
-    def __init__(self, window: pygame.Surface) -> None:
+    def __init__(self, window: pygame.Surface, config=None) -> None:
         self.window = window
+        self.config = config
         self._scenes: Dict[str, Type[Scene]] = {}
         self._active: Scene | None = None
         self._active_name: str | None = None
         self._running = True
+
+    def apply_config(self, rebuild: bool = False) -> None:
+        """Aplica a configuracao e, se preciso, recria a janela.
+
+        Quando a janela e recriada, a cena ativa e reconstruida para
+        nao ficar com referencias da superficie antiga.
+        """
+        if self.config is None:
+            return
+
+        from . import assets
+        from .main import create_window
+
+        assets.set_sprite_scale(self.config.sprite_scale)
+
+        if not rebuild:
+            return
+
+        self.window = create_window(self.config)
+        import pygame
+
+        pygame.display.set_caption("John Sybau")
+
+        if self._active_name is not None:
+            name = self._active_name
+            self._active = None
+            self.switch(name)
 
     @property
     def running(self) -> bool:
