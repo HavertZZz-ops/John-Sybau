@@ -95,8 +95,13 @@ def _classificar(surface: pygame.Surface) -> pygame.Surface:
                 continue
             # luminancia com os pesos perceptualmente aproximados
             cinza = 0.299 * r + 0.587 * g + 0.114 * b
-            # escuro nas sombras, sem estourar o branco
-            v = 10 + cinza * 0.86
+            # Curva de contraste: o veu da masmorra escurece a tela
+            # Curva de contraste: o veu escurece a tela inteira,
+            # fim. Escuros afundam, claros sobem, e os dois se separam
+            # mesmo com poca luz.
+            cinza = (cinza - 96.0) * 1.45 + 96.0
+            cinza = max(0.0, min(255.0, cinza))
+            v = 8 + cinza * 0.94
             if v > 210:
                 v = 210
             img.set_at(
@@ -104,6 +109,47 @@ def _classificar(surface: pygame.Surface) -> pygame.Surface:
                 (int(v * 0.93), int(v * 0.96), int(v * 1.0), a),
             )
     return img
+
+
+# o gradiente de luz e caro de calcular (um pixel por pixel) e nao muda
+# nunca, entao fica em cache e so e re-centralizado a cada quadro
+_GRADIENTE: pygame.Surface | None = None
+_GRADIENTE_RAIO = 0
+
+
+def _gradiente(raio: int) -> pygame.Surface:
+    """Mascara circular: transparente no centro, opaca nas bordas.
+
+    Tentando fazer isso com aneis concentricos nao funciona: desenhar
+    uma elipse com alfa zero numa surface SRCALPHA nao abre buraco
+    nenhum, ela so se mistura. A tela inteira ficava preta.
+
+    O gradiente nasce pequeno (96x96, um pixel por pixel, barato) e e
+    ampliado para o tamanho do circulo. Ampliar por software faz a
+    transicao ficar suave de graca, e evita o custo de um pixel por
+    pixel no tamanho final a cada quadro.
+    """
+    global _GRADIENTE, _GRADIENTE_RAIO
+    if _GRADIENTE is not None and _GRADIENTE_RAIO == raio:
+        return _GRADIENTE
+
+    peq = 96
+    centro = (peq - 1) / 2.0
+    base = pygame.Surface((peq, peq), pygame.SRCALPHA)
+    for y in range(peq):
+        for x in range(peq):
+            dx = (x - centro) / centro
+            dy = (y - centro) / centro
+            dist = (dx * dx + dy * dy) ** 0.5
+            # 0 no centro, opaco a partir de 62% do raio
+            t = max(0.0, min(1.0, (dist - 0.45) / 0.55))
+            base.set_at((x, y), (10, 8, 12, int(212 * (t ** 1.6))))
+
+    lado = raio * 2
+    mascara = pygame.transform.smoothscale(base, (lado, lado))
+    _GRADIENTE = mascara
+    _GRADIENTE_RAIO = raio
+    return mascara
 
 
 class DungeonScene(Scene):
@@ -531,11 +577,14 @@ class DungeonScene(Scene):
         x0, y0 = self._tela_para_mapa((0, 0))
         x1, y1 = self._tela_para_mapa((w, h))
         escala = self.tile != TILE_BASE
+        x_desenho = w // 2 - self.camera.x - self.tile // 2
+        y_desenho = h // 2 - self.camera.y - self.tile // 2
+
         for y in range(max(0, y0 - 1), min(self.mapa.altura, y1 + 2)):
             for x in range(max(0, x0 - 1), min(self.mapa.largura, x1 + 2)):
                 celula = self.mapa.em(x, y)
                 if celula == PAREDE:
-                    indice = TILES_PAREDE[(x + y) % len(TILES_PAREDE)]
+                    indice = TILES_PAREDE[(x * 2 + y) % len(TILES_PAREDE)]
                 elif celula in ENFEITES:
                     indice = ENFEITES[celula]
                 else:
@@ -546,11 +595,60 @@ class DungeonScene(Scene):
                 )
                 if escala:
                     pedaco = pygame.transform.scale(pedaco, (self.tile, self.tile))
-                surface.blit(
-                    pedaco,
-                    (x * self.tile - self.camera.x + w // 2 - self.tile // 2,
-                     y * self.tile - self.camera.y + h // 2 - self.tile // 2),
-                )
+                surface.blit(pedaco, (
+                    x * self.tile + x_desenho,
+                    y * self.tile + y_desenho,
+                ))
+
+        self._desenhar_sombras_das_paredes(surface, x_desenho, y_desenho)
+        self._desenhar_luz(surface)
+
+    def _desenhar_sombras_das_paredes(
+        self, surface: pygame.Surface, x_off: int, y_off: int
+    ) -> None:
+        """Sombra da parede caindo no chao, na borda de cima.
+
+        Sem isso o chao e a parede se encostam sem profundidade nenhuma.
+        A sombra sai da parede para o chao logo abaixo dela, que e a
+        mesma luz que ja estava nos tijolos.
+        """
+        altura = max(3, self.tile // 5)
+        for y in range(self.mapa.altura):
+            for x in range(self.mapa.largura):
+                if self.mapa.em(x, y) == PAREDE:
+                    continue
+                if self.mapa.em(x, y - 1) != PAREDE:
+                    continue
+                px = x * self.tile + x_off
+                py = y * self.tile + y_off
+                sombra = pygame.Surface((self.tile, altura), pygame.SRCALPHA)
+                sombra.fill((0, 0, 0, 120))
+                surface.blit(sombra, (px, py))
+
+    def _desenhar_luz(self, surface: pygame.Surface) -> None:
+        """Escuridao, com uma clara ao redor do heroi.
+
+        E o que separa "masmorra" de "tabuleiro". A tela toda recebe um
+        veu escuro e a mascara radial abre um buraco ao redor do
+        jogador; fora do alcance da tocha, o mapa some.
+        """
+        w, h = self.size
+        cx = int(self.posicao.x - self.camera.x + w // 2)
+        cy = int(self.posicao.y - self.camera.y + h // 2)
+        raio = int(self.tile * 7.0)
+
+        # veu base: cobre ate onde a luz nao alcanca
+        veu = pygame.Surface((w, h), pygame.SRCALPHA)
+        veu.fill((8, 7, 12, 150))
+        surface.blit(veu, (0, 0))
+
+        mascara = _gradiente(raio)
+        surface.blit(mascara, (cx - raio, cy - raio))
+
+        # Nao ha um segundo circulo "quente" por cima: desenhado com
+        # draw.ellipse ele sai com borda dura e aparece como um disco
+        # colado no chao. O proprio gradiente ja e levemente quente,
+        # entao o brilho da tocha fica na mesma curva e nao tem costura.
 
     def _desenhar_caixao(self, surface, centro, escala) -> None:
         w, h = self.size

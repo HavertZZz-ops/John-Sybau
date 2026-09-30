@@ -14,10 +14,20 @@ CHAO = "."
 PAREDE = "#"
 
 # indices (coluna, linha) dentro do tileset da masmorra.
-# Escolhidos olhando o tileset anotado: a fileira 11 e o chao de pedra
-# com losango, e as duas primeiras sao a parede de tijolo escuro.
+#
+# Estes indices foram medidos no tileset anotado, e a primeira escolha
+# estava errada: usei as pecas de tijolo da linha 0 achando que eram
+# "parede". Elas sao a FACE de uma parede vista de lado, com o topo e a
+# frente da pedra. Repetidas em grade, como um tabuleiro, viram um
+# tijolo sem fim e o chao some dentro do padrao.
+#
+# O que funciona em vista de cima e o par de (6..8, 8) e (0..5, 11):
+# a parede e pedra escura com a BORDA SUPERIOR CLARA, e o chao e a
+# pedra clara com o motivo em losango. Escuro com brilho em cima le
+# como parede; claro com motivo le como chao. A diferenca sozinha ja
+# diz onde da para andar.
 TILES_CHAO = ((1, 11), (2, 11), (3, 11), (4, 11), (0, 11), (5, 11))
-TILES_PAREDE = ((0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1))
+TILES_PAREDE = ((6, 8), (7, 8), (8, 8))
 
 # enfeites opacos que podem ficar no chao
 ENFEITES = {
@@ -53,9 +63,9 @@ class Mapa:
 
 
 def gerar_mapa(
-    largura: int = 42,
-    altura: int = 28,
-    salas: int = 7,
+    largura: int = 56,
+    altura: int = 38,
+    salas: int = 6,
     semente: int = 7,
 ) -> Mapa:
     """Gera salas conectadas por corredores, com saidas garantidas.
@@ -64,6 +74,12 @@ def gerar_mapa(
     ultima recebe a saida. Semente fixa para o mapa ser sempre o
     mesmo entre execucoes: um cenario procedural que muda a cada
     boot impossible testar.
+
+    As salas sao grandes de proposito. Com salas de 5x4 tiles e a tela
+    mostrando 27x15, a sala cabia inteira na tela e o que aparecia em
+    volta era so parede repetida: a tela virava um tabuleiro de
+    tijolo, sem a sensacao de estar dentro de um lugar. Uma sala maior
+    que a tela faz o jogador ver CHAO, com a parede so na borda.
     """
     rng = random.Random(semente)
     mapa = Mapa(largura, altura,
@@ -74,18 +90,17 @@ def gerar_mapa(
             for x in range(x0, x1 + 1):
                 mapa.celulas[y][x] = CHAO
 
-    # salas retangulares, sem sobrepor, com folga de um tile de parede
     boxes: list[tuple[int, int, int, int]] = []
     tentativas = 0
-    while len(boxes) < salas and tentativas < 500:
+    while len(boxes) < salas and tentativas < 800:
         tentativas += 1
-        w = rng.randint(5, 9)
-        h = rng.randint(4, 7)
+        w = rng.randint(13, 19)
+        h = rng.randint(10, 14)
         x = rng.randint(1, largura - w - 2)
         y = rng.randint(1, altura - h - 2)
         if any(
-            x < bx + bw + 2 and bx - 2 < x + w and
-            y < by + bh + 2 and by - 2 < y + h
+            x < bx + bw + 3 and bx - 3 < x + w and
+            y < by + bh + 3 and by - 3 < y + h
             for bx, by, bw, bh in boxes
         ):
             continue
@@ -125,7 +140,60 @@ def gerar_mapa(
         mapa.saida = (x + w // 2, y + h // 2)
         mapa.celulas[mapa.saida[1]][mapa.saida[0]] = CHAO
 
+    _garantir_ligacao(mapa)
     return mapa
+
+
+def _garantir_ligacao(mapa: Mapa) -> None:
+    """Abre um caminho do caixao ate a saida, se faltou algum.
+
+    Os corredores ligam as salas uma a uma, mas com salas grandes e
+    margem de separacao grande as vezes sobra uma sala nao ligada, e a
+    geracao termina com uma saida que ninguem alcanca. Achar o numero
+    certo de tamanho e margem seria depender da sorte: e um gerador com
+    semente fixa, entao bastaria um ajuste para quebrar de novo.
+
+    Aqui a ligacao e garantida depois. Um corredor em L direto resolve,
+    porque o mapa e um retangulo e qualquer ponto dele se liga a
+    qualquer outro por dois trechos retos.
+    """
+    if mapa.caixao == mapa.saida:
+        return
+    if mapa.saida in alcancavel(mapa, mapa.caixao):
+        return
+
+    ax, ay = mapa.caixao
+    bx, by = mapa.saida
+
+    def abrir(x0: int, y0: int, x1: int, y1: int) -> None:
+        passo = 1 if x1 >= x0 else -1
+        for x in range(x0, x1 + passo, passo):
+            mapa.celulas[ay][x] = CHAO
+            mapa.celulas[by][x] = CHAO
+        passo = 1 if y1 >= y0 else -1
+        for y in range(y0, y1 + passo, passo):
+            mapa.celulas[y][bx] = CHAO
+
+    abrir(ax, ay, bx, by)
+    # abre tambem em volta dos dois extremos, para o corredor ter largura
+    for x in range(min(ax, bx) - 1, max(ax, bx) + 2):
+        for dy in (-1, 0, 1):
+            if 0 <= ay + dy < mapa.altura and 0 <= x < mapa.largura:
+                mapa.celulas[ay + dy][x] = CHAO
+            if 0 <= by + dy < mapa.altura and 0 <= x < mapa.largura:
+                mapa.celulas[by + dy][x] = CHAO
+    for y in range(min(ay, by) - 1, max(ay, by) + 2):
+        for dx in (-1, 0, 1):
+            if 0 <= y < mapa.altura and 0 <= ax + dx < mapa.largura:
+                mapa.celulas[y][ax + dx] = CHAO
+            if 0 <= y < mapa.altura and 0 <= bx + dx < mapa.largura:
+                mapa.celulas[y][bx + dx] = CHAO
+
+    # os enfeites nao podem fechar o caminho que acabou de ser aberto
+    for y in range(mapa.altura):
+        for x in range(mapa.largura):
+            if mapa.celulas[y][x] in ENFEITES:
+                mapa.celulas[y][x] = CHAO
 
 
 def alcancavel(mapa: Mapa, origem: tuple[int, int]) -> set[tuple[int, int]]:
