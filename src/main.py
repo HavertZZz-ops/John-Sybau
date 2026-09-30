@@ -28,6 +28,26 @@ from .title_screen import TitleScreen
 # nao chegando, ou a cena ignorando.
 _TRACE = os.environ.get("TRACE") == "1"
 
+# Acoes relevantes vao para um arquivo sempre, nao so com TRACE. Se o
+# jogo travar numa acao (trocar resolucao, abrir captura), o arquivo
+# mostra a ultima coisa que aconteceu antes.
+_LOG_PATH = settings.ROOT_DIR / "jogo.log"
+
+
+def _log(message: str) -> None:
+    """Escreve no arquivo de log e, se TRACE, tambem no console."""
+    from datetime import datetime
+
+    stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    line = f"[{stamp}] {message}"
+    try:
+        with open(_LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        pass
+    if _TRACE:
+        print(line, flush=True)
+
 
 def _log_event(manager: SceneManager, event: pygame.event.Event) -> None:
     """Imprime o evento e a cena que deveria tratar."""
@@ -42,10 +62,10 @@ def _log_event(manager: SceneManager, event: pygame.event.Event) -> None:
             f"cena={where} aba={grupo} linha={idx} acoes={acoes}",
             flush=True,
         )
-    elif event.type == pygame.KEYUP:
-        print(f"[trace] KEYUP   {pygame.key.name(event.key)!r}", flush=True)
+        if acoes:
+            _log(f"tecla {nome} -> {acoes} (cena {where}, linha {idx})")
     elif event.type == pygame.MOUSEBUTTONDOWN:
-        print(f"[trace] MOUSE {event.pos} botao={event.button}", flush=True)
+        _log(f"clique em {event.pos}")
 
 
 def build_scene_manager(manager: SceneManager) -> SceneManager:
@@ -188,6 +208,11 @@ def center_window(surface: pygame.Surface) -> None:
 
 def main(frame_limit: int | None = None) -> int:
     pygame.init()
+    # log limpo a cada inicio: assim ele mostra so a sessao atual
+    try:
+        _LOG_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
 
     config = Config.load()
     assets.set_sprite_scale(config.sprite_scale)

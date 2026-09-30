@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import assets, settings
+from . import assets, settings, theme
 from .scene import Scene
 from .ui import draw_text
 

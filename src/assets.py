@@ -147,55 +147,57 @@ def scale_nearest(surface: pygame.Surface, size: Tuple[int, int]) -> pygame.Surf
 def fit_box(
     surface: pygame.Surface,
     box: Tuple[int, int],
-    max_scale: int | None = None,
+    scale: int = 1,
 ) -> pygame.Surface:
-    """Ajusta a imagem para caber em `box`, preservando a proporcao.
+    """Escala a imagem em `scale` vezes, limitada por `box`.
 
-    Dois tetos, e vale o menor dos dois:
-      - `box`      : a area disponivel na tela
-      - `max_scale` : o enlarge pedido nas opcoes
+    Regra unica do jogo, para nao haver duvida de onde a escala entra:
+      - `box`   e a area DISPONIVEL na tela (o teto)
+      - `scale` e o enlarge das opcoes (1x a 4x)
 
-    Enlarge e sempre em escala inteira, porque e assim que pixel art
-    fica nitido. Reduzir (sprite maior que a area) usa fracao, porque
-    nesse caso nao ha como preservar a grade.
+    O enlarge e em escala inteira, para o pixel art ficar nitido. Se o
+    resultado estourar a area, cai para a maior escala inteira que couber.
     """
     src_w, src_h = surface.get_size()
     if src_w <= 0 or src_h <= 0:
         return surface
 
-    limit_w, limit_h = box
-    if max_scale is not None and max_scale >= 1:
-        limit_w = min(limit_w, src_w * max_scale)
-        limit_h = min(limit_h, src_h * max_scale)
+    scale = max(1, int(scale))
+    # a maior escala inteira que cabe na area
+    wanted = scale
+    while wanted > 1 and (src_w * wanted > box[0] or src_h * wanted > box[1]):
+        wanted -= 1
 
-    factor = min(limit_w / src_w, limit_h / src_h)
-    if factor >= 1.0:
-        factor = float(int(factor))  # enlarge so em escala inteira
+    if wanted > 1:
+        return scale_nearest(surface, (src_w * wanted, src_h * wanted))
 
-    target = (max(1, round(src_w * factor)), max(1, round(src_h * factor)))
-    if target == (src_w, src_h):
-        return surface
-    return scale_nearest(surface, target)
+    # wanted == 1: cabe na escala 1, ou sprite maior que a area
+    if src_w > box[0] or src_h > box[1]:
+        factor = min(box[0] / src_w, box[1] / src_h)
+        return scale_nearest(
+            surface,
+            (max(1, int(src_w * factor)), max(1, int(src_h * factor))),
+        )
+    return surface
 
 
 def load_sprite(
     name: str,
     box: Tuple[int, int] | None = None,
     label: str | None = None,
-    max_scale: int | None = None,
+    scale: int | None = None,
 ) -> pygame.Surface:
-    """Carrega o sprite `name`, ou um placeholder se ele nao existir ainda.
+    """Carrega o sprite `name`, ou um placeholder se ele nao existir.
 
-    `box` e a area maxima na tela. A proporcao do sprite e sempre
-    preservada. O resultado e cacheado por (nome, box) para nao reler o
-    disco a cada frame.
+    `box` e a area em tamanho 1x; `scale` (padrao: a das opcoes) e o
+    enlarge. O resultado e cacheado por (nome, box, escala).
     """
     if box is None:
         box = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
-    if max_scale is None:
-        max_scale = _sprite_scale
+    if scale is None:
+        scale = _sprite_scale
 
-    key = f"{name}@{box[0]}x{box[1]}@{max_scale}"
+    key = f"{name}@{box[0]}x{box[1]}@{scale}"
     cached = _cache.get(key)
     if cached is not None:
         return cached
@@ -204,7 +206,7 @@ def load_sprite(
     if path.is_file():
         try:
             image = _load_image(path)
-            image = fit_box(image, box, max_scale=max_scale)
+            image = fit_box(image, box, scale=scale)
         except (pygame.error, OSError) as exc:
             print(f"[assets] falha ao carregar {path}: {exc}")
             image = make_placeholder(box, label or name)
@@ -234,27 +236,33 @@ def list_expected_sprites() -> Tuple[str, ...]:
 HERO_DIR = settings.SPRITES_DIR / "hero"
 HERO_DIRECTIONS: Tuple[str, ...] = ("norte", "sul", "leste", "oeste")
 HERO_FPS = 6
-# proporcao do quadro do heroi (largura / altura), usada para caber na tela
-HERO_ASPECT = 32.0 / 38.0
+# tamanho do quadro do heroi como esta no disco (32x38). E a referencia
+# de "1x": as opcoes multiplicam a partir daqui.
+HERO_BASE: Tuple[int, int] = (32, 38)
+# proporcao do quadro (largura / altura), usada para caber na tela
+HERO_ASPECT = HERO_BASE[0] / HERO_BASE[1]
 
 
 def load_animation(
     direction: str,
     box: Tuple[int, int] | None = None,
-    max_scale: int | None = None,
+    scale: int | None = None,
 ) -> list[pygame.Surface]:
     """Carrega os quadros de `direction` do heroi, ja escalados.
 
-    A escala global configurada nas opcoes e aplicada aqui. Devolve
-    lista vazia se a pasta de animacao nao existir, para o jogo
-    continuar funcionando com o placeholder.
+    `box` e a area em tamanho 1x (o quanto o heroi ocupa na tela);
+    `scale` e o enlarge das opcoes. Devolve lista vazia se a pasta de
+    animacao nao existir, para o jogo continuar funcionando com o
+    placeholder.
     """
     if direction not in HERO_DIRECTIONS:
         raise ValueError(f"direcao invalida: {direction!r}")
     if box is None:
-        box = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
-    if max_scale is None:
-        max_scale = _sprite_scale
+        # teto generoso: quem decide o tamanho final e a escala. A
+        # cena que chama pode passar um teto menor se quiser limitar.
+        box = (HERO_BASE[0] * 8, HERO_BASE[1] * 8)
+    if scale is None:
+        scale = _sprite_scale
 
     if not HERO_DIR.is_dir():
         return []
@@ -263,7 +271,7 @@ def load_animation(
     for path in sorted(HERO_DIR.glob(f"hero_{direction}_*.png")):
         try:
             image = _load_image(path)
-            frames.append(fit_box(image, box, max_scale=max_scale))
+            frames.append(fit_box(image, box, scale=scale))
         except (pygame.error, OSError) as exc:
             print(f"[assets] falha ao carregar {path}: {exc}")
     return frames

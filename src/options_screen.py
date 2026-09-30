@@ -21,7 +21,7 @@ from typing import Callable, List, Optional, Tuple
 
 import pygame
 
-from . import assets, input_map, settings
+from . import assets, input_map, settings, theme
 from .config import RESOLUTION_CHOICES, Config, native_refresh_rate, usable_window_size
 from .input_map import InputMap
 from .scene import Scene
@@ -80,6 +80,7 @@ class OptionsScreen(Scene):
         self.notice: str | None = None
         self.notice_timer = 0.0
         self._needs_rebuild = False
+        self.time = 0.0
 
         self._capturing: Optional[str] = None
         self._awaiting_release = False
@@ -429,6 +430,7 @@ class OptionsScreen(Scene):
 
     # atualizacao ---------------------------------------------------
     def update(self, dt: float) -> None:
+        self.time += dt
         if self.notice_timer > 0.0:
             self.notice_timer -= dt
             if self.notice_timer <= 0.0:
@@ -436,141 +438,134 @@ class OptionsScreen(Scene):
 
     # desenho -------------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill(settings.COLOR_BACKGROUND)
+        surface.fill(theme.BACKGROUND)
         w, h = self.size
         center_x = w // 2
 
-        draw_text(
-            surface, "CONFIGURACOES", max(26, int(h * 0.055)),
-            (center_x, int(h * 0.075)), settings.COLOR_ACCENT,
+        theme.text_tracked(
+            surface, "CONFIGURACOES", int(h * 0.055),
+            (center_x, int(h * 0.11)), theme.TEXT_BRIGHT, tracking=5,
         )
-        self._draw_tabs(surface, center_x)
+        self._draw_tabs(surface, center_x, h)
         if self.group == input_map.GROUP_VIDEO:
-            self._draw_video_rows(surface)
+            self._draw_video_rows(surface, w, h)
         else:
-            self._draw_key_rows(surface)
+            self._draw_key_rows(surface, w, h)
         self._draw_footer(surface, center_x, h)
 
-    def _draw_tabs(self, surface: pygame.Surface, center_x: int) -> None:
+    def _draw_tabs(self, surface: pygame.Surface, center_x: int, h: int) -> None:
+        """Abas como texto, com a ativa em dourado. Sem caixa."""
         tabs = (("Video", input_map.GROUP_VIDEO), ("Teclas", input_map.GROUP_TECLAS))
-        width = 170
-        height = max(26, int(self.size[1] * 0.042))
-        x = center_x - width
+        w = self.size[0]
+        y = int(h * 0.19)
+        gap = int(w * 0.12)
+        x0 = center_x - gap // 2
         self._hit_tabs = []
+        font_size = int(h * 0.03)
+        font = theme.Fonts.get(font_size)
         for label, group in tabs:
-            rect = pygame.Rect(x, int(self.size[1] * 0.12), width - 10, height)
+            width = font.size(label)[0] + 30
+            rect = pygame.Rect(x0 - width // 2, y - 16, width, 32)
             active = group == self.group
-            draw_panel(
-                surface, rect,
-                color=settings.COLOR_PANEL_LIGHT if active else settings.COLOR_PANEL,
-                border_color=settings.COLOR_ACCENT if active else settings.COLOR_PANEL_LIGHT,
-                border_width=2,
-            )
-            draw_text(
-                surface, label, max(16, int(height * 0.5)), rect.center,
-                settings.COLOR_ACCENT if active else settings.COLOR_TEXT_DIM,
-            )
+            if active:
+                # um fio dourado embaixo da aba ativa
+                theme.hairline(
+                    surface, rect.left + 8, rect.bottom,
+                    rect.right - 8, theme.GOLD,
+                )
+            color = theme.GOLD if active else theme.TEXT_DIM
+            theme.text_tracked(surface, label, font_size, rect.center, color, tracking=3)
             self._hit_tabs.append((rect, group))
-            x += width
+            x0 += width + 10
 
-    def _draw_video_rows(self, surface: pygame.Surface) -> None:
+    def _draw_video_rows(self, surface: pygame.Surface, w: int, h: int) -> None:
         rows = self.options
-        lay = self._layout()
-        panel = lay["panel"]
-        row_h = lay["row_h"]
-        font = max(16, int(row_h * 0.52))
+        left = int(w * 0.18)
+        right = w - int(w * 0.18)
+        y = int(h * 0.30)
+        step = max(30, int(h * 0.062))
+        font_size = int(h * 0.03)
 
-        draw_panel(
-            surface, panel, color=settings.COLOR_PANEL,
-            border_color=settings.COLOR_PANEL_LIGHT,
-        )
-
-        y = lay["row_top"]
         self._hit_video = []
         for i, option in enumerate(rows):
-            rect = pygame.Rect(panel.left + 10, y, panel.width - 20, row_h)
+            rect = pygame.Rect(left, y - 14, right - left, step - 6)
             self._hit_video.append(rect)
             selected = i == self.index
+            breath = theme.pulse(self.time, 1.2)
             if selected:
-                draw_panel(surface, rect, color=settings.COLOR_PANEL_LIGHT, radius=4)
-
-            color = settings.COLOR_ACCENT if selected else settings.COLOR_TEXT
+                color = theme.lerp(theme.GOLD, theme.GOLD_BRIGHT, breath)
+                # losango minimo, colado no rotulo
+                dx = left - 22
+                pygame.draw.polygon(
+                    surface, color,
+                    [(dx, y), (dx + 4, y - 4), (dx + 8, y), (dx + 4, y + 4)],
+                )
+            else:
+                color = theme.TEXT
+            theme.text_tracked_at(surface, option.label, font_size, (left + 4, y),
+                                  color, tracking=2)
             value = option.read()
-            draw_text(surface, option.label, font, (rect.left + 12, rect.centery), color, center=False)
-            draw_text(
-                surface, f"< {value} >" if selected else value, font,
-                (rect.right - 12, rect.centery), color, center=False,
+            vcolor = theme.GOLD if selected else theme.TEXT_DIM
+            theme.text_tracked_right(
+                surface, f"< {value} >" if selected else value, font_size,
+                right, y, vcolor, tracking=2,
             )
-            y += row_h
+            y += step
 
-    def _draw_key_rows(self, surface: pygame.Surface) -> None:
+    def _draw_key_rows(self, surface: pygame.Surface, w: int, h: int) -> None:
         rows = self.rows
-        lay = self._layout()
-        panel = lay["panel"]
-        row_h = lay["row_h"]
-        font = max(15, int(row_h * 0.5))
-        slot_w = min(96, panel.width // 6)
+        left = int(w * 0.14)
+        right = w - left
+        y = int(h * 0.28)
+        step = max(26, int(h * 0.058))
+        font_size = int(h * 0.026)
+        slot_w = min(120, int(w * 0.09))
 
-        draw_panel(
-            surface, panel, color=settings.COLOR_PANEL,
-            border_color=settings.COLOR_PANEL_LIGHT,
-        )
-
-        y = lay["row_top"]
         self._hit_slots = []
         self._hit_video = []
         for i, (action, label, keys) in enumerate(rows):
-            row_rect = pygame.Rect(panel.left + 10, y, panel.width - 20, row_h)
+            row_rect = pygame.Rect(left, y - 12, right - left, step - 4)
             self._hit_video.append(row_rect)
             selected = i == self.index
-            if selected:
-                draw_panel(surface, row_rect, color=settings.COLOR_PANEL_LIGHT, radius=4)
-
-            color = settings.COLOR_ACCENT if selected else settings.COLOR_TEXT
-            # o rotulo comeca depois do recuo, e nao colado na borda
-            label_x = row_rect.left + 12
-            draw_text(surface, label, font, (label_x, row_rect.centery), color, center=False)
+            breath = theme.pulse(self.time, 1.2)
+            color = theme.lerp(theme.GOLD, theme.GOLD_BRIGHT, breath) if selected else theme.TEXT
+            theme.text_tracked_at(surface, label, font_size, (left + 4, y),
+                                  color, tracking=2)
 
             for slot in range(SLOTS_PER_ACTION):
                 cell = pygame.Rect(
-                    panel.right - 34 - (SLOTS_PER_ACTION - 1 - slot) * slot_w,
-                    y + 3, slot_w - 8, row_h - 6,
+                    right - (SLOTS_PER_ACTION - slot) * slot_w,
+                    y - 13, slot_w - 12, 26,
                 )
                 self._hit_slots.append(cell)
                 active = selected and slot == self.slot
                 capturing = active and self._capturing is not None
-                draw_panel(
-                    surface, cell,
-                    color=settings.COLOR_BACKGROUND if active else settings.COLOR_PANEL,
-                    border_color=settings.COLOR_ACCENT if active else settings.COLOR_PANEL_LIGHT,
-                    border_width=2, radius=4,
-                )
                 name = keys[slot] if slot < len(keys) else ""
                 if capturing:
-                    texto = "aperte" if not self._awaiting_release else "solte"
+                    texto = "solte" if self._awaiting_release else "aperte"
                 elif name:
                     texto = input_map.key_name(code) if (code := input_map.key_code(name)) else name
                 else:
-                    texto = "--"
-                draw_text(
-                    surface, texto, max(13, font - 3), cell.center,
-                    color if name or capturing else settings.COLOR_TEXT_DIM,
-                )
-            y += row_h
+                    texto = "-"
+                tcolor = theme.GOLD if active else theme.TEXT_DIM
+                tr = theme.text_tracked_at(surface, texto, font_size, (cell.left, y),
+                                          tcolor, tracking=1)
+                if active:
+                    theme.hairline(
+                        surface, cell.left - 4, cell.bottom + 2,
+                        cell.left + tr.width + 4, theme.GOLD,
+                    )
+            y += step
 
-    def _draw_footer(self, surface: pygame.Surface, center_x: int, height: int) -> None:
-        lay = self._layout()
-        y = lay["panel"].bottom
-
+    def _draw_footer(self, surface: pygame.Surface, center_x: int, h: int) -> None:
         if self.group == input_map.GROUP_VIDEO:
-            hint = "setas trocam o valor      enter  salvar      R  padroes      esc  voltar"
+            hint = "setas ajustar    enter salvar    R padroes    esc voltar"
         else:
-            hint = (
-                "enter  gravar      backspace  limpar slot      "
-                "R  restaurar acao      esc  voltar"
-            )
-        draw_text(surface, hint, max(13, int(height * 0.024)), (center_x, y + 22), settings.COLOR_TEXT_DIM)
-
+            hint = "enter gravar    backspace limpar    R restaurar    esc voltar"
+        theme.text_tracked_at(
+            surface, hint, int(h * 0.022), (int(self.size[0] * 0.06), int(h * 0.90)),
+            theme.HAIRLINE, tracking=1,
+        )
         if self._capturing is not None:
             label = input_map.ACTION_LABELS.get(self._capturing, self._capturing)
             msg = (
@@ -578,11 +573,12 @@ class OptionsScreen(Scene):
                 if self._awaiting_release
                 else f"{label}: aperte a tecla nova    (esc cancela)"
             )
-            draw_text(surface, msg, max(18, int(height * 0.032)), (center_x, y + 52), settings.COLOR_ACCENT)
+            theme.text_tracked(
+                surface, msg, int(h * 0.028), (center_x, int(h * 0.83)),
+                theme.GOLD, tracking=2,
+            )
         elif self.notice:
-            draw_text(surface, self.notice, max(15, int(height * 0.028)), (center_x, y + 52), settings.COLOR_ACCENT)
-
-        draw_text(
-            surface, "TAB  troca de aba      o mouse tambem funciona",
-            max(12, int(height * 0.022)), (center_x, y + 80), (104, 98, 120),
-        )
+            theme.text_tracked(
+                surface, self.notice, int(h * 0.026), (center_x, int(h * 0.83)),
+                theme.GOLD, tracking=2,
+            )

@@ -50,6 +50,15 @@ class SceneManager:
         # acumula a cada troca e a janela sai da tela
         center_window(self.window)
 
+        from .main import _log, measure_window_frame, set_window_frame
+
+        set_window_frame(measure_window_frame())
+        _log(
+            f"janova recriada: {self.window.get_size()} "
+            f"moldura={measure_window_frame()} "
+            f"cena={self._active_name}"
+        )
+
         if self._active_name is not None:
             name = self._active_name
             self._active = None

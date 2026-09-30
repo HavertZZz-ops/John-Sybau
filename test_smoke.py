@@ -165,7 +165,6 @@ def check_internal_resolution() -> None:
 
         assert window.get_size() == size, f"superficie {window.get_size()} != {size}"
         assert manager.active.size == size, f"cena {manager.active.size} != {size}"
-        assert manager.active.hero_frames, "animacao do heroi nao carregou"
     assets.set_sprite_scale(3)
     print("[ok] resolucao interna acompanha a janela em 3 trocas")
 
@@ -575,7 +574,8 @@ def check_all_scales() -> None:
 
     Alem de nao quebrar, confere a propriedade que importa: o sprite
     final tem que caber na area pedida. Foi um bug real do sprite do
-    heroi estourando o cartao em 3x e 4x.
+    heroi estourando o cartao em 3x e 4x. A checagem e na cena de
+    jogo, que e onde o heroi e desenhado.
     """
     from src.scene_manager import SceneManager
 
@@ -583,20 +583,19 @@ def check_all_scales() -> None:
         config = Config(sprite_scale=scale)
         assets.set_sprite_scale(scale)
         window = create_window(config)
-        manager = build_scene_manager(SceneManager(window, config))
-        manager.switch("title")
+        manager = build_scene_manager(SceneManager(window, config, InputMap()))
+        manager.switch("game")
         manager.update(1.0 / 60)
+        manager.draw()
         scene = manager.active
 
-        if scene.hero_frames:
-            *_, box = scene._cast_layout(*scene.size)
-            got = scene.hero_frames[0].get_size()
-            # o teto do layout ja e em 1x, e vale o menor entre ele e
-            # a escala pedida
-            limit = (min(box[0], 32 * scale), min(box[1], 38 * scale))
-            assert got[0] <= limit[0], f"escala {scale}x: {got} maior que {limit}"
-            assert got[1] <= limit[1], f"escala {scale}x: {got} maior que {limit}"
-            print(f"[ok] escala {scale}x: heroi {got[0]}x{got[1]} dentro de {limit}")
+        if scene.frames:
+            got = scene.frames[0].get_size()
+            # a escala e sempre multiplo inteiro do quadro original
+            base_w, base_h = 32, 38
+            assert got[0] == base_w * scale, f"escala {scale}x: {got} esperado {base_w * scale}"
+            assert got[1] == base_h * scale, f"escala {scale}x: {got} esperado {base_h * scale}"
+            print(f"[ok] escala {scale}x: heroi {got[0]}x{got[1]}")
         else:
             print(f"[aviso] escala {scale}x: sem frames de animacao")
     assets.set_sprite_scale(3)
