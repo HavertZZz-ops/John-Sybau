@@ -168,3 +168,44 @@ def list_expected_sprites() -> Tuple[str, ...]:
         SPRITE_MYSTERY_WOMAN,
         SPRITE_KING_MAGE,
     )
+
+
+# --- animacoes ----------------------------------------------------
+HERO_DIR = settings.SPRITES_DIR / "hero"
+HERO_DIRECTIONS: Tuple[str, ...] = ("norte", "sul", "leste", "oeste")
+HERO_FPS = 6
+
+
+def load_animation(
+    direction: str,
+    box: Tuple[int, int] | None = None,
+) -> list[pygame.Surface]:
+    """Carrega os quadros de `direction` do heroi, ja escalados.
+
+    Devolve lista vazia se a pasta de animacao nao existir, para o jogo
+    continuar funcionando com o placeholder.
+    """
+    if direction not in HERO_DIRECTIONS:
+        raise ValueError(f"direcao invalida: {direction!r}")
+    if box is None:
+        box = (settings.TILE_SIZE * 2, settings.TILE_SIZE * 3)
+
+    if not HERO_DIR.is_dir():
+        return []
+
+    frames = []
+    for path in sorted(HERO_DIR.glob(f"hero_{direction}_*.png")):
+        try:
+            image = pygame.image.load(str(path)).convert_alpha()
+            frames.append(fit_box(image, box))
+        except (pygame.error, OSError) as exc:
+            print(f"[assets] falha ao carregar {path}: {exc}")
+    return frames
+
+
+def has_animation(direction: str = "sul") -> bool:
+    """True se existe ao menos um quadro da animacao pedida."""
+    if not HERO_DIR.is_dir():
+        return False
+    return any(HERO_DIR.glob(f"hero_{direction}_*.png"))
+

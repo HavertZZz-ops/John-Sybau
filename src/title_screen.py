@@ -51,6 +51,11 @@ class TitleScreen(Scene):
         self.time = 0.0
         self.notice: str | None = None
         self.notice_timer = 0.0
+        self.hero_dir = "sul"
+        # quatro direcoes, ciclando devagar enquanto o menu esta aberto
+        self.hero_cycle = assets.HERO_DIRECTIONS
+        self.hero_frames = assets.load_animation(self.hero_dir, box=(78, 110))
+        self.hero_timer = 0.0
 
         center_x = settings.SCREEN_WIDTH // 2
         base_y = 500
@@ -76,8 +81,19 @@ class TitleScreen(Scene):
             self._move(1)
         elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
             self._activate()
+        elif event.key in (pygame.K_a, pygame.K_d):
+            # troca a direcao mostrada no cartao do protagonista
+            self._cycle_hero(-1 if event.key == pygame.K_a else 1)
         elif event.key == pygame.K_ESCAPE:
             self.manager.quit()
+
+    def _cycle_hero(self, delta: int) -> None:
+        """Alterna entre norte, sul, leste e oeste no cartao do heroi."""
+        if not assets.has_animation():
+            return
+        index = self.hero_cycle.index(self.hero_dir)
+        self.hero_dir = self.hero_cycle[(index + delta) % len(self.hero_cycle)]
+        self.hero_frames = assets.load_animation(self.hero_dir, box=(78, 110))
 
     def _move(self, delta: int) -> None:
         self.menu_index = (self.menu_index + delta) % len(self.menu)
@@ -107,6 +123,8 @@ class TitleScreen(Scene):
         mouse = pygame.mouse.get_pos()
         for i, item in enumerate(self.menu):
             item.hovered = item.rect.collidepoint(mouse)
+
+        self.hero_timer += dt
 
         if self.notice_timer > 0.0:
             self.notice_timer -= dt
@@ -167,6 +185,17 @@ class TitleScreen(Scene):
             1 for sprite_name, _, _ in CHARACTER_LABELS if assets.has_sprite(sprite_name)
         )
 
+    def _hero_frame(self) -> pygame.Surface | None:
+        """Quadro atual da animacao do heroi, ou None se nao existir.
+
+        A velocidade vem do tempo de jogo, nao do FPS, entao a animacao
+        roda na mesma velocidade em qualquer maquina.
+        """
+        if not self.hero_frames:
+            return None
+        index = int(self.hero_timer * assets.HERO_FPS) % len(self.hero_frames)
+        return self.hero_frames[index]
+
     def _draw_cast(self, surface: pygame.Surface) -> None:
         """Elenco em linha, cada um com placeholder ou sprite real."""
         count = len(CHARACTER_LABELS)
@@ -188,11 +217,14 @@ class TitleScreen(Scene):
             )
 
             image_box = (78, 110)
-            sprite = assets.load_sprite(
-                sprite_name,
-                box=image_box,
-                label=short_label,
-            )
+            # o protagonista tem animacao; os outros usam o quadro estatico
+            sprite = self._hero_frame()
+            if sprite is None:
+                sprite = assets.load_sprite(
+                    sprite_name,
+                    box=image_box,
+                    label=short_label,
+                )
             # a proporcao varia por sprite, entao centraliza na area
             sprite_rect = sprite.get_rect(
                 center=(rect.centerx, rect.top + 16 + image_box[1] // 2)
@@ -201,7 +233,10 @@ class TitleScreen(Scene):
 
             draw_text(surface, label, 20, (rect.centerx, rect.bottom - 34), settings.COLOR_TEXT)
 
-            if assets.has_sprite(sprite_name):
+            if sprite_name == assets.SPRITE_PROTAGONIST and self.hero_frames:
+                status = f"idle {self.hero_dir} (A/D)"
+                status_color = settings.COLOR_ACCENT
+            elif assets.has_sprite(sprite_name):
                 status = "sprite ok"
                 status_color = settings.COLOR_ACCENT
             else:
@@ -238,9 +273,12 @@ class TitleScreen(Scene):
 
     def _draw_footer(self, surface: pygame.Surface) -> None:
         center_x = settings.SCREEN_WIDTH // 2
+        hint = "setas / W S  navegar      enter  confirmar      esc  sair"
+        if assets.has_animation():
+            hint = "A / D  girar o heroi      " + hint
         draw_text(
             surface,
-            "setas / W S  navegar      enter  confirmar      esc  sair",
+            hint,
             18,
             (center_x, settings.SCREEN_HEIGHT - 58),
             settings.COLOR_TEXT_DIM,

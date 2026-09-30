@@ -1,0 +1,50 @@
+{
+  "frame_width": 24,
+  "frame_height": 32,
+  "columns": [
+    "norte",
+    "sul",
+    "leste",
+    "oeste"
+  ],
+  "column_index": {
+    "norte": 0,
+    "sul": 1,
+    "leste": 2,
+    "oeste": 3
+  },
+  "fps": 6,
+  "animations": {
+    "idle": {
+      "norte": [
+        "hero_norte_0.png",
+        "hero_norte_1.png",
+        "hero_norte_2.png",
+        "hero_norte_3.png"
+      ],
+      "sul": [
+        "hero_sul_0.png",
+        "hero_sul_1.png",
+        "hero_sul_2.png",
+        "hero_sul_3.png"
+      ],
+      "leste": [
+        "hero_leste_0.png",
+        "hero_leste_1.png",
+        "hero_leste_2.png",
+        "hero_leste_3.png"
+      ],
+      "oeste": [
+        "hero_oeste_0.png",
+        "hero_oeste_1.png",
+        "hero_oeste_2.png",
+        "hero_oeste_3.png"
+      ]
+    }
+  },
+  "sheet": {
+    "file": "hero_sheet.png",
+    "width": 96,
+    "height": 128
+  }
+}
