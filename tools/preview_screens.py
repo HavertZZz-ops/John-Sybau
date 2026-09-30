@@ -106,9 +106,18 @@ def main() -> int:
     cena.moving = True
     manager.update(DT)
     manager.update(DT)
+    # a aula do esqueleto foi disparada agora, e `mostrar` zera o tempo
+    # dela: sem alguns quadros ela sai com opacidade zero e o preview
+    # mostra um texto apagado que nao existe no jogo
+    for _ in range(30):
+        manager.update(DT)
     manager.draw()
     pygame.image.save(window, ROOT / "preview_dungeon_esqueleto.png")
-    print("esqueleto guardado:", cena.esqueleto is not None)
+    print(
+        "esqueleto guardado:", cena.esqueleto is not None,
+        "| aula:", cena.tutorial.atual.texto if cena.tutorial.atual else "-",
+        "| tempo da aula:", round(cena.tutorial.tempo, 2),
+    )
 
     manager.ui_state["store"].apagar()
     pygame.quit()

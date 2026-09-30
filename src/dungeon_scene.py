@@ -621,30 +621,66 @@ class DungeonScene(Scene):
         surface.blit(sprite, rect)
 
     def _desenhar_aula(self, surface: pygame.Surface) -> None:
-        """A dica da vez, no alto, sem cobrir a acao.
+        """A dica da vez, num bloco no canto superior esquerdo.
 
-        A aula some sozinha quando o jogador faz o que ela ensina. Ela
-        nunca bloqueia o controle: e um aviso, nao um painel.
+        Duas versoes antes desta falharam:
+
+        - texto solto sobre o chao, em cinza apagado: sobre os tijolos do
+          tileset o contraste era quase nulo e a linha de detalhe era
+          pior ainda
+        - uma faixa na base da tela, legivel mas POR CIMA do heroi:
+          a camera encosta nele nas bordas do mapa, que e exatamente
+          onde ele costuma estar
+
+        O canto superior esquerdo fica vazio (e onde o nome da area e o
+        rotulo da area ja aparecem), entao o bloco cabe ali sem cobrir
+        ninguem.
         """
         aula = self.tutorial.atual
         if aula is None:
             return
         w, h = self.size
-        # entra esmaecendo, para nao aparecer de uma vez
-        alpha = min(255, int(self.tutorial.tempo * 420))
-        if alpha <= 0:
+        # sobe de opacidade em vez de esmaecer: uma dica que aparece
+        # devagar e uma dica que se perde
+        entrada = min(1.0, self.tutorial.tempo / 0.35)
+        if entrada <= 0.03:
             return
-        y = int(h * 0.62)
-        cor = theme.lerp(theme.BACKGROUND, theme.TEXT_BRIGHT, alpha / 255)
-        theme.text_tracked_at(
-            surface, aula.texto, 19, (int(w * 0.06), y), cor, alpha=alpha
+
+        linhas = 2 if aula.detalhe else 1
+        altura = 30 + 22 * linhas
+        x0 = int(w * 0.045)
+        y0 = int(h * 0.075)
+
+        # MEDE antes de desenhar. A primeira versao desenhava o texto e
+        # depois pintava o fundo por cima, que e o caminho obvio para
+        # descobrir a largura: o resultado era um retangulo vazio com o
+        # texto soterrado embaixo dele.
+        # As coordenadas no rascunho sao as de TELA, porque o blit do
+        # rascunho e em (0, 0): usar posicoes relativas ao bloco
+        # deixava o texto acima do fundo.
+        rascunho = pygame.Surface((w, h), pygame.SRCALPHA)
+        texto = theme.text_tracked_at(
+            rascunho, aula.texto, 19, (x0 + 16, y0 + 26),
+            theme.lerp(theme.BACKGROUND, theme.TEXT_BRIGHT, entrada),
         )
+        largura = texto.width
         if aula.detalhe:
-            detalhe = theme.lerp(theme.BACKGROUND, theme.TEXT_DIM, alpha / 255)
-            theme.text_tracked_at(
-                surface, aula.detalhe, 14, (int(w * 0.06), y + 24),
-                detalhe, alpha=alpha,
+            detalhe = theme.text_tracked_at(
+                rascunho, aula.detalhe, 14, (x0 + 16, y0 + 48),
+                theme.lerp(theme.BACKGROUND, theme.TEXT, entrada * 0.95),
             )
+            largura = max(largura, detalhe.width)
+
+        caixa = pygame.Rect(x0, y0, max(largura, 120) + 32, altura)
+        fundo = pygame.Surface(caixa.size, pygame.SRCALPHA)
+        fundo.fill((8, 7, 6, int(222 * entrada)))
+        surface.blit(fundo, caixa)
+        theme.hairline(
+            surface, caixa.x, caixa.y, caixa.x + caixa.width, (58, 52, 44)
+        )
+
+        # agora sim, por cima do fundo
+        surface.blit(rascunho, (0, 0))
 
     def _desenhar_hud(self, surface: pygame.Surface) -> None:
         if self.fase != "livre":
@@ -654,10 +690,13 @@ class DungeonScene(Scene):
         salvar = "/".join(self.controls.labels("salvar")) or "f5"
 
         theme.text_tracked_at(surface, "CATACUMBAS", 16, (28, 34), theme.TEXT_DIM)
-        # tempo de jogo, no canto oposto: e o que o jogador olha para
-        # saber se vale a pena continuar
+
+        # o tempo de jogo fica embaixo, a direita. No topo direito mora
+        # o contador de FPS, e os dois se atropelavam ali: o tempo era
+        # desenhado logo abaixo do FPS e a leitura ficava aberta de um
+        # lado so.
         theme.text_tracked_right(
-            surface, formatar_tempo(self.tempo_jogado), 16, w - 28, 34,
+            surface, formatar_tempo(self.tempo_jogado), 16, w - 28, h - 26,
             theme.TEXT_DIM,
         )
         theme.text_tracked_at(
