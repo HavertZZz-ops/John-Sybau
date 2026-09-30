@@ -37,12 +37,18 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       139 -> 332 fps sem esqueleto, e 324 fps com ele.
       `tools/medir_fps_dungeon.py` foi criado aqui: SDL dummy nao
       cobra blit, entao nenhum teste headless via lentidao real.
-- [x] #23  Esqueleto com o dobro da altura do heroi    (`este commit`)
-      A normalizacao mirror a do heroi, mas a importacao JA multiplica
-      por 2 antes de gravar. Normalizar para 32 produzia 64 no disco e
-      192 na tela, o dobro do heroi. O alvo e dividido pelo `UPSCALE`:
-      agora o arquivo tem 32 de altura, igual ao heroi, e na escala 3x
-      os dois saem com 96.
+- [x] #24  Contraste do cenario                       (`este commit`)
+      O veu da masmorra escurece a tela inteira e, com contraste
+      baixo, o chao e a parede chegavam quase iguais: a tela virava um
+      campo escuro sem leitura. A curva de luminancia passou a
+      acentuar (ganho 2.05 em vez de 1.45) e o veu ficou mais leve.
+      O desenho do tileset reaparece e o lugar fica legivel.
+- [x] #23  Esqueleto com o dobro da altura do heroi    (`aab3f66`)
+      A normalizacao espelhou a do heroi, mas a importacao JA
+      multiplica por 2 antes de gravar. Normalizar para 32 produzia 64
+      no disco e 192 na tela, o dobro do heroi. O alvo e dividido pelo
+      `UPSCALE`: agora o arquivo tem 32 de altura, igual ao heroi, e na
+      escala 3x os dois saem com 96.
       A arte do pacote e um esqueleto de 6px por 21, medido no alpha:
       ele continua estreito de proposito, mas do tamanho do jogador.
 

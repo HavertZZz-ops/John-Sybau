@@ -93,15 +93,16 @@ def _classificar(surface: pygame.Surface) -> pygame.Surface:
             r, g, b, a = img.get_at((x, y))
             if a == 0:
                 continue
-            # luminancia com os pesos perceptualmente aproximados
+# luminancia com os pesos perceptualmente aproximados
             cinza = 0.299 * r + 0.587 * g + 0.114 * b
-            # Curva de contraste: o veu da masmorra escurece a tela
-            # Curva de contraste: o veu escurece a tela inteira,
-            # fim. Escuros afundam, claros sobem, e os dois se separam
-            # mesmo com poca luz.
-            cinza = (cinza - 96.0) * 1.45 + 96.0
+            # Curva de contraste forte. O veu da masmorra escurece a
+            # tela inteira, e sem acentuar o chao e a parede chegam
+            # quase iguais no fim: a tela inteira vira um campo escuro
+            # sem leitura. Afastar os claros do meio da escala e o que
+            # faz o desenho do tileset voltar a aparecer.
+            cinza = (cinza - 92.0) * 2.05 + 92.0
             cinza = max(0.0, min(255.0, cinza))
-            v = 8 + cinza * 0.94
+            v = 6 + cinza * 1.02
             if v > 210:
                 v = 210
             img.set_at(
@@ -122,7 +123,7 @@ def _veu(w: int, h: int) -> pygame.Surface:
     global _VEU, _VEU_TAM
     if _VEU is None or _VEU_TAM != (w, h):
         _VEU = pygame.Surface((w, h), pygame.SRCALPHA)
-        _VEU.fill((8, 8, 13, 138))
+        _VEU.fill((8, 8, 13, 120))
         _VEU_TAM = (w, h)
     return _VEU
 
