@@ -333,7 +333,15 @@ def has_animation(direction: str = "sul", state: str = "walk") -> bool:
 # Os esqueletos vem em folha de 16x32 (o corpo e esguio, nao quadrado
 # como o do heroi), com um ciclo de andar e um de ataque por direcao.
 FOE_DIR = settings.SPRITES_DIR / "inimigo"
-FOE_KINDS: Tuple[str, ...] = ("skeleton_5", "skeleton_6", "skeleton_7", "skeleton_8")
+# O ghoul vem do pacote gfx e tem corpo de verdade: bracos, pernas e
+# sombra. O esqueleto do Skeletons Pack e uma arte de 6px de largura por
+# 21 de altura, que mesmo normalizado sai com 30px de largura contra 96
+# do jogador na escala 3x e le como um palito. Os dois continuam
+# disponiveis: o ghoul e o inimigo principal, o esqueleto fica como
+# variante mais fraca.
+FOE_GHOUL = FOE_DIR / "ghoul"
+FOE_SKELETON = FOE_DIR
+FOE_KINDS: Tuple[str, ...] = ("ghoul", "ghoul", "skeleton_5", "ghoul")
 FOE_STATES: Tuple[str, ...] = ("walk", "attack")
 FOE_BASE: Tuple[int, int] = (32, 64)
 
@@ -345,7 +353,7 @@ def load_foe(
     box: Tuple[int, int] | None = None,
     scale: int | None = None,
 ) -> list[pygame.Surface]:
-    """Quadros de um esqueleto. Devolve vazio se o tipo nao existir."""
+    """Quadros de um inimigo. Devolve vazio se o tipo nao existir."""
     if direction not in HERO_DIRECTIONS:
         raise ValueError(f"direcao invalida: {direction!r}")
     if state not in FOE_STATES:
@@ -354,8 +362,12 @@ def load_foe(
         box = (FOE_BASE[0] * 6, FOE_BASE[1] * 6)
     if scale is None:
         scale = _sprite_scale
+    # o ghoul mora numa subpasta; o esqueleto, na raiz
+    pasta = FOE_GHOUL if kind.startswith("ghoul") else FOE_SKELETON
+    if not pasta.is_dir():
+        return []
     return carregar_animacao(
         direction, "attack" if state == "attack" else "walk",
-        box=box, scale=scale, prefixo=kind, pasta=FOE_DIR,
+        box=box, scale=scale, prefixo=kind, pasta=pasta,
     )
 

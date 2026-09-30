@@ -315,8 +315,14 @@ def novo_heroi(vida: int = 60, forca: int = 9) -> Combatente:
 
 
 def novo_esqueleto(indice: int = 0) -> Combatente:
-    """Esqueleto: barra lenta e vida curta, o oposto do heroi."""
-    nomes = ("Esqueleto", "Ossario", "Guardiao de Ossos", "Cavador")
+    """Inimigo de catacumba: barra lenta e vida curta, o oposto do heroi.
+
+    O nome segue o sprite. O ghoul do pacote gfx tem corpo de verdade e
+    e o inimigo principal; o esqueleto do Skeletons Pack e uma arte de
+    6px de largura por 21 de altura, que le como um palito ao lado do
+    jogador, e fica como a variante mais fraca.
+    """
+    nomes = ("Cavador", "Ossario", "Guardiao de Ossos", "Sentinela")
     vida = 26 + indice * 8
     return Combatente(
         nome=nomes[indice % len(nomes)],

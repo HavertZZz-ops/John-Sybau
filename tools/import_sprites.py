@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 DOWNLOADS = Path.home() / "Downloads"
 ADVENTURE_ZIP = DOWNLOADS / "Top_Down_Adventure_Pack_v.1.0.zip"
 SKELETON_RAR = DOWNLOADS / "Skeletons Pack #2.rar"
+OUTRA_ZIP = DOWNLOADS / "gfx.zip"
 PACK = "Top_Down_Adventure_Pack_v.1.0"
 
 TILES_DIR = ROOT / "assets" / "tiles"
@@ -128,6 +129,20 @@ def tiras_do_heroi() -> list[Tira]:
     ))
     return lista
 
+
+
+def extrair_gfx(caminho_zip: Path) -> None:
+    """Pega um arquivo solto de um zip, se ainda nao estiver no disco."""
+    destino = RAW / caminho_zip.stem / caminho_zip.name
+    if destino.is_file():
+        return
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(caminho_zip) as zf:
+        for nome in zf.namelist():
+            if nome.endswith(caminho_zip.name):
+                destino.write_bytes(zf.read(nome))
+                print(f"  extraido: {destino.name}")
+                return
 
 def extrair(caminhos: dict[str, Path]) -> None:
     if not ADVENTURE_ZIP.is_file():
@@ -317,6 +332,67 @@ def _normalizar_esqueleto(quadros: list, alvo_altura: int) -> list:
     return saida
 
 
+def importar_npcs() -> int:
+    """Importa o NPC de corpo cheio, que le melhor que o esqueleto.
+
+    O esqueleto do Skeletons Pack e fino demais: medido no alpha, a arte
+    tem 6px de largura por 21 de altura dentro de uma celula de 16x32.
+    Mesmo normalizado para a altura do heroi, ele sai com 30px de
+    largura contra 96 do jogador e continua lendo como um palito.
+
+    O `NPC_test` do pacote gfx e uma criatura de osso com corpo de
+    verdade: bracos, pernas e sombra, em celulas de 16x32 numa grade de
+    4 colunas por 4 linhas (4 quadros por direcao). Normalizado, sai
+    com 56px de largura na escala 3x, quase o dobro do esqueleto, e
+    continua sendo um osso.
+    """
+    import pygame
+
+    pygame.init()
+    pygame.display.set_mode((8, 8))
+    destino = FOE_DIR / "ghoul"
+    destino.mkdir(parents=True, exist_ok=True)
+    # limpa a versao anterior
+    for velho in destino.glob("*.png"):
+        velho.unlink(missing_ok=True)
+
+    try:
+        bruto = RAW / "gfx" / "NPC_test.png"
+        if not bruto.is_file():
+            print("  NPC_test.png ausente; extraindo do pacote gfx")
+            extrair_gfx(OUTRA_ZIP)
+            bruto = RAW / "gfx" / "NPC_test.png"
+        if not bruto.is_file():
+            print("  NPC_test.png nao encontrado")
+            return 0
+
+        folha = pygame.image.load(bruto).convert_alpha()
+    except (pygame.error, OSError) as exc:
+        print(f"  falha ao abrir NPC_test.png: {exc}")
+        return 0
+    finally:
+        pygame.quit()
+
+    FW, FH = 16, 32
+    ORDEM = ("sul", "oeste", "norte", "leste")
+    total = 0
+    for linha, direcao in enumerate(ORDEM):
+        for i in range(4):
+            x, y = i * FW, linha * FH
+            if x + FW > folha.get_width() or y + FH > folha.get_height():
+                break
+            quadro = folha.subsurface(pygame.Rect(x, y, FW, FH)).copy()
+            quadros = _recortar_e_centralizar([quadro])
+            quadros = _normalizar_esqueleto(quadros, 32 // UPSCALE)
+            for est, img in zip(("walk",), quadros):
+                grande = pygame.transform.scale(
+                    img, (img.get_width() * UPSCALE, img.get_height() * UPSCALE)
+                )
+                pygame.image.save(grande, destino / f"ghoul_{direcao}_{est}_{i}.png")
+                total += 1
+    return total
+
+
 def importar_squeletos() -> int:
     """Extrai as folhas de esqueleto do .rar e quebra por direcao.
 
@@ -447,6 +523,12 @@ def main() -> int:
         print(f"  {estado:14} {n:3} quadros")
 
     print("\nesquelecos (inimigos):")
+    print(chr(10) + "npcs (inimigo principal):")
+    total = importar_npcs()
+    if total:
+        print(f"  {total} quadros do ghoul")
+    print()
+
     total = importar_squeletos()
     if total:
         print(f"  {total} quadros de esqueleto em "

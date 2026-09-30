@@ -22,8 +22,30 @@ As issues #N sao as do repositorio. Um item por commit entregue.
 - [ ] mais areas: o jogo tem 1 de 4
 - [ ] dinheiro e loot (o pacote de UI tem icones de moeda e inventario,
       ainda sem uso porque a paleta dele briga com o visual do jogo)
+- [ ] PixelLab: servidor MCP a configurar, nenhuma arte gerada ainda
 
 ## Feito
+
+- [x] #25  Tela de vitoria travada                      (`1d6b2a8`)
+      Tres defeitos na mesma tela:
+      - o texto dizia "qualquer tecla para voltar" e SO o Esc
+        respondia. Qualquer tecla volta, e grava ao sair
+      - a espada do golpe ficava congelada no heroi para sempre: o
+        `update` retornava quando a luta acabava ANTES de desligar a
+        animacao
+      - o inimigo morto era um retangulo preto sobre o proprio sprite,
+        que lia como um bloco solto no chao
+- [x] #26  Inimigo principal com corpo de verdade       (`este commit`)
+      O esqueleto do Skeletons Pack e uma arte de 6px de largura por 21
+      de altura, medida no canal alpha. Mesmo normalizado para a altura
+      do heroi, ele sai com 30px de largura contra 96 do jogador na
+      escala 3x, e le como um palito. Nao da para consertar so por
+      escala sem distorcer a arte.
+      O `NPC_test` do pacote gfx e uma criatura de osso com bracos,
+      pernas e sombra, em celulas de 16x32 numa grade de 4 por 4.
+      Normalizado, sai com 56px de largura: quase o dobro. Virou o
+      inimigo principal; o esqueleto continua como variante mais fraca.
+      Medido: 323 fps a 1520x921 com o inimigo na tela.
 
 - [x] #22  Performance: o jogo rodava a 22 fps        (`este commit`)
       Duas causas, ambas dentro do laco de desenho:
