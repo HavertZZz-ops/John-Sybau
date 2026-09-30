@@ -134,4 +134,19 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       equivalentes, para o heroi nunca cair no desenho de reserva.
       `tools/preview_espadachim.py` foi criado aqui: mostra os
       estados lado a lado, para nao dar palpite no desenho.
-- [ ] #28  Coixao de pedra                              (pendente)
+- [x] #28  Coixao de pedra                              (este commit)
+      O sarcofago era um retangulo com textura de tijolo. Agora e um
+      tumulo: contorno octogonal com ombros largos na cabeca e nos pes,
+      plinto mais escuro na base, buraco cavado na propria silhueta,
+      cranio entalhado e cruz na tampa, e desgaste fixo.
+      - o chanfro dos cantos passou a ser um valor proprio. Quando
+        crescia junto com o recuo do interior, o buraco saia com o topo
+        em ogiva e o caixao parecia uma capela;
+      - o cranio era medido pelo LADO MAIOR da tampa e saia do tamanho
+        de um rebite. Agora e pelo menor;
+      - a pedra, o buraco, a tampa e as sombras sao montados uma vez
+        por tamanho (`lru_cache`) e o desenho por quadro e so blit.
+        Sem o cache o redesenho do poligono custou 100 fps da masmorra
+        (318 -> 216) para produzir a mesma imagem. Com o cache: 329.
+      `tools/preview_caixao.py` foi criado aqui: mostra a tampa em
+      0/25/50/75/100% de abertura lado a lado.
