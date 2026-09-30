@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 import pygame
 
@@ -308,6 +309,12 @@ def main(frame_limit: int | None = None) -> int:
 
     running = True
     frames = 0
+    # medicao de desempenho de verdade, a cada 5 segundos. Sem isso o
+    # contador na tela e a unica fonte, e ele mostra o sintoma sem
+    # dizer onde esta o custo. So grava quando TRACE esta ligado.
+    if _TRACE:
+        proximo_fps = time.perf_counter() + 5.0
+        quadros_fps = 0
     while running:
         # sem limite: so devolve o tempo decorrido
         if config.fps_limit > 0:
@@ -333,6 +340,19 @@ def main(frame_limit: int | None = None) -> int:
 
         pygame.display.flip()
         running = manager.running
+
+        if _TRACE:
+            quadros_fps += 1
+            agora = time.perf_counter()
+            if agora >= proximo_fps:
+                medido = quadros_fps / (agora - (proximo_fps - 5.0))
+                _log(
+                    f"fps: {medido:.1f} (contador {clock.get_fps():.1f}) "
+                    f"cena={manager.active_name} "
+                    f"superficie={manager.window.get_size()}"
+                )
+                proximo_fps = agora + 5.0
+                quadros_fps = 0
 
         frames += 1
         if frame_limit is not None and frames >= frame_limit:

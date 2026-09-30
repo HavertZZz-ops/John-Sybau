@@ -19,11 +19,26 @@ As issues #N sao as do repositorio. Um item por commit entregue.
 
 ## Em progreso
 
+- [ ] tamanho do esqueleto: a normalizacao ignora o UPSCALE da
+      importacao e ele sai com o dobro da altura do heroi
 - [ ] mais areas: o jogo tem 1 de 4
 - [ ] dinheiro e loot (o pacote de UI tem icones de moeda e inventario,
       ainda sem uso porque a paleta dele briga com o visual do jogo)
 
 ## Feito
+
+- [x] #22  Performance: o jogo rodava a 22 fps        (`este commit`)
+      Duas causas, ambas dentro do laco de desenho:
+      - cada tile visivel era `transform.scale` a CADA quadro. Numa
+        janela 1520x921 sao mais de 600 tiles, e 600 amplitudes por
+        quadro. Agora o tileset e ampliado uma vez e fica em cache.
+      - `_desenhar_esqueleto` chamava `load_foe` dentro do desenho:
+        um glob na pasta, 8 PNGs abertos do disco e 8 escalas,
+        sessenta vezes por segundo, so com o esqueleto na tela.
+      Medido com `tools/medir_fps_dungeon.py` (superficie real):
+      139 -> 332 fps sem esqueleto, e 317 fps com ele.
+      `tools/medir_fps_dungeon.py` foi criado aqui: SDL dummy nao
+      cobra blit, entao nenhum teste headless via lentidao real.
 
 - [x] #1  criar repositorio
 - [x] #2  criar ambiente pro pygame

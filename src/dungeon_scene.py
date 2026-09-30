@@ -111,19 +111,20 @@ def _classificar(surface: pygame.Surface) -> pygame.Surface:
     return img
 
 
-# o veu de luz e caro de montar (uma copia da tela por quadro) e nao
-# muda de tamanho, entao fica em cache
+# o veu de luz e caro de montar, entao fica em cache e e REAPROVEITADO:
+# fazer `.copy()` de uma tela 1520x921 a cada quadro custava caro demais
 _VEU: pygame.Surface | None = None
+_VEU_TAM: tuple[int, int] = (0, 0)
 
 
 def _veu(w: int, h: int) -> pygame.Surface:
-    """Copia da tela, escurecida, usada para abafamento."""
-    global _VEU
-    if _VEU is not None and _VEU.get_size() == (w, h):
-        return _VEU.copy()
-    _VEU = pygame.Surface((w, h), pygame.SRCALPHA)
-    _VEU.fill((8, 8, 13, 138))
-    return _VEU.copy()
+    """Tela escurecida, reusada a cada quadro (blit nao altera a origem)."""
+    global _VEU, _VEU_TAM
+    if _VEU is None or _VEU_TAM != (w, h):
+        _VEU = pygame.Surface((w, h), pygame.SRCALPHA)
+        _VEU.fill((8, 8, 13, 138))
+        _VEU_TAM = (w, h)
+    return _VEU
 
 
 def _desenhar_luz(self, surface: pygame.Surface) -> None:
@@ -166,7 +167,10 @@ def _desenhar_luz(self, surface: pygame.Surface) -> None:
 
         # 3. restaura a luz em aneis, do maior para o menor. Cada anel
         # devolve um pouco da clareza; a soma das aneis faz o degrade.
-        aneis = 14
+        # O recorte ja vem do tamanho certo: dar `transform.scale` com
+        # origem e destino iguais parece inofensivo e nao e, porque o
+        # pygame ainda copia a surface inteira toda vez.
+        aneis = 12
         for i in range(aneis, 0, -1):
             t = i / aneis
             r = int(metade * t)
@@ -175,17 +179,40 @@ def _desenhar_luz(self, surface: pygame.Surface) -> None:
             alfa = int(246 * (1.0 - t) ** 0.7) + 10
             if alfa > 255:
                 alfa = 255
-            pedaco = pygame.Rect(
-                metade - r, metade - r, r * 2, r * 2
+            recorte = claro.subsurface(
+                pygame.Rect(metade - r, metade - r, r * 2, r * 2)
             )
-            recorte = claro.subsurface(pedaco)
-            if recorte.get_width() < 2 or recorte.get_height() < 2:
-                continue
-            recorte = pygame.transform.scale(
-                recorte, (recorte.get_width(), recorte.get_height())
-            )
+            recorte = recorte.copy()
             recorte.set_alpha(alfa)
             surface.blit(recorte, (cx - r, cy - r))
+
+
+# tiles ja ampliados para o tamanho de tela, cacheados por coordenada.
+# A versao anterior escalava CADA tile visivel a CADA quadro: numa tela
+# 1520x921 sao mais de 600 tiles, e 600 `pygame.transform.scale` por
+# quadro era o suficiente para derrubar o jogo para metade da
+# velocidade. O tileset e estatico, entao ampliar uma vez e guardar.
+_TILES_ESCALADOS: dict[tuple[int, int], pygame.Surface] = {}
+_TILES_ESCALA = -1
+
+
+def _tile_escalado(tileset: pygame.Surface, indice: tuple[int, int], tamanho: int) -> pygame.Surface:
+    """Peca do tileset ja no tamanho de tela, em cache."""
+    global _TILES_ESCALA
+    if tamanho != _TILES_ESCALA:
+        _TILES_ESCALADOS.clear()
+        _TILES_ESCALA = tamanho
+    pega = _TILES_ESCALADOS.get(indice)
+    if pega is not None:
+        return pega
+    pedaco = tileset.subsurface(
+        pygame.Rect(indice[0] * TILE_BASE, indice[1] * TILE_BASE,
+                    TILE_BASE, TILE_BASE)
+    )
+    if tamanho != TILE_BASE:
+        pedaco = pygame.transform.scale(pedaco, (tamanho, tamanho))
+    _TILES_ESCALADOS[indice] = pedaco
+    return pedaco
 
 
 class DungeonScene(Scene):
@@ -223,6 +250,8 @@ class DungeonScene(Scene):
         # o esqueleto fica guardado dormindo ate a hora certa
         self.esqueleto: pygame.Vector2 | None = None
         self.esqueleto_vivo = False
+        # quadros do esqueleto, carregados uma vez
+        self._quadros_esqueleto: list | None = None
         self.passos = 0
         self.acabou_aula_de_mover = False
         # qual acao o jogador apertou neste quadro. E o que fecha as
@@ -314,6 +343,9 @@ class DungeonScene(Scene):
             self.posicao = self._sem_bater(self.posicao, pygame.Vector2())
             self.camera = pygame.Vector2(self.posicao)
         self._recarregar(self.direction)
+        if self._quadros_esqueleto is not None:
+            # a escala dos sprites mudou: recarrega
+            self._quadros_esqueleto = None
 
     # entrada -------------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -612,11 +644,13 @@ class DungeonScene(Scene):
         w, h = self.size
         x0, y0 = self._tela_para_mapa((0, 0))
         x1, y1 = self._tela_para_mapa((w, h))
-        escala = self.tile != TILE_BASE
         x_desenho = w // 2 - self.camera.x - self.tile // 2
         y_desenho = h // 2 - self.camera.y - self.tile // 2
 
+        # os tiles sao filtrados antes do desenho: dois em cada direcao,
+        # por causa da sombra da parede
         for y in range(max(0, y0 - 1), min(self.mapa.altura, y1 + 2)):
+            linha = y * self.tile + y_desenho
             for x in range(max(0, x0 - 1), min(self.mapa.largura, x1 + 2)):
                 celula = self.mapa.em(x, y)
                 if celula == PAREDE:
@@ -625,16 +659,10 @@ class DungeonScene(Scene):
                     indice = ENFEITES[celula]
                 else:
                     indice = TILES_CHAO[(x * 3 + y * 5) % len(TILES_CHAO)]
-                pedaco = tileset.subsurface(
-                    pygame.Rect(indice[0] * TILE_BASE, indice[1] * TILE_BASE,
-                                TILE_BASE, TILE_BASE)
+                surface.blit(
+                    _tile_escalado(tileset, indice, self.tile),
+                    (x * self.tile + x_desenho, linha),
                 )
-                if escala:
-                    pedaco = pygame.transform.scale(pedaco, (self.tile, self.tile))
-                surface.blit(pedaco, (
-                    x * self.tile + x_desenho,
-                    y * self.tile + y_desenho,
-                ))
 
         self._desenhar_sombras_das_paredes(surface, x_desenho, y_desenho)
         self._desenhar_luz(surface)
@@ -730,10 +758,21 @@ class DungeonScene(Scene):
         )
 
     def _desenhar_esqueleto(self, surface: pygame.Surface) -> None:
-        """O esqueleto parado, antes da luta."""
-        quadros = assets.load_foe(assets.FOE_KINDS[0], "oeste", "walk")
-        if not quadros:
-            return
+        """O esqueleto parado, antes da luta.
+
+        Os quadros vem de um cache. A versao anterior chamava
+        `assets.load_foe` aqui dentro, a CADA QUADRO: um glob na pasta,
+        oito PNGs abertos do disco e oito escalas, sessenta vezes por
+        segundo, com o esqueleto na tela. So isso derrubou o jogo para
+        22 fps. O medidor de desempenho nao pegou porque ele rodava sem
+        esqueleto na tela.
+        """
+        quadros = self._quadros_esqueleto
+        if quadros is None:
+            quadros = assets.load_foe(assets.FOE_KINDS[0], "oeste", "walk")
+            self._quadros_esqueleto = quadros or []
+            if not quadros:
+                return
         idx = int(self.time * assets.fps_do_estado("walk")) % len(quadros)
         sprite = quadros[idx]
         w, h = self.size
