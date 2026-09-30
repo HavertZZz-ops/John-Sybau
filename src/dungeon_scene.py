@@ -22,6 +22,8 @@ from . import (  # noqa: I001
     wang,
 )
 from . import progresso as progresso_mod
+from . import estado as estado_mod
+from . import fogueira as fogueira_mod
 from . import itens as itens_mod
 from .area_title import AreaTitle
 from .dungeon_map import (
@@ -308,6 +310,9 @@ class DungeonScene(Scene):
         # a pocao da sala da pocao, largada no chao. Vira None quando
         # o jogador pega, e o progresso e que guarda se ja foi pega:
         # recarregar a cena nao pode devolver a pocao no chao.
+        self.estado = estado_mod.do_gerenciador(self.manager)
+        self.fogueira_ativa: fogueira_mod.Fogueira | None = None
+        self.fogueira_pos: pygame.Vector2 | None = None
         self.item_no_chao: pygame.Vector2 | None = None
         # a aula da sala da pocao: a luta aponta a opcao de item
         self.ensinar_item = False
@@ -315,6 +320,7 @@ class DungeonScene(Scene):
         # senao a primeira frase de dica apareceria duas vezes
         self.sala_atual = self.mapa.sala_de(*self.mapa.caixao)
         self._colocar_item()
+        self._colocar_fogueira()
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
         self.passos = 0
@@ -336,7 +342,14 @@ class DungeonScene(Scene):
             self.progresso = progresso_mod.Progresso.de_extra(
                 (getattr(carregado, "extra", None) or {}).get("progresso")
             )
+            # a vida, o ouro e a ultima fogueira tambem. Sem isto o
+            # jogador acordava com a vida cheia e a carteira vazia a
+            # cada F5, e a loja da aldeia viraria vitrine sem uso.
+            self.estado = estado_mod.Estado.de_extra(
+                (getattr(carregado, "extra", None) or {}).get("estado")
+            )
             manager.ui_state["progresso"] = self.progresso
+            manager.ui_state["estado"] = self.estado
         else:
             self.fase = "acordando"
             self.fase_tempo = 0.0
@@ -359,7 +372,10 @@ class DungeonScene(Scene):
             y=float(self.posicao.y),
             direcao=self.direction,
             tempo_jogado=self.tempo_jogado,
-            extra={"progresso": self.progresso.para_extra()},
+            extra={
+                "progresso": self.progresso.para_extra(),
+                "estado": self.estado.para_extra(),
+            },
         )
 
     def _aplicar_save(self, save) -> None:
@@ -479,7 +495,13 @@ class DungeonScene(Scene):
 
         if resultado == "vitoria":
             sala = self.progresso.onde_esta_o_chefe()
+            primeira = not self.progresso.concluida(sala)
             self.progresso.vencer(sala)
+            if primeira:
+                # so paga na primeira vez. Sem isto, voltar a uma sala
+                # ja vencida daria ouro novo e a moeda viraria uma
+                # maquina de imprimir nao intencional.
+                self.estado.ouro += self.progresso.recompensa_por_vencer(sala)
             if contra_chefe:
                 # vencer o chefe tambem tira o jogador da masmorra
                 self.progresso.sair_da_masmorra()
@@ -536,6 +558,10 @@ class DungeonScene(Scene):
             self.inventario_aberto = not self.inventario_aberto
             return
 
+        if "interagir" in acoes:
+            if self._perto_da_fogueira():
+                self._descansar()
+                return
         if self.key(event, "interagir"):
             self._pegar_item()
             return
@@ -865,6 +891,7 @@ class DungeonScene(Scene):
         self._desenhar_mapa(surface)
         self._desenhar_saida(surface)
         self._desenhar_item(surface)
+        self._desenhar_fogueira(surface)
 
         escala = assets.get_sprite_scale()
         cx, cy = self._centro_caixao()
@@ -1218,3 +1245,59 @@ class DungeonScene(Scene):
             surface, inv, (w // 2 - 165, h // 2 - 60),
             rodape="q ou esc fecha",
         )
+
+    def _colocar_fogueira(self) -> None:
+        """Deixa a fogueira no chao da sala do jogador, se houver.
+
+        A fogueira NAO esta na sala 5. A ultima sala e o lugar onde nao
+        se descansa, e e por isso que a regra do recambio do chefe
+        funciona: nao existe um lugar seguro para recuar.
+        """
+        self.fogueira_ativa = None
+        self.fogueira_pos = None
+        centro = self.mapa.centro_da_sala(self.sala_atual)
+        if centro is None:
+            return
+        f = fogueira_mod.da_sala(self.cenario.nome.lower(), self.sala_atual)
+        if f is None:
+            return
+        for dx, dy in ((-2, 2), (2, 2), (0, 3), (-3, 1), (3, 1)):
+            alvo = (centro[0] + dx, centro[1] + dy)
+            if self.mapa.andavel(*alvo):
+                self.fogueira_ativa = f
+                self.fogueira_pos = pygame.Vector2(
+                    self.mapa.para_pixels(*alvo, self.tile)
+                )
+                return
+
+    def _perto_da_fogueira(self) -> bool:
+        if self.fogueira_pos is None:
+            return False
+        return self.fogueira_pos.distance_to(self.posicao) <= fogueira_mod.ALCANCE
+
+    def _descansar(self) -> None:
+        """Descanso: vida cheia, pocoes repostas, save na hora.
+
+        Descansar ja salva. Um descanso que nao gravasse deixaria o
+        jogador com a vida cheia e o save de antes da luta, e um
+        Ctrl+Z nao existe neste jogo.
+        """
+        p = self.progresso
+        self.estado.descansar(fogueira_mod.POCOES_DO_DESCANSO)
+        p.itens["pocao"] = p.itens.get("pocao", 0) + fogueira_mod.POCOES_DO_DESCANSO
+        if self.fogueira_ativa is not None:
+            self.estado.fogueira = self.fogueira_ativa.chave
+        self.manager.ui_state["progresso"] = p
+        self.manager.salvar_progresso()
+        self._avisar("Voce descansou. Vida e pocoes repostas.", 3.2)
+
+    def _desenhar_fogueira(self, surface: pygame.Surface) -> None:
+        if self.fogueira_pos is None:
+            return
+        x = int(self.fogueira_pos.x - self.camera.x + self.size[0] // 2)
+        y = int(self.fogueira_pos.y - self.camera.y + self.size[1] // 2)
+        fogueira_mod.desenhar(surface, x, y, self.tile, self.time)
+        if self._perto_da_fogueira():
+            theme.text_tracked_at(
+                surface, "E para descansar", 13, (x - 40, y - self.tile - 6),
+                theme.GOLD)

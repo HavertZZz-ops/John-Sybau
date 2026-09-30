@@ -179,10 +179,11 @@ class SceneManager:
             progresso = self.ui_state.get("progresso")
             if progresso is None:
                 return False
-            dados = saves.Save(
-                area="mundo",
-                extra={"progresso": progresso.para_extra()},
-            )
+            extra = {"progresso": progresso.para_extra()}
+            est = self.ui_state.get("estado")
+            if est is not None:
+                extra["estado"] = est.para_extra()
+            dados = saves.Save(area="mundo", extra=extra)
 
         store = self.ui_state.get("store") or saves.escolher_store()
         self.ui_state["store"] = store

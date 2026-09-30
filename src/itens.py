@@ -18,10 +18,20 @@ class Item:
     nome: str
     descricao: str
     cura: int = 0
+    # o que o mercador cobra. 0 significa que ele nao vende.
+    preco: int = 0
 
     @property
     def e_cura(self) -> bool:
         return self.cura > 0
+
+    @property
+    def a_venda(self) -> bool:
+        return self.preco > 0
+
+    def linha_com_preco(self) -> str:
+        """Como o item aparece na lista do mercador."""
+        return f"{self.nome} x1   {self.preco} de ouro"
 
 
 ITENS: dict[str, Item] = {
@@ -30,6 +40,14 @@ ITENS: dict[str, Item] = {
         nome="Pocao de cura",
         descricao="Restaura um pouco de vida.",
         cura=30,
+        preco=100,
+    ),
+    "pocao_forte": Item(
+        id="pocao_forte",
+        nome="Pocao de cura maior",
+        descricao="Restaura bastante vida de uma vez.",
+        cura=80,
+        preco=350,
     ),
 }
 
@@ -66,6 +84,31 @@ def rotulos(inventario: dict[str, int]) -> list[tuple[str, Item, int]]:
 
 def tem_usaveis(inventario: dict[str, int]) -> bool:
     return any(item.e_cura for _id, item, _qtd in rotulos(inventario))
+
+
+def a_venda() -> list[Item]:
+    """O que o mercador tem, na ordem em que ele oferece."""
+    return [i for i in ITENS.values() if i.a_venda]
+
+
+def comprar(
+    inventario: dict[str, int], ouro: int, item_id: str
+) -> tuple[bool, str]:
+    """Compra um item. Devolve `(deu certo, aviso)`.
+
+    O ouro e um numero, e nao um objeto: a funcao devolve o valor para
+    quem chamou guardar de volta. Passar o ouro e devolver o ouro evita
+    a classe de erro em que a compra da certo mas o dinheiro nao sai da
+    carteira.
+    """
+    item = ITENS.get(item_id)
+    if item is None or not item.a_venda:
+        return False, "O Estranho nao vende isso."
+    if ouro < item.preco:
+        falta = item.preco - ouro
+        return False, f"Falta moeda. Sao {falta} a mais."
+    inventario[item_id] = inventario.get(item_id, 0) + 1
+    return True, f"{item.nome} por {item.preco}."
 
 
 def desenhar_inventario(

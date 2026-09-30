@@ -14,6 +14,8 @@ import pygame
 
 from . import assets, cenarios, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
+from . import estado as estado_mod
+from . import fogueira as fogueira_mod
 from . import itens as itens_mod
 from .scene import Scene
 
@@ -38,12 +40,15 @@ _ESCALA = -1
 class Morador:
     """Um morador local: nome, uma frase e onde ele fica."""
 
-    def __init__(self, nome: str, fala: str, dx: int, dy: int, cor: tuple) -> None:
+    def __init__(self, nome: str, fala: str, dx: int, dy: int,
+                 cor: tuple, sprite: str = "") -> None:
         self.nome = nome
         self.fala = fala
         self.dx = dx
         self.dy = dy
         self.cor = cor
+        # o arquivo do desenho. Vazio usa o bloco colorido.
+        self.sprite = sprite or nome.lower().replace(" ", "_")
         self.falando = 0.0
 
 
@@ -52,21 +57,40 @@ class Morador:
 MORADORES: tuple[Morador, ...] = (
     Morador(
         "Ida", "Voce saiu andando. Quase ninguem faz isso.", -3, -1,
-        (176, 148, 128),
+        (176, 148, 128), sprite="ida",
     ),
     Morador(
         "Borracha", "A masmorra e de cipo. Nao acende.", 3, -1,
-        (150, 132, 116),
+        (150, 132, 116), sprite="borracha",
     ),
     Morador(
         "Ze", "Fugir nao e perder. Voltar e que e.", 0, 3,
-        (162, 140, 120),
+        (162, 140, 120), sprite="ze",
     ),
     Morador(
         "Dona Mo", "Se te acharem la dentro outra vez, corre.", -2, 3,
-        (186, 160, 138),
+        (186, 160, 138), sprite="dona_mo",
+    ),
+    # o mercador. E o unico que fala de dinheiro.
+    Morador(
+        "O Estranho",
+        "Moeda chama moeda. E nao faco entrega a casa.",
+        5, 2, (60, 56, 60), sprite="mercador",
+    ),
+    # o taverneiro. Descansar na taverna e outra coisa: aqui o
+    # jogador paga, la ele descansa de graca. Sao dois servicos
+    # diferentes e a distincao e o que da a taverna um motivo.
+    Morador(
+        "Tao Anchieta",
+        "Cama limpa, caneca cheia. Dez de moeda a noite.",
+        -6, 3, (150, 128, 104), sprite="taverneiro",
     ),
 )
+
+# quanto custa pernoitar na taverna
+PRECO_DA_TAVERNA = 10
+# quanto a taverna cura: menos que a fogueira, de proposito
+CURA_DA_TAVERNA = 60
 
 
 def _tabela() -> dict | None:
@@ -132,21 +156,37 @@ class CityScene(Scene):
 
         self.walk_frames = assets.load_animation(self.direction, "walk")
         self.idle_frames = assets.load_animation(self.direction, "idle")
-        self.moradores: list[Morador] = self._posicionar_moradores()
+        self.estado = estado_mod.do_gerenciador(self.manager)
+        self.fogueira: fogueira_mod.Fogueira | None = (
+            fogueira_mod.primeira_do_cenario("aldeia")
+        )
+        self.fogueira_pos: pygame.Vector2 | None = None
+        self._colocar_fogueira()
+        self.moradores: list[Morador] = []
+        self._posicionar_moradores()
         self.perto: Morador | None = None
         self.avisar = ""
         self.avisar_tempo = 0.0
         self.falas_ouvidas: set[str] = set()
+        # a loja do Estranho: None = fechada, int = item em foco
+        self.loja: int | None = None
+        self.loja_aviso = ""
 
     # --- posicao dos moradores ---------------------------------------
     def _posicionar_moradores(self) -> list[Morador]:
-        """Coloca cada morador num chao valido perto do centro."""
+        """Coloca cada morador num chao valido, longe dos outros.
+
+        A distancia minima e o que importa. Com o offset de cada um
+        perto do centro e o espaco curto, os seis moradores acabavam
+        amontoados num circulo, e um desenho de 64px em cima do outro
+        nao da para dizer quem e quem.
+        """
         centro = self.mapa.centro_da_sala(2) or self.mapa.entrada
-        usados: set[tuple[int, int]] = set()
+        MINIMO = 4  # celulas de distancia entre um morador e outro
         lista = []
         for m in MORADORES:
             alvo = None
-            for raio in range(0, 7):
+            for raio in range(0, 10):
                 for dx in range(-raio, raio + 1):
                     for dy in range(-raio, raio + 1):
                         if max(abs(dx), abs(dy)) != raio:
@@ -154,7 +194,12 @@ class CityScene(Scene):
                         celula = (centro[0] + m.dx + dx, centro[1] + m.dy + dy)
                         if not self.mapa.andavel(*celula):
                             continue
-                        if celula in usados:
+                        perto = any(
+                            abs(celula[0] - c[0]) < MINIMO
+                            and abs(celula[1] - c[1]) < MINIMO
+                            for c in self._celulas_ocupadas()
+                        )
+                        if perto:
                             continue
                         alvo = celula
                         break
@@ -163,11 +208,31 @@ class CityScene(Scene):
                 if alvo:
                     break
             if alvo is None:
+                # sem lugar com folga: aceita qualquer chao valido,
+                # melhor amontoado do que morador faltando
+                for raio in range(0, 12):
+                    for dx in range(-raio, raio + 1):
+                        for dy in range(-raio, raio + 1):
+                            celula = (centro[0] + dx, centro[1] + dy)
+                            if self.mapa.andavel(*celula):
+                                alvo = celula
+                                break
+                        if alvo:
+                            break
+                    if alvo:
+                        break
+            if alvo is None:
                 continue
-            usados.add(alvo)
-            lista.append(m)
             m.celula = alvo  # type: ignore[attr-defined]
-        return lista
+            # preenche a lista da cena, e nao uma local: a distancia
+            # minima e conferida contra quem JA foi colocado, e a lista
+            # local so existe no fim do metodo
+            self.moradores.append(m)
+        return self.moradores
+
+    def _celulas_ocupadas(self) -> list[tuple[int, int]]:
+        return [getattr(m, "celula") for m in getattr(self, "moradores", [])
+                if getattr(m, "celula", None) is not None]
 
     def _posicao_de(self, m: Morador) -> pygame.Vector2:
         return pygame.Vector2(
@@ -216,11 +281,28 @@ class CityScene(Scene):
             self.inventario_aberto = not self.inventario_aberto
             return
 
+        # a loja e a unica coisa que o E nao fecha. Fechar antes de
+        # comprar seria o jeito mais facil de o jogador gastar moeda
+        # sem querer.
+        if self.loja is not None:
+            self._tecla_da_loja(acoes)
+            return
+
         if "interagir" in acoes:
+            if self._perto_da_fogueira():
+                self._descansar()
+                return
             if self.perto is not None:
                 self.perto.falando = 4.0
                 self._avisar(f"{self.perto.nome}: {self.perto.fala}", 4.0)
                 self.falas_ouvidas.add(self.perto.nome)
+                if self.perto.nome == "Tao Anchieta":
+                    self._pernoitar()
+                    return
+                if self.perto.nome == "O Estranho":
+                    self.loja = 0
+                    self.loja_aviso = "Escolha o que quer. Esc sai sem gastar."
+                    return
             elif self.avisar_tempo <= 0:
                 self._avisar("Ninguem por perto. Aproxime-se de alguem.", 2.4)
             return
@@ -310,7 +392,9 @@ class CityScene(Scene):
                 center=(int(self.posicao.x - self.camera.x + w // 2),
                         int(self.posicao.y - self.camera.y + h // 2))))
 
+        self._desenhar_loja(surface, w, h)
         self._desenhar_fala(surface, w, h)
+        self._desenhar_fogueira(surface)
         theme.text_tracked_at(surface, "ALDEIA", 17, (20, 20), theme.TEXT_DIM)
         self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
@@ -321,25 +405,29 @@ class CityScene(Scene):
         p = self._posicao_de(m)
         px = int(p.x + x_off)
         py = int(p.y + y_off)
-        # o corpo e um bloco com a cor do morador: e o bastante para
-        # dizer "tem alguem aqui" sem gastar arte num NPC que so fala
-        largura = max(6, self.tile // 3)
-        altura = max(10, self.tile // 2)
-        corpo = pygame.Rect(px - largura // 2, py - altura, largura, altura)
-        pygame.draw.rect(surface, m.cor, corpo)
-        pygame.draw.rect(surface, (28, 24, 22), corpo, 1)
-        # cabeca
-        pygame.draw.circle(
-            surface, m.cor,
-            (px, corpo.top - max(2, altura // 6)),
-            max(2, altura // 5),
-        )
+
+        # o desenho quando existe; o bloco colorido quando nao
+        arte = assets.carregar_morador(m.sprite, escala=assets.get_sprite_scale())
+        if arte is not None:
+            surface.blit(arte, arte.get_rect(midbottom=(px, py)))
+        else:
+            largura = max(6, self.tile // 3)
+            altura = max(10, self.tile // 2)
+            corpo = pygame.Rect(px - largura // 2, py - altura, largura, altura)
+            pygame.draw.rect(surface, m.cor, corpo)
+            pygame.draw.rect(surface, (28, 24, 22), corpo, 1)
+            pygame.draw.circle(
+                surface, m.cor,
+                (px, corpo.top - max(2, altura // 6)),
+                max(2, altura // 5),
+            )
+
         # piscada quando esta falando
         if m.falando > 0:
-            pygame.draw.circle(surface, theme.GOLD, (px, py - altura - 6), 3)
+            pygame.draw.circle(surface, theme.GOLD, (px, py - self.tile - 8), 3)
 
         theme.text_tracked_at(
-            surface, m.nome, 13, (px - 18, corpo.bottom + 3), theme.TEXT_DIM)
+            surface, m.nome, 13, (px - 18, py + 3), theme.TEXT_DIM)
 
     def _desenhar_fala(self, surface, w, h) -> None:
         if self.avisar_tempo <= 0 or not self.avisar:
@@ -368,3 +456,132 @@ class CityScene(Scene):
             surface, inv, (w // 2 - 165, h // 2 - 60),
             rodape="q ou esc fecha",
         )
+
+    def _colocar_fogueira(self) -> None:
+        """A fogueira da aldeia, perto do grupo de moradores.
+
+        E a primeira fogueira do jogo: quem sai correndo da masmorra
+        chega nela antes de qualquer outra, e e aqui que o jogador
+        descobre o que e descansar.
+        """
+        self.fogueira_pos = None
+        if self.fogueira is None:
+            return
+        centro = self.mapa.centro_da_sala(2) or self.mapa.entrada
+        for dx, dy in ((0, -3), (3, -2), (-3, -2), (0, -4)):
+            alvo = (centro[0] + dx, centro[1] + dy)
+            if self.mapa.andavel(*alvo):
+                self.fogueira_pos = pygame.Vector2(
+                    self.mapa.para_pixels(*alvo, self.tile)
+                )
+                return
+
+    def _perto_da_fogueira(self) -> bool:
+        if self.fogueira_pos is None:
+            return False
+        return self.fogueira_pos.distance_to(self.posicao) <= fogueira_mod.ALCANCE
+
+    def _descansar(self) -> None:
+        p = self.progresso
+        self.estado.descansar(fogueira_mod.POCOES_DO_DESCANSO)
+        p.itens["pocao"] = p.itens.get("pocao", 0) + fogueira_mod.POCOES_DO_DESCANSO
+        if self.fogueira is not None:
+            self.estado.fogueira = self.fogueira.chave
+        self.manager.ui_state["progresso"] = p
+        self.manager.salvar_progresso()
+        self._avisar("Voce descansou. Vida e pocoes repostas.", 3.2)
+
+    def _desenhar_fogueira(self, surface: pygame.Surface) -> None:
+        if self.fogueira_pos is None:
+            return
+        x = int(self.fogueira_pos.x - self.camera.x + self.size[0] // 2)
+        y = int(self.fogueira_pos.y - self.camera.y + self.size[1] // 2)
+        fogueira_mod.desenhar(surface, x, y, self.tile, self.time)
+        if self._perto_da_fogueira():
+            theme.text_tracked_at(
+                surface, "E para descansar", 13, (x - 40, y - self.tile - 6),
+                theme.GOLD)
+
+    # --- a taverna ---------------------------------------------------
+    def _pernoitar(self) -> None:
+        """Dorme na taverna: paga, e cura menos que a fogueira.
+
+        A fogueira e de graca e cura tudo. A taverna cobra e cura
+        menos. Se as duas fossem iguais, a fogueira seria de graca e
+        mais forte, e a taverna nao teria para que existir.
+        """
+        if self.estado.ouro < PRECO_DA_TAVERNA:
+            self._avisar(
+                f"Tao Anchieta: dorme qui com {PRECO_DA_TAVERNA} de moeda.",
+                3.4,
+            )
+            return
+        self.estado.ouro -= PRECO_DA_TAVERNA
+        curado = self.estado.curar(CURA_DA_TAVERNA)
+        self.manager.salvar_progresso()
+        self._avisar(
+            f"Voce dormiu. {curado} de vida de volta, "
+            f"pelo preco de {PRECO_DA_TAVERNA}.",
+            3.6,
+        )
+
+    # --- a loja do Estranho -------------------------------------------
+    def _tecla_da_loja(self, acoes) -> None:
+        lista = itens_mod.a_venda()
+        if not lista:
+            self.loja = None
+            return
+        if "voltar" in acoes:
+            self.loja = None
+            self.loja_aviso = ""
+            return
+        if "mover_cima" in acoes:
+            self.loja = (self.loja - 1) % len(lista)
+        elif "mover_baixo" in acoes:
+            self.loja = (self.loja + 1) % len(lista)
+        elif "interagir" in acoes or "confirmar" in acoes:
+            item = lista[self.loja]
+            inv = self.progresso.itens if self.progresso is not None else {}
+            deu, aviso = itens_mod.comprar(inv, self.estado.ouro, item.id)
+            if deu:
+                self.estado.ouro -= item.preco
+                self.manager.ui_state["progresso"] = self.progresso
+                self.manager.salvar_progresso()
+            self.loja_aviso = aviso
+
+    def _desenhar_loja(self, surface, w, h) -> None:
+        if self.loja is None:
+            return
+        lista = itens_mod.a_venda()
+        if not lista:
+            return
+        caixa = pygame.Rect(0, 0, min(400, w - 60), 74 + 30 * len(lista))
+        caixa.center = (w // 2, h // 2)
+        pygame.draw.rect(surface, theme.BACKGROUND, caixa.inflate(12, 12))
+        pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(12, 12), 1)
+        theme.text_tracked_at(
+            surface, "O ESTRANHO", 17, (caixa.x, caixa.y - 26), theme.GOLD)
+
+        for i, item in enumerate(lista):
+            y = caixa.y + i * 30
+            marcado = i == self.loja
+            cor = theme.GOLD if marcado else theme.TEXT
+            pygame.draw.rect(
+                surface, theme.BACKGROUND_SOFT,
+                pygame.Rect(caixa.x - 4, y - 4, caixa.width + 8, 28))
+            if marcado:
+                pygame.draw.rect(
+                    surface, theme.GOLD,
+                    pygame.Rect(caixa.x - 4, y - 4, 3, 28))
+            theme.text_tracked_at(
+                surface, item.linha_com_preco(), 15, (caixa.x + 4, y), cor)
+            theme.text_tracked_at(
+                surface, item.descricao, 12,
+                (caixa.x + 4, y + 16), theme.TEXT_DIM)
+
+        rodape = self.loja_aviso or (
+            f"enter compra   esc sai   voce tem {self.estado.ouro} de ouro"
+        )
+        theme.text_tracked_at(
+            surface, rodape, 13, (caixa.x, caixa.bottom + 10),
+            theme.GOLD if self.loja_aviso else theme.TEXT_DIM)

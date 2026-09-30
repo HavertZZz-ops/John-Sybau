@@ -760,6 +760,20 @@ def check_fps() -> None:
     )
 
 
+def check_refugio() -> None:
+    """Fogueira, taverna e mercador: tem de funcionar junto."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_refugio.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] fogueira, taverna e mercador:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] fogueira, taverna e mercador")
+
+
 def check_cidade() -> None:
     """A fuga da masmorra tem que levar a algum lugar, e esse lugar tem gente."""
     result = subprocess.run(
@@ -1506,6 +1520,8 @@ def main() -> int:
     check_itens()
     print()
     check_cidade()
+    print()
+    check_refugio()
     print()
     check_persistencia()
     print()

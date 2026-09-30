@@ -252,6 +252,41 @@ HERO_FPS = 6
 HERO_FPS_ESTADO = {
     "idle": 5, "walk": 8, "attack": 14, "hit": 12, "death": 8,
 }
+# onde ficam os desenhos dos moradores da aldeia
+MORADOR_DIR: Path = settings.SPRITES_DIR / "moradores"
+
+_MORADOR_CACHE: dict[tuple[str, int], pygame.Surface] = {}
+
+
+def carregar_morador(nome: str, escala: int = 2) -> pygame.Surface | None:
+    """Carrega o desenho de um morador, ampliado e em cache.
+
+    O morador e a mesma coisa andando e parado: ele nao tem animacao
+    propria, e um desenho parado e melhor do que um retangulo de
+    reserva. Se o arquivo nao existir, devolve None e a cena desenha o
+    bloco colorido, que e o que fazia antes de os sprites existirem.
+    """
+    if not MORADOR_DIR.is_dir():
+        return None
+    caminho = MORADOR_DIR / f"{nome}.png"
+    if not caminho.is_file():
+        return None
+    chave = (nome, escala)
+    pega = _MORADOR_CACHE.get(chave)
+    if pega is not None:
+        return pega
+    try:
+        imagem = _load_image(caminho)
+    except (pygame.error, OSError) as exc:
+        print(f"[assets] morador ausente: {caminho.name} ({exc})")
+        return None
+    alvo = (imagem.get_width() * escala, imagem.get_height() * escala)
+    if imagem.get_size() != alvo:
+        imagem = pygame.transform.scale(imagem, alvo)
+    _MORADOR_CACHE[chave] = imagem
+    return imagem
+
+
 def _medir_heroi() -> Tuple[int, int]:
     """Le do disco o tamanho de um quadro do heroi.
 

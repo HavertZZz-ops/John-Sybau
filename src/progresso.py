@@ -174,6 +174,16 @@ class Progresso:
             self.vencidas.append(numero)
             self.vencidas.sort()
 
+    def recompensa_por_vencer(self, numero: int) -> int:
+        """Quanto de ouro a sala paga. O chefe paga bem mais.
+
+        A moeda precisa vir de algum lugar, senao a loja do Estranho
+        fica como uma vitrine que ninguem pode comprar. A ultima sala
+        paga sete vezes mais que as outras, para a luta que ensina a
+        fugir tambem ser a que mais compensa.
+        """
+        return 150 if numero == len(SALAS) else 20 + numero * 15
+
     def fugir_do_chefe(self) -> None:
         self.chefe_fugiu = True
 
