@@ -252,6 +252,39 @@ HERO_FPS = 6
 HERO_FPS_ESTADO = {
     "idle": 5, "walk": 8, "attack": 14, "hit": 12, "death": 8,
 }
+CASA_DIR: Path = settings.SPRITES_DIR / "casas"
+
+_CASA_CACHE: dict[tuple[str, int], pygame.Surface] = {}
+
+
+def carregar_casa(nome: str, escala: int = 2) -> pygame.Surface | None:
+    """Desenha de um predio. A taverna e a casa do mercador.
+
+    Predio e o mesmo problema do morador, em tamanho maior: o desenho
+    vem do PixelLab, e se o arquivo nao existir a cena desenha um
+    volume de madeira para o lugar nao sumir.
+    """
+    if not CASA_DIR.is_dir():
+        return None
+    caminho = CASA_DIR / f"{nome}.png"
+    if not caminho.is_file():
+        return None
+    chave = (nome, escala)
+    pega = _CASA_CACHE.get(chave)
+    if pega is not None:
+        return pega
+    try:
+        imagem = _load_image(caminho)
+    except (pygame.error, OSError) as exc:
+        print(f"[assets] predio ausente: {caminho.name} ({exc})")
+        return None
+    alvo = (imagem.get_width() * escala, imagem.get_height() * escala)
+    if imagem.get_size() != alvo:
+        imagem = pygame.transform.scale(imagem, alvo)
+    _CASA_CACHE[chave] = imagem
+    return imagem
+
+
 # onde ficam os desenhos dos moradores da aldeia
 MORADOR_DIR: Path = settings.SPRITES_DIR / "moradores"
 

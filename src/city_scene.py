@@ -131,6 +131,19 @@ def _tile(chave: tuple, lado: int) -> pygame.Surface:
     return origem
 
 
+
+class Predio:
+    """Um predio da aldeia, e quem fica na porta dele."""
+
+    def __init__(self, sprite: str, dx: int, dy: int, quem: str = "") -> None:
+        self.sprite = sprite
+        self.dx = dx
+        self.dy = dy
+        # o morador que fica na porta deste predio
+        self.quem = quem
+        self.celula: tuple[int, int] | None = None
+
+
 class CityScene(Scene):
     """A cidadezinha, com os moradores locales."""
 
@@ -138,8 +151,12 @@ class CityScene(Scene):
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
+        # O mapa e maior que a tela de proposito. Numa tela 1280x720
+        # com tile de 32 cabem 40x22 celulas, e um mapa menor que isso
+        # deixa um mar de preto em volta, que da a impressao de lugar
+        # vazio em vez de aldeia.
         self.mapa: Mapa = gerar_mapa(
-            largura=44, altura=28, salas=4, semente=777
+            largura=58, altura=34, salas=5, semente=777
         )
         self._wang: wang.GradeWang | None = None
         self.progresso = manager.ui_state.get("progresso")
@@ -162,6 +179,13 @@ class CityScene(Scene):
         )
         self.fogueira_pos: pygame.Vector2 | None = None
         self._colocar_fogueira()
+        # Os predios ANTES dos moradores, nesta ordem exata. O
+        # taverneiro fica na porta da taverna, e a porta so existe
+        # depois que o predio foi colocado. Na ordem antiga a lista de
+        # portas chegava vazia e o dono da taverna acabava do outro
+        # lado da aldeia.
+        self.predios: list[Predio] = []
+        self._colocar_predios()
         self.moradores: list[Morador] = []
         self._posicionar_moradores()
         self.perto: Morador | None = None
@@ -183,8 +207,27 @@ class CityScene(Scene):
         """
         centro = self.mapa.centro_da_sala(2) or self.mapa.entrada
         MINIMO = 4  # celulas de distancia entre um morador e outro
-        lista = []
+        portas = {
+            p.quem: p.celula for p in getattr(self, "predios", [])
+            if p.quem and p.celula
+        }
         for m in MORADORES:
+            # quem tem predio fica NA PORTA dele. Sem isto o taverneiro
+            # ends up do outro lado da aldeia, e o jogador nao sabe
+            # que o dono da taverna e o dono da taverna.
+            if m.nome in portas:
+                px, py = portas[m.nome]
+                for dy in (4, 5, 3):
+                    for dx in (1, -1, 0, 2, -2):
+                        celula = (px + dx, py + dy)
+                        if self.mapa.andavel(*celula):
+                            m.celula = celula  # type: ignore[attr-defined]
+                            self.moradores.append(m)
+                            break
+                    if getattr(m, "celula", None) is not None:
+                        break
+                if getattr(m, "celula", None) is not None:
+                    continue
             alvo = None
             for raio in range(0, 10):
                 for dx in range(-raio, raio + 1):
@@ -382,6 +425,7 @@ class CityScene(Scene):
                     (x * self.tile + x_desenho, y * self.tile + y_desenho),
                 )
 
+        self._desenhar_predios(surface, w, h, x_desenho, y_desenho)
         for m in self.moradores:
             self._desenhar_morador(surface, m, w, h, x_desenho, y_desenho)
 
@@ -585,3 +629,82 @@ class CityScene(Scene):
         theme.text_tracked_at(
             surface, rodape, 13, (caixa.x, caixa.bottom + 10),
             theme.GOLD if self.loja_aviso else theme.TEXT_DIM)
+
+    # --- os predios ---------------------------------------------------
+    def _colocar_predios(self) -> None:
+        """Coloca a taverna longe da fogueira, e nao em cima dela.
+
+        O predio e grande: uns 4 tiles. Se ele cair em cima da
+        fogueira, o jogador ve o telhado e nao ve a brasa, e o lugar
+        seguro do jogo some atras da architecture.
+        """
+        self.predios = []
+        pedidos = (
+            Predio("taverna", -8, -4, quem="Tao Anchieta"),
+        )
+        centro = self.mapa.centro_da_sala(2) or self.mapa.entrada
+        for p in pedidos:
+            alvo = None
+            for raio in range(0, 14):
+                for dx in range(-raio, raio + 1):
+                    for dy in range(-raio, raio + 1):
+                        if max(abs(dx), abs(dy)) != raio:
+                            continue
+                        x = centro[0] + p.dx + dx
+                        y = centro[1] + p.dy + dy
+                        if not self._livre_para_predio(x, y):
+                            continue
+                        alvo = (x, y)
+                        break
+                    if alvo:
+                        break
+                if alvo:
+                    break
+            if alvo is None:
+                continue
+            p.celula = alvo
+            self.predios.append(p)
+
+    def _livre_para_predio(self, x: int, y: int) -> bool:
+        """Cabe um predio de 4x4 tiles aqui, longe da fogueira?"""
+        for dy in range(4):
+            for dx in range(4):
+                if not self.mapa.andavel(x + dx, y + dy):
+                    return False
+        if self.fogueira_pos is None:
+            return True
+        centro_predio = (x + 2, y + 2)
+        perto = pygame.Vector2(
+            self.mapa.para_pixels(*centro_predio, self.tile)
+        )
+        return perto.distance_to(self.fogueira_pos) > self.tile * 4
+
+    def _desenhar_predios(self, surface, w, h, x_off, y_off) -> None:
+        """O predio e desenhado DEPOIS do chao e ANTES dos moradores.
+
+        A ordem importa duas vezes. Depois do chao, senao o telhado
+        ficaria sob o calçamento. Antes dos moradores, senao o
+        taverneiro apareceria desenhado por cima do telhado em vez de
+        estar na porta.
+        """
+        for p in self.predios:
+            if p.celula is None:
+                continue
+            px = int(p.celula[0] * self.tile + x_off)
+            py = int(p.celula[1] * self.tile + y_off)
+            arte = assets.carregar_casa(
+                p.sprite, escala=max(1, assets.get_sprite_scale() - 1)
+            )
+            if arte is not None:
+                surface.blit(arte, arte.get_rect(topleft=(px, py)))
+            else:
+                # sem o desenho: um volume de madeira, para o lugar
+                # continuar sendo um lugar
+                lado = self.tile * 4
+                corpo = pygame.Rect(px, py, lado, lado - self.tile // 2)
+                pygame.draw.rect(surface, (74, 56, 42), corpo)
+                pygame.draw.rect(surface, (34, 26, 20), corpo, 2)
+                pygame.draw.rect(
+                    surface, (48, 36, 27),
+                    pygame.Rect(px + 4, py + 4, lado - 8, lado // 3),
+                )

@@ -78,50 +78,75 @@ def primeira_do_cenario(cenario: str) -> Fogueira | None:
 # A fogueira e desenhada por codigo: sao tres formas (cinza, lenha,
 # brasa) e nenhuma delas justifica esperar um arquivo de arte.
 
-_HALO_CACHE: dict[int, pygame.Surface] = {}
+_HALO_CACHE: dict[tuple[int, int], pygame.Surface] = {}
 
 
-def _halo(raio: int) -> pygame.Surface:
-    """Brilho alaranjado, com transparencia. O raio muda, a textura nao."""
-    if raio in _HALO_CACHE:
-        return _HALO_CACHE[raio]
+def _halo(raio: int, forca: int) -> pygame.Surface:
+    """Brilho alaranjado, com transparencia. O raio e a forca variam."""
+    chave = (raio, forca)
+    if chave in _HALO_CACHE:
+        return _HALO_CACHE[chave]
     tam = max(4, raio * 2)
     img = pygame.Surface((tam, tam), pygame.SRCALPHA)
     # circulo com alpha caindo para fora: um disco chapado nao parece
     # brilho, parece um adesivo laranja colado no chao
-    passos = 7
+    passos = 8
     for i in range(passos, 0, -1):
         t = i / passos
-        a = int(52 * (1.0 - t) + 10)
         pygame.draw.circle(
-            img, (232, 138, 58, a), (tam // 2, tam // 2),
-            int(raio * t), 0,
+            img, (232, 138, 58, int(forca * (1.0 - t) + forca * 0.18)),
+            (tam // 2, tam // 2), max(1, int(raio * t)), 0,
         )
-    _HALO_CACHE[raio] = img
+    _HALO_CACHE[chave] = img
     return img
 
 
 def desenhar(surface: pygame.Surface, x: int, y: int, lado: int, tempo: float) -> None:
-    """Fogueira com a base em (x, y), do tamanho `lado`."""
+    """Fogueira com a base em (x, y), do tamanho `lado`.
+
+    O desenho e grande de proposito. Na primeira versao a fogueira
+    ocupava um terco do lado do tile e ficava perdida no chao ao lado
+    dos moradores, que sao sprites de 64px: o lugar seguro do jogo
+    parecia um detalhe. A fogueira e o ponto de referencia da tela, e
+    precisa parecer.
+    """
     pulso = (math.sin(tempo * 2.4) + 1.0) / 2.0
+    alcance = lado * 1.15
 
-    raio = max(3, int(lado * (0.46 + 0.10 * pulso)))
-    surface.blit(_halo(raio), (x - raio, y - raio - lado // 3))
+    # --- brilho no chao, em tres camadas ---------------------------
+    for fator, alpha in ((1.0, 34), (0.66, 58), (0.36, 96)):
+        raio = max(4, int(alcance * fator * (0.92 + 0.10 * pulso)))
+        surface.blit(_halo(raio, alpha), (x - raio, y - raio - lado // 5))
 
-    # cinza
-    pygame.draw.circle(surface, (52, 45, 42), (x, y), max(2, lado // 4))
-    pygame.draw.circle(surface, (28, 24, 22), (x, y), max(2, lado // 4), 1)
-
-    # lenha cruzada
-    meia = max(2, lado // 5)
-    pygame.draw.line(surface, (98, 76, 58), (x - meia, y - 2),
-                     (x + meia, y + 2), 2)
-    pygame.draw.line(surface, (74, 57, 46), (x - meia, y + 2),
-                     (x + meia, y - 2), 2)
-
-    # brasa, com a chama piscando em tamanho
-    pygame.draw.circle(surface, (208, 88, 36), (x, y), max(1, lado // 9))
-    pygame.draw.circle(
-        surface, (242, 190, 96),
-        (x, y - 1), max(1, lado // 14 + int(pulso * 1.6)),
+    # --- pedestal de pedra -----------------------------------------
+    ped = max(3, lado // 3)
+    pygame.draw.ellipse(
+        surface, (54, 47, 44),
+        pygame.Rect(x - ped, y - ped // 3, ped * 2, ped + ped // 2),
     )
+    pygame.draw.ellipse(
+        surface, (26, 22, 20),
+        pygame.Rect(x - ped, y - ped // 3, ped * 2, ped + ped // 2), 1,
+    )
+
+    # --- lenha ------------------------------------------------------
+    comp = max(3, lado // 3)
+    esp = max(2, lado // 8)
+    pygame.draw.line(surface, (104, 80, 60), (x - comp, y - esp), (x + comp, y + esp), 3)
+    pygame.draw.line(surface, (78, 60, 47), (x - comp, y + esp), (x + comp, y - esp), 3)
+    pygame.draw.line(surface, (122, 96, 72), (x - comp, y - esp), (x + comp, y + esp), 1)
+
+    # --- brasas -----------------------------------------------------
+    pygame.draw.circle(surface, (196, 74, 30), (x, y), max(2, lado // 7))
+    pygame.draw.circle(surface, (236, 132, 48), (x, y), max(1, lado // 11))
+    # a chama: tres pontas de altura diferente, piscando
+    for i, (dx, alt) in enumerate(((-0.18, 0.30), (0.0, 0.46), (0.18, 0.26))):
+        h = int(lado * alt * (0.72 + 0.38 * ((pulso + i * 0.31) % 1.0)))
+        pygame.draw.polygon(
+            surface, (244, 196, 96) if i == 1 else (222, 140, 52),
+            [
+                (x + int(dx * lado), y - h),
+                (x + int(dx * lado) - max(1, lado // 14), y),
+                (x + int(dx * lado) + max(1, lado // 14), y),
+            ],
+        )
