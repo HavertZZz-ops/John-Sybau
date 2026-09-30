@@ -150,6 +150,16 @@ class Progresso:
     def tem_pocao(self) -> bool:
         return self.itens.get("pocao", 0) > 0
 
+    def precisa_de_pocao_no_chao(self) -> bool:
+        """A poção tem de voltar ao chão da sala?
+
+        True quando o jogador nao tem pocao na mao E ainda nao
+        venceu a sala dela. E o caso de ter usado a pocao, perdido a
+        luta e voltado: sem esta regra, a sala da pocao virava um beco
+        sem saida depois do primeiro uso.
+        """
+        return not self.tem_pocao() and not self.concluida(4)
+
     def usar_pocao(self) -> bool:
         if not self.tem_pocao():
             return False

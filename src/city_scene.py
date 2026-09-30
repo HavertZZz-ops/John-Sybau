@@ -13,10 +13,11 @@ from __future__ import annotations
 import pygame
 
 from . import assets, cenarios, settings, theme, wang
-from .dungeon_map import CHAO, Mapa, gerar_mapa
+from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
+from . import itens as itens_mod
 from .scene import Scene
 
-CENARIO_CIDADE = "cemiterio_wang"
+CENARIO_CIDADE = "aldeia_wang"
 
 TILE_BASE = 16
 MOVE_SPEED = 190.0
@@ -109,10 +110,12 @@ def _tile(chave: tuple, lado: int) -> pygame.Surface:
 class CityScene(Scene):
     """A cidadezinha, com os moradores locales."""
 
+    inventario_aberto = False
+
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self.mapa: Mapa = gerar_mapa(
-            largura=34, altura=22, salas=3, semente=777
+            largura=44, altura=28, salas=4, semente=777
         )
         self._wang: wang.GradeWang | None = None
         self.progresso = manager.ui_state.get("progresso")
@@ -209,6 +212,10 @@ class CityScene(Scene):
             self.manager.switch("road")
             return
 
+        if self.key(event, "inventario"):
+            self.inventario_aberto = not self.inventario_aberto
+            return
+
         if "interagir" in acoes:
             if self.perto is not None:
                 self.perto.falando = 4.0
@@ -281,7 +288,11 @@ class CityScene(Scene):
 
         for y in range(y0, y1):
             for x in range(x0, x1):
-                if self.mapa.em(x, y) != CHAO:
+                # `== PAREDE`, e nao `!= CHAO`. As celulas de enfeite
+                # (talha, entulho, laje) sao andaveis mas nao sao
+                # CHAO: com o teste antigo elas nao eram desenhadas e
+                # apareciam como quadrados PRETOS no meio do chao.
+                if self.mapa.em(x, y) == PAREDE:
                     continue
                 chave, _img = self._wang.tile_e_chave(x, y)
                 surface.blit(
@@ -301,6 +312,7 @@ class CityScene(Scene):
 
         self._desenhar_fala(surface, w, h)
         theme.text_tracked_at(surface, "ALDEIA", 17, (20, 20), theme.TEXT_DIM)
+        self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E para falar   esc para sair", 14,
             (w - 220, h - 24), theme.TEXT_DIM)
@@ -338,3 +350,21 @@ class CityScene(Scene):
         pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(10, 10), 1)
         theme.text_tracked_at(
             surface, self.avisar, 16, (caixa.x + 8, caixa.y), theme.TEXT)
+
+    def _desenhar_inventario_mundo(self, surface: pygame.Surface) -> None:
+        """O inventario andando pelo mapa.
+
+        So desenha. Fora da luta nao da para usar nada: uma pocao
+        curada com o jogo pausado nao tem efeito em ninguem, e fingir
+        que tem seria pior do que nao ter. Aqui o Q e o QUE, o E e o
+        QUE, e a luta e onde a pociao vira vida de verdade.
+        """
+        if not self.inventario_aberto:
+            return
+        w, h = self.size
+        p = self.manager.ui_state.get("progresso")
+        inv = dict(p.itens) if p is not None else {}
+        itens_mod.desenhar_inventario(
+            surface, inv, (w // 2 - 165, h // 2 - 60),
+            rodape="q ou esc fecha",
+        )

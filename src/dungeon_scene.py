@@ -22,6 +22,7 @@ from . import (  # noqa: I001
     wang,
 )
 from . import progresso as progresso_mod
+from . import itens as itens_mod
 from .area_title import AreaTitle
 from .dungeon_map import (
     PAREDE,
@@ -257,6 +258,8 @@ _TABELA_ATUAL: dict[tuple, pygame.Surface] = {}
 
 class DungeonScene(Scene):
     """Um cenario de masmorra, com autotiling de Wang."""
+
+    inventario_aberto = False
 
     def __init__(self, manager, cenario=None) -> None:
         super().__init__(manager)
@@ -529,6 +532,10 @@ class DungeonScene(Scene):
 
         if self.fase != "livre":
             return
+        if self.key(event, "inventario"):
+            self.inventario_aberto = not self.inventario_aberto
+            return
+
         if self.key(event, "interagir"):
             self._pegar_item()
             return
@@ -651,17 +658,25 @@ class DungeonScene(Scene):
         return
 
     def _colocar_item(self) -> None:
-        """Larga a pocao no chao da sala 4, uma vez so.
+        """Larga a pocao no chao da sala 4, conforme o que o jogador tem.
 
-        A sala da pocao e a 4, e a pocao fica no chao dela. Se o
-        jogador ja pegou, nao volta: recarregar a cena (a cada entrada
-        na masmorra) recolocaria a pocao e o jogador poderia
-        acumular poções infinitas.
+        Tres casos, e o terceiro e o que o jogador pediu:
+
+        - a sala ja foi vencida: a pocao nao volta mais, a aula acabou;
+        - o jogador ainda tem pocao na mao: nao precisa de outra no
+          chao. Sem esta checagem ele pegava, usava na luta, fugia e
+          voltava para pegar de novo, juntando poções sem limite;
+        - o jogador NAO tem pocao e a sala ainda nao foi vencida: a
+          pocao volta. E o caso de usar a pocao, perder a luta e
+          voltar. Sem isso a sala da pocao viraria um beco sem saida
+          depois do primeiro uso.
         """
+        self.inventario_aberto = False
         sala_item = 4
-        if self.progresso.concluida(sala_item):
+        if not self.progresso.precisa_de_pocao_no_chao():
             self.ensinar_item = False
             return
+
         centro = self.mapa.centro_da_sala(sala_item)
         if centro is None:
             return
@@ -866,6 +881,7 @@ class DungeonScene(Scene):
             self._desenhar_caixao(surface, (cx, cy), escala)
 
         self._desenhar_hud(surface)
+        self._desenhar_inventario_mundo(surface)
         if self.esqueleto is not None:
             self._desenhar_esqueleto(surface)
         self.titulo.draw(surface)
@@ -1183,4 +1199,22 @@ class DungeonScene(Scene):
         theme.text_tracked_at(
             surface, f"{voltar} voltar    {salvar} salvar", 15,
             (28, h - 26), theme.HAIRLINE, tracking=1,
+        )
+
+    def _desenhar_inventario_mundo(self, surface: pygame.Surface) -> None:
+        """O inventario andando pelo mapa.
+
+        So desenha. Fora da luta nao da para usar nada: uma pocao
+        curada com o jogo pausado nao tem efeito em ninguem, e fingir
+        que tem seria pior do que nao ter. Aqui o Q e o QUE, o E e o
+        QUE, e a luta e onde a pociao vira vida de verdade.
+        """
+        if not self.inventario_aberto:
+            return
+        w, h = self.size
+        p = self.manager.ui_state.get("progresso")
+        inv = dict(p.itens) if p is not None else {}
+        itens_mod.desenhar_inventario(
+            surface, inv, (w // 2 - 165, h // 2 - 60),
+            rodape="q ou esc fecha",
         )

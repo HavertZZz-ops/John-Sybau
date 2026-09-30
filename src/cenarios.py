@@ -49,6 +49,13 @@ CENARIOS: tuple[Cenario, ...] = (
         tem_caixao=False,
         semente=23,
     ),
+    Cenario(
+        "Aldeia",
+        "os moradores locais",
+        "aldeia_wang",
+        tem_caixao=False,
+        semente=31,
+    ),
 )
 
 POR_NOME = {c.nome.lower(): c for c in CENARIOS}

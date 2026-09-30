@@ -66,3 +66,49 @@ def rotulos(inventario: dict[str, int]) -> list[tuple[str, Item, int]]:
 
 def tem_usaveis(inventario: dict[str, int]) -> bool:
     return any(item.e_cura for _id, item, _qtd in rotulos(inventario))
+
+
+def desenhar_inventario(
+    surface,
+    inventario: dict[str, int],
+    posicao: tuple[int, int],
+    titulo: str = "ITENS",
+    rodape: str = "q ou esc fecha",
+) -> pygame.Rect:
+    """Desenha o inventario. Usado na luta e no mundo.
+
+    A funcao e a mesma nos dois lugares de proposito: o jogador que
+    aprendeu a ler o inventario na luta reencontra exatamente a mesma
+    coisa andando pelo mapa. Duas telas parecidas para o mesmo objeto
+    transforma a lista em coisa a se decifrar de novo.
+    """
+    from . import theme
+
+    linhas = rotulos(inventario)
+    largura = 330
+    altura = 66 + 30 * max(1, len(linhas))
+    caixa = pygame.Rect(0, 0, largura, altura)
+    caixa.topleft = posicao
+
+    pygame.draw.rect(surface, theme.BACKGROUND, caixa.inflate(12, 12))
+    pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(12, 12), 1)
+    theme.text_tracked_at(surface, titulo, 17, (caixa.x, caixa.y - 26), theme.GOLD)
+
+    if not linhas:
+        theme.text_tracked_at(
+            surface, "Voce nao carrega nada", 16, (caixa.x, caixa.y), theme.TEXT_DIM)
+    else:
+        for i, (item_id, item, qtd) in enumerate(linhas):
+            y = caixa.y + i * 30
+            pygame.draw.rect(
+                surface, theme.BACKGROUND_SOFT,
+                pygame.Rect(caixa.x - 4, y - 4, caixa.width + 8, 28))
+            theme.text_tracked_at(
+                surface, f"{item.nome} x{qtd}", 16, (caixa.x + 4, y), theme.TEXT)
+            theme.text_tracked_at(
+                surface, item.descricao, 12,
+                (caixa.x + 4, y + 16), theme.TEXT_DIM)
+
+    theme.text_tracked_at(
+        surface, rodape, 13, (caixa.x, caixa.bottom + 10), theme.TEXT_DIM)
+    return caixa

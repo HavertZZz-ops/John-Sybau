@@ -15,7 +15,8 @@ import random
 import pygame
 
 from . import assets, cenarios, settings, theme, wang
-from .dungeon_map import CHAO, Mapa, gerar_mapa
+from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
+from . import itens as itens_mod
 from .scene import Scene
 
 # o cenario que da o visual de fora. Reaproveita o tileset que ja
@@ -78,6 +79,8 @@ def _tile(chave: tuple, lado: int) -> pygame.Surface:
 class RoadScene(Scene):
     """O trecho de estrada entre a masmorra e a cidade."""
 
+    inventario_aberto = False
+
     def __init__(self, manager) -> None:
         super().__init__(manager)
         # um mapa aberto e largo: nao e uma masmorra, e um caminho
@@ -133,6 +136,10 @@ class RoadScene(Scene):
             self.manager.salvar_progresso()
             self.manager.switch("title")
             return
+        if self.key(event, "inventario"):
+            self.inventario_aberto = not self.inventario_aberto
+            return
+
         if "interagir" in acoes:
             # a estrada e o caminho para a aldeia. Sem isso a fuga da
             # masmorra levaria a um lugar sem saida, e a aldeia ficaria
@@ -195,7 +202,11 @@ class RoadScene(Scene):
 
         for y in range(y0, y1):
             for x in range(x0, x1):
-                if self.mapa.em(x, y) != CHAO:
+                # `== PAREDE`, e nao `!= CHAO`. As celulas de enfeite
+                # (talha, entulho, laje) sao andaveis mas nao sao
+                # CHAO: com o teste antigo elas nao eram desenhadas e
+                # apareciam como quadrados PRETOS no meio do chao.
+                if self.mapa.em(x, y) == PAREDE:
                     continue
                 chave, _img = self._wang.tile_e_chave(x, y)
                 surface.blit(
@@ -219,9 +230,28 @@ class RoadScene(Scene):
 
         theme.text_tracked_at(
             surface, "ESTRADA", 17, (20, 20), theme.TEXT_DIM)
+        self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E segue para a aldeia", 15,
             (w // 2 - 90, h - 44), theme.GOLD)
         theme.text_tracked_at(
             surface, "voltar para o menu", 14,
             (w - 190, h - 24), theme.TEXT_DIM)
+
+    def _desenhar_inventario_mundo(self, surface: pygame.Surface) -> None:
+        """O inventario andando pelo mapa.
+
+        So desenha. Fora da luta nao da para usar nada: uma pocao
+        curada com o jogo pausado nao tem efeito em ninguem, e fingir
+        que tem seria pior do que nao ter. Aqui o Q e o QUE, o E e o
+        QUE, e a luta e onde a pociao vira vida de verdade.
+        """
+        if not self.inventario_aberto:
+            return
+        w, h = self.size
+        p = self.manager.ui_state.get("progresso")
+        inv = dict(p.itens) if p is not None else {}
+        itens_mod.desenhar_inventario(
+            surface, inv, (w // 2 - 165, h // 2 - 60),
+            rodape="q ou esc fecha",
+        )

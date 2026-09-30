@@ -125,6 +125,44 @@ checa("interagir" in input_map.ACTION_LABELS
 sem_tecla = [a for a, _l, _g, teclas in input_map.ACTION_LIST if not teclas]
 checa(not sem_tecla, f"toda acao tem pelo menos uma tecla; sem: {sem_tecla}")
 
+# --- a tecla do inventario fora de combate -------------------------
+checa("inventario" in input_map.ACTION_LABELS,
+      f"existe a acao de inventario: {input_map.ACTION_LABELS.get('inventario')}")
+checa("q" in input_map.DEFAULT_BINDINGS.get("inventario", ()),
+      f"a tecla do inventario e Q: {input_map.DEFAULT_BINDINGS.get('inventario')}")
+checa("interagir" in input_map.ACTION_LABELS
+      and input_map.ACTION_GROUPS["interagir"] == input_map.GROUP_TECLAS,
+      "interagir aparece na aba de teclas das opcoes")
+checa("q" in input_map.PRETTY, f"Q tem nome agradavel: {input_map.PRETTY.get('q')}")
+
+# --- a pocao volta ao chao quando precisa --------------------------
+# Este e o caso que o jogador pediu: usar a pocao, perder a luta e
+# voltar tem de trazer a pocao de novo, senao a sala vira beco sem
+# saida depois do primeiro uso.
+nova = Progresso()
+checa(nova.precisa_de_pocao_no_chao(),
+      "sem pocao e sem vencer a sala 4: a pocao esta no chao")
+nova.itens["pocao"] = 1
+checa(not nova.precisa_de_pocao_no_chao(),
+      "com pocao na mao: nao precisa de outra no chao")
+nova.itens.pop("pocao")
+nova.vencer(4)
+checa(not nova.precisa_de_pocao_no_chao(),
+      "sala 4 ja vencida: a pocao nao volta mais")
+
+# o caminho real: usou, perdeu a luta, voltou
+caminho = Progresso()
+caminho.itens["pocao"] = 1
+caminho.usar_pocao()          # usou na luta
+checa(not caminho.tem_pocao(), "usou a pocao: nao tem mais nenhuma")
+checa(caminho.precisa_de_pocao_no_chao(),
+      "usou e perdeu: a pocao volta ao chao da sala")
+caminho.itens["pocao"] = 1
+caminho.vencer(4)
+caminho.usar_pocao()
+checa(not caminho.precisa_de_pocao_no_chao(),
+      "usou e VENCEU a sala: a pocao nao volta")
+
 if FALHOU:
     print(f"\n{FALHOU} verificacao(oes) falharam")
     sys.exit(1)
