@@ -325,10 +325,19 @@ def set_window_frame(frame: tuple[int, int]) -> None:
     (o espaco da escala em tela cheia, ou uma janela nao recriada), e
     aceitar o numero faria o filtro rebaixar a resolucao do jogador sem
     ele pedir. Errar para o padrao e melhor do que persistir o errado.
+
+    (0, 0) tambem e descartado, e este era o mais importante: e o que
+    `measure_window_frame` devolve em tela cheia. Aceitava, apagava o
+    cache, e o limite voltava a ser o desktop inteiro (1536x960) em vez
+    do desktop menos a moldura (1520x921). Com o limite errado, o
+    filtro oferecia 1536x960 como tamanho de JANELA, e essa janela nao
+    cabe: 1536 mais 16 de bordura da 1552 numa area de 1536.
     """
     global _FRAME_CACHE
     if frame[0] < 0 or frame[1] < 0:
         return
+    if frame[0] == 0 and frame[1] == 0:
+        return  # tela cheia: nao existe moldura para medir
     if frame[0] > 64 or frame[1] > 96:
         return
     _FRAME_CACHE = (int(frame[0]), int(frame[1]))

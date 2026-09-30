@@ -1237,6 +1237,86 @@ def check_tutorial_na_masmorra() -> None:
     print("[ok] encostar no esqueleto abre o combate")
 
 
+def check_clamp_por_modo() -> None:
+    """O desktop cru vale em tela cheia e NAO vale em janela.
+
+    Este e o bug do video. Em tela cheia a lista oferece o desktop
+    inteiro (1536x960 aqui), porque em tela cheia ele e valido. Ao
+    desligar a tela cheia esse mesmo numero vira JANELA: 1536 mais a
+    moldura de 16 da 1552, numa area de trabalho de 1536. A janela
+    ficava 16px para fora e 39px para baixo.
+
+    O clamp so rodava na inicializacao do jogo, entao a troca de modo
+    passava direto. E so aparecia DEPOIS de uma ida e volta de tela
+    cheia, nunca na primeira vez.
+    """
+    from src.config import Config, usable_window_size
+
+    desktop = pygame.display.get_desktop_sizes()
+    if not desktop:
+        print("[aviso] pygame nao inicializado; pulando o clamp por modo")
+        pygame.init()
+        desktop = pygame.display.get_desktop_sizes()
+    if not desktop:
+        print("[aviso] sem informacao de tela; pulando o clamp por modo")
+        return
+    largura, altura = max(desktop)
+
+    # em tela cheia o desktop cru e uma opcao legitima
+    cheia = Config(width=largura, height=altura, fullscreen=True).clamp()
+    assert cheia.size == (largura, altura), (
+        f"em tela cheia o desktop {largura}x{altura} foi barrado: {cheia.size}"
+    )
+    print(f"[ok] em tela cheia o desktop {largura}x{altura} e aceito")
+
+    # em janela o MESMO tamanho tem de ser rebaixado ate caber
+    janela = Config(width=largura, height=altura, fullscreen=False).clamp()
+    limite = usable_window_size()
+    assert janela.size != (largura, altura), (
+        "o desktop cru passou como tamanho de janela; a janela nao cabe"
+    )
+    assert janela.width <= limite[0] and janela.height <= limite[1], (
+        f"rebaixou para {janela.size}, que ainda passa do limite {limite}"
+    )
+    # e o rebaixado tem de caber COM a moldura, que e o ponto do defeito
+    if limite:
+        assert janela.width + 16 <= largura and janela.height + 39 <= altura, (
+            f"{janela.size} mais a moldura ainda nao cabe em {largura}x{altura}"
+        )
+    print(
+        f"[ok] em janela o desktop vira {janela.size} "
+        f"(limite {limite}), e com a moldura cabe"
+    )
+
+
+def check_moldura_zero_nao_apaga_cache() -> None:
+    """(0, 0) e o que a medicao devolve em tela cheia.
+
+    Se esse zero entrasse no cache, o limite voltava a ser o desktop
+    inteiro e o filtro oferecia um tamanho de janela que nao cabe.
+    """
+    import src.config as cfg
+
+    original = cfg._FRAME_CACHE
+    try:
+        cfg.set_window_frame((16, 39))
+        assert cfg._FRAME_CACHE == (16, 39), cfg._FRAME_CACHE
+        cfg.set_window_frame((0, 0))  # o que tela cheia devolve
+        assert cfg._FRAME_CACHE == (16, 39), (
+            f"o zero de tela cheia apagou a moldura: {cfg._FRAME_CACHE}"
+        )
+        print("[ok] a medicao (0,0) de tela cheia nao apaga a moldura")
+
+        # e uma medicao absurda tambem e descartada
+        cfg.set_window_frame((256, 240))
+        assert cfg._FRAME_CACHE == (16, 39), (
+            f"aceitou moldura absurda: {cfg._FRAME_CACHE}"
+        )
+        print("[ok] medicao absurda e descartada, sem apagar a moldura")
+    finally:
+        cfg._FRAME_CACHE = original
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -1267,6 +1347,10 @@ def main() -> int:
     check_native_resolution()
     print()
     check_fullscreen_cycle()
+    print()
+    check_clamp_por_modo()
+    print()
+    check_moldura_zero_nao_apaga_cache()
     print()
     check_dungeon_map()
     print()

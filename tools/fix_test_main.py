@@ -28,6 +28,8 @@ ORDEM = [
     "check_bindings_persist",
     "check_native_resolution",
     "check_fullscreen_cycle",
+    "check_clamp_por_modo",
+    "check_moldura_zero_nao_apaga_cache",
     "check_dungeon_map",
     "check_dungeon_intro",
     "check_dungeon_collision",

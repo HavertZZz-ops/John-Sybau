@@ -278,12 +278,26 @@ def main(frame_limit: int | None = None) -> int:
     # filtro de resolucao oferecer o maior tamanho que cabe de verdade.
     # Em tela cheia a medicao devolve (0,0) e nao sobrescreve o cache.
     set_window_frame(measure_window_frame(config.fullscreen))
+    # a janela inicial tambem entra no log. Sem isso o arquivo comeca
+    # so na primeira troca, e nao da para dizer o que o jogo fez ao
+    # abrir: um problema que so acontece na partida recem-inaugurada
+    # ficava invisivel.
+    _log(
+        f"janela recriada: {window.get_size()} "
+        f"moldura={measure_window_frame(config.fullscreen)} "
+        f"fullscreen={config.fullscreen} cena=inicial"
+    )
     # a resolucao pode ter vindo de um config salvo antes da moldura
-    # ser conhecida; agora que ela e, revalida e recria se preciso
+    # ser conhecida; agora que ela e, revalida e recria se precisa
     if config.clamp().size != (window.get_width(), window.get_height()):
         window = create_window(config)
         center_window(window, config.fullscreen)
         set_window_frame(measure_window_frame(config.fullscreen))
+        _log(
+            f"janela recriada: {window.get_size()} "
+            f"moldura={measure_window_frame(config.fullscreen)} "
+            f"fullscreen={config.fullscreen} cena=inicial"
+        )
 
     clock = pygame.time.Clock()
     refresh = native_refresh_rate()

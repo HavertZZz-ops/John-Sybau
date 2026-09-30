@@ -35,12 +35,48 @@ class SceneManager:
             return
 
         from . import assets
-        from .main import center_window, create_window
+
+        # Tudo importado aqui, no topo do metodo. O `_log` era
+        # importado no MEIO, depois do clamp; usar antes do import
+        # quebrava com NameError, e o crash acontecia ANTES de
+        # `create_window`: a janela nao era recriada e o config.json
+        # ficava salvo com o tamanho estourado. O proximo boot abria
+        # com a janela fora da tela, e parecia que o defeito se grudava.
+        from .config import logical_desktop_size, usable_window_size
+        from .main import _log, center_window, create_window
 
         assets.set_sprite_scale(self.config.sprite_scale)
 
         if not rebuild:
             return
+
+        # O clamp ANTES de criar a janela, e o que faltava.
+        #
+        # Em tela cheia a lista oferece o desktop cru, 1536x960 aqui,
+        # porque em tela cheia ele e valido. Ao desligar a tela cheia
+        # esse mesmo tamanho vira JANELA: 1536 de largura mais 16 de
+        # moldura da 1552, que nao cabe numa area de 1536. A janela
+        # ficava 16px estourando para fora e 39px para baixo, com a
+        # borda do sistema em volta.
+        #
+        # O clamp so rodava na inicializacao do jogo, entao essa troca
+        # passava direto. E o bug que o teste de estresse achou: ele so
+        # aparece DEPOIS de uma troca de modo, nunca na primeira vez.
+        from .config import logical_desktop_size, usable_window_size
+
+        antes = self.config.size
+        limite = (
+            logical_desktop_size()
+            if self.config.fullscreen
+            else usable_window_size()
+        )
+        desktop = logical_desktop_size()
+        self.config.clamp()
+        _log(
+            f"clamp: {antes} -> {self.config.size} "
+            f"limite={limite} desktop={desktop} "
+            f"tela_cheia={self.config.fullscreen}"
+        )
 
         self.window = create_window(self.config)
         import pygame
