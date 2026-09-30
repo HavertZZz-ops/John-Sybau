@@ -43,6 +43,15 @@ class Scene:
     def on_exit(self) -> None:
         """Chamado uma vez quando a cena deixa de ser a ativa."""
 
+    def save_ui_state(self) -> None:
+        """Guarda no manager o estado de UI que deve sobreviver.
+
+        Chamado antes de a cena ser recriada por causa de uma troca de
+        janela (resolucao ou tela cheia). Sem isso, o jogador ajusta a
+        resolucao e a cena volta com o cursor no topo da lista, longe
+        da linha que ele acabou de mexer.
+        """
+
     # atualizacao ---------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
         """Processa um evento de entrada (teclado, mouse, etc)."""

@@ -98,6 +98,99 @@ def check_config_roundtrip() -> None:
     path.unlink()
 
 
+def check_fullscreen_cycle() -> None:
+    """Alternar tela cheia e janela nao pode corromper o filtro.
+
+    Este e o bug do "a resolucao buga quando meço tela cheia":
+
+    - a moldura da janela so existe em modo janela. Em tela cheia a
+      diferenca entre o retangulo da janela e a superficie de desenho
+      e o espaco da ESCALA, nao a borda (num 1280x720 em tela cheia
+      num desktop de 1536x960 dava 256x240).
+    - esse numero falso era guardado no cache e usado pelo filtro de
+      resolucao como se fosse borda. O limite caia para 1280x720, as
+      resolucoes maiores sumiam do menu, e ao voltar para janela o
+      cache continuava corrompido e rebaixava a resolucao escolhida.
+    """
+    import pygame
+
+    from src.config import usable_window_size
+    from src.main import measure_window_frame, set_window_frame
+
+    config = Config()
+    antes = config.available_resolutions()
+
+    # em tela cheia a moldura medida e (0,0): nada de borda
+    assert measure_window_frame(fullscreen=True) == (0, 0), "moldura em tela cheia"
+
+    # um numero absurdo de moldura (o espaco da escala) e descartado,
+    # para nao entrar no filtro como se fosse borda
+    set_window_frame((256, 240))
+    limite = usable_window_size()
+    config = Config()
+    maior = max(config.available_resolutions())
+    assert maior[0] <= limite[0] and maior[1] <= limite[1], (
+        f"moldura absurda entrou no filtro: maior {maior}, limite {limite}"
+    )
+    print("[ok] moldura absurda e descartada")
+
+    # e o ciclo completo nao pode mudar a lista de resolucoes
+    set_window_frame((16, 39))
+    config = Config()
+    janela = config.available_resolutions()
+
+    config.fullscreen = True
+    cheia = config.available_resolutions()
+
+    config.fullscreen = False
+    volta = config.available_resolutions()
+
+    assert janela == volta, (
+        f"voltar de tela cheia mudou a lista: {janela} -> {volta}"
+    )
+    assert len(cheia) >= len(janela), (
+        f"tela cheia oferece menos que janela: {cheia} vs {janela}"
+    )
+    print(
+        f"[ok] ciclo tela cheia mantem resolucoes "
+        f"(janela={len(janela)} tela_cheia={len(cheia)})"
+    )
+
+
+def check_dynamic_resolution_persists() -> None:
+    """A maior resolucao que cabe precisa sobreviver ao config.
+
+    Ela nunca esta em RESOLUTION_CHOICES: entra em tempo de execucao,
+    conforme a tela da maquina. Se o clamp exigir pertencer a lista
+    estatica, o config salvo com ela volta a 1280x720 na abertura, e o
+    jogador nunca ve a escolha pegar. Era esse o bug de persistencia.
+    """
+    path = ROOT / "_test_config_res.json"
+    limit = usable_window_size_for_test()
+    if not limit:
+        print("[aviso] tela desconhecida; pulando persistencia de resolucao")
+        return
+
+    config = Config(width=limit[0], height=limit[1])
+    assert config.size in config.available_resolutions(), (
+        f"a maior que cabe {limit} nao esta disponivel"
+    )
+    config.save(path)
+    loaded = Config.load(path)
+    assert loaded.size == limit, (
+        f"a resolucao maxima nao sobreviveu ao config: "
+        f"salvo {limit}, voltou {loaded.size}"
+    )
+    print(f"[ok] resolucao maxima {limit[0]}x{limit[1]} sobrevive ao config")
+    path.unlink()
+
+
+def usable_window_size_for_test() -> tuple[int, int] | None:
+    from src.config import usable_window_size
+
+    return usable_window_size()
+
+
 def check_all_resolutions() -> None:
     """Cria a janela em todas as resolucoes e desenha cada cena."""
     from src.scene_manager import SceneManager
@@ -693,6 +786,11 @@ def main() -> int:
     check_bindings_persist()
     print()
     check_native_resolution()
+    print()
+    check_fullscreen_cycle()
+    print()
+    check_dynamic_resolution_persists()
+    print()
     print()
     check_rebinding_in_options()
     print()

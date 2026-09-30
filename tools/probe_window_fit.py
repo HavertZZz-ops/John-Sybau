@@ -24,7 +24,12 @@ user32 = ctypes.windll.user32
 
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
-SC = {"DOWN": (0x28, 0x50), "ENTER": (0x0D, 0x1C), "RIGHT": (0x27, 0x4D)}
+SC = {
+    "DOWN": (0x28, 0x50),
+    "UP": (0x26, 0x48),
+    "ENTER": (0x0D, 0x1C),
+    "RIGHT": (0x27, 0x4D),
+}
 
 
 class RECT(ctypes.Structure):
@@ -134,6 +139,54 @@ def main() -> int:
         tap(hwnd, "RIGHT")
         time.sleep(0.8)
         check(f"troca {i + 1}")
+
+    # --- ida e volta na tela cheia ---------------------------------
+    # Este e o teste que reproduz o bug de "a resolucao buga quando meco
+    # tela cheia". Duas coisas quebravam juntas:
+    #
+    # 1. em tela cheia nao existe moldura, e a diferenca entre a janela
+    #    e a superficie vira o ESPACO DA ESCALA. Medida e guardada como
+    #    se fosse borda, ela encolhia o filtro de resolucao.
+    # 2. o primeiro set_mode depois de sair de tela cheia nao aplica o
+    #    tamanho novo: a janela ficava com a geometria antiga, maior que
+    #    a tela, e a moldura saia dobrada (32x78 em vez de 16x39). Cada
+    #    viagem piorava o numero, ate a janela nao caber na tela.
+    #
+    # Aqui a tela cheia e alternada de verdade e a janela e medida de
+    # fora, entao um modo so nao passa se a geometria estiver certa.
+    print("\nindo e voltando da tela cheia:")
+    for _ in range(3):
+        tap(hwnd, "DOWN")  # Resolucao -> Escala -> FPS -> Tela cheia
+    time.sleep(0.3)
+
+    # o cursor TEM de continuar em "Tela cheia" depois de cada troca:
+    # recriar a janela devolvia o jogador ao topo da lista, e era isso
+    # que fazia a resolucao "parar de responder" logo depois
+    for i in range(2):
+        tap(hwnd, "RIGHT")  # liga a tela cheia
+        time.sleep(1.0)
+        check(f"cheia {i + 1}a")
+        tap(hwnd, "RIGHT")  # volta para janela
+        time.sleep(1.0)
+        check(f"volta {i + 1}a")
+
+    # volta para a linha da resolucao e confirma que ela ainda troca
+    print("\nresolucao ainda troca depois das voltas:")
+    for _ in range(3):
+        tap(hwnd, "UP")
+    time.sleep(0.3)
+    antes = window_rect(find_window())
+    tap(hwnd, "RIGHT")
+    time.sleep(0.9)
+    depois = window_rect(find_window())
+    mudou = (antes.r - antes.l) != (depois.r - depois.l)
+    print(f"  janela antes {antes.r - antes.l}x{antes.b - antes.t}, "
+          f"depois {depois.r - depois.l}x{depois.b - depois.t}, mudou={mudou}")
+    if not mudou:
+        failures.append(
+            "depois das voltas a resolucao parou de responder"
+        )
+    check("pos-volta")
 
     proc.terminate()
     time.sleep(0.3)

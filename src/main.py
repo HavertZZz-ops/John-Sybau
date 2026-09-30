@@ -88,8 +88,27 @@ def create_window(config: Config) -> pygame.Surface:
     SCALED depende de aceleracao. Onde ela nao existe (driver virtual
     de teste), o pygame reclama e a janela nao abre, entao ha um
     caminho sem SCALED.
+
+    Sair de tela cheia tem uma peculiaridade do Windows que vale um
+    paragrafo: o primeiro `set_mode` depois de deixar o fullscreen NAO
+    aplica o tamanho novo. A janela fica com a geometria antiga, maior
+    que a tela, e a moldura medida sai dobrada (32x78 em vez de 16x39).
+    Medindo isso, o filtro de resolucao passa a oferecer um tamanho
+    menor a cada viagem de ida e volta, ate a janela nao caber.
+
+    A segunda chamada no mesmo tamanho assenta a janela, verificado:
+    1552x999 -> 1536x960 e a moldura volta a 16x39. Por isso, so quando
+    se sai de tela cheia, `set_mode` e chamado duas vezes.
     """
     size = config.size
+
+    # o modo ATUAL, antes de trocar: e dele que se descobre se ha uma
+    # transicao de tela cheia para janela
+    was_fullscreen = False
+    if pygame.display.get_init():
+        current = pygame.display.get_surface()
+        if current is not None:
+            was_fullscreen = bool(current.get_flags() & pygame.FULLSCREEN)
 
     # SCALED exige aceleracao. Em driver virtual (teste headless) ela
     # nao existe, e o proprio pygame avisa "no fast renderer available".
@@ -100,22 +119,30 @@ def create_window(config: Config) -> pygame.Surface:
         if config.fullscreen:
             flags |= pygame.FULLSCREEN
         try:
-            return pygame.display.set_mode(
+            surface = pygame.display.set_mode(
                 size, flags, vsync=1 if config.vsync else 0
             )
         except pygame.error as exc:
             # SCALED|FULLSCREEN falha em alguns drivers; tenta sem vsync
             try:
-                return pygame.display.set_mode(size, flags)
+                surface = pygame.display.set_mode(size, flags)
             except pygame.error:
                 print(f"[video] SCALED indisponivel ({exc}), usando modo padrao")
+                surface = pygame.display.set_mode(size, flags)
+
+        # saindo de tela cheia: a segunda chamada assenta o tamanho
+        if was_fullscreen and not config.fullscreen:
+            surface = pygame.display.set_mode(
+                size, flags, vsync=1 if config.vsync else 0
+            )
+        return surface
     else:
         flags = pygame.FULLSCREEN if config.fullscreen else 0
 
     return pygame.display.set_mode(size, flags)
 
 
-def measure_window_frame() -> tuple[int, int]:
+def measure_window_frame(fullscreen: bool = False) -> tuple[int, int]:
     """Quanto a moldura da janela soma em cada dimensao.
 
     Mede a diferenca entre a janela de fora e a superficie de desenho.
@@ -123,7 +150,20 @@ def measure_window_frame() -> tuple[int, int]:
     fora, ou seja 16px de lado e 39px de altura (a barra de titulo).
     Sem descontar isso, a maior resolucao oferecida estourava a tela
     embaixo.
+
+    EM TELA CHEIA ISSO NAO E MEDIDO, E (0, 0). Nao existe moldura: a
+    janela ocupa a tela inteira e a diferenca entre o retangulo da
+    janela e a superficie de desenho e oEspaco da escala, nao a borda.
+    Medir ali dava 256x240 num 1280x720 em tela cheia num desktop de
+    1536x960 (1536-1280, 960-720), e esse numero falso entrava no
+    filtro de resolucao como se fosse borda. O filtro passava a
+    oferecer so 1280x720, ou seja: entrar em tela cheia sumia com as
+    resolucoes maiores, e sair de volta deixava um cache corrompido
+    que rebaixava a resolucao do jogador na proxima troca.
     """
+    if fullscreen:
+        return (0, 0)
+
     if os.environ.get("SDL_VIDEODRIVER") == "dummy":
         return (16, 39)  # valor tipico, so para o layout do teste
 
@@ -150,7 +190,7 @@ def measure_window_frame() -> tuple[int, int]:
         return (16, 39)
 
 
-def center_window(surface: pygame.Surface) -> None:
+def center_window(surface: pygame.Surface, fullscreen: bool = False) -> None:
     """Centraliza a janela na area de trabalho.
 
     O Windows posiciona a janela onde ela estava quando recreate, e o
@@ -158,7 +198,13 @@ def center_window(surface: pygame.Surface) -> None:
     janela sai da tela pela direita e por baixo: a segunda troca
     media endedava em 2090x1360 num desktop de 1920x1200, e parte do
     menu ficava fora do alcance do mouse.
+
+    Em tela cheia nao ha o que centralizar: a janela ja cobre a tela
+    toda. Mover ela com SetWindowPos e perda de tempo, e em alguns
+    drivers mexe no modo exclusivo.
     """
+    if fullscreen:
+        return
     if os.environ.get("SDL_VIDEODRIVER") == "dummy":
         return  # teste headless: nao existe janela de verdade
 
@@ -188,8 +234,9 @@ def center_window(surface: pygame.Surface) -> None:
         # a comparacao e com a janela DE FORA, nao com a superficie:
         # a moldura soma ~16px de lado e ~39px de altura, entao uma
         # superficie que cabe na tela pode virar uma janela estourada
-        outer_w = surface.get_width() + measure_window_frame()[0]
-        outer_h = surface.get_height() + measure_window_frame()[1]
+        frame = measure_window_frame()
+        outer_w = surface.get_width() + frame[0]
+        outer_h = surface.get_height() + frame[1]
 
         if outer_w >= work_w or outer_h >= work_h:
             # maior que a area util: cola no canto, sem centralizar
@@ -222,16 +269,17 @@ def main(frame_limit: int | None = None) -> int:
 
     window = create_window(config)
     pygame.display.set_caption(settings.GAME_TITLE)
-    center_window(window)
+    center_window(window, config.fullscreen)
     # medir a moldura depois da janela existir, e o que permite ao
-    # filtro de resolucao oferecer o maior tamanho que cabe de verdade
-    set_window_frame(measure_window_frame())
+    # filtro de resolucao oferecer o maior tamanho que cabe de verdade.
+    # Em tela cheia a medicao devolve (0,0) e nao sobrescreve o cache.
+    set_window_frame(measure_window_frame(config.fullscreen))
     # a resolucao pode ter vindo de um config salvo antes da moldura
     # ser conhecida; agora que ela e, revalida e recria se preciso
     if config.clamp().size != (window.get_width(), window.get_height()):
         window = create_window(config)
-        center_window(window)
-        set_window_frame(measure_window_frame())
+        center_window(window, config.fullscreen)
+        set_window_frame(measure_window_frame(config.fullscreen))
 
     clock = pygame.time.Clock()
     refresh = native_refresh_rate()

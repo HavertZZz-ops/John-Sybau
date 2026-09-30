@@ -47,19 +47,25 @@ class SceneManager:
 
         pygame.display.set_caption("John Sybau")
         # centralizar toda vez: sem isso o offset da posicao antiga
-        # acumula a cada troca e a janela sai da tela
-        center_window(self.window)
+        # acumula a cada troca e a janela sai da tela. Em tela cheia
+        # nao ha janela para centralizar.
+        center_window(self.window, self.config.fullscreen)
 
         from .main import _log, measure_window_frame, set_window_frame
 
-        set_window_frame(measure_window_frame())
+        # o modo vem junto: medir a moldura em tela cheia leria o espaco
+        # da escala em vez da borda e corromperia o filtro de resolucao
+        moldura = measure_window_frame(self.config.fullscreen)
+        set_window_frame(moldura)
         _log(
-            f"janova recriada: {self.window.get_size()} "
-            f"moldura={measure_window_frame()} "
+            f"janela recriada: {self.window.get_size()} "
+            f"moldura={moldura} fullscreen={self.config.fullscreen} "
             f"cena={self._active_name}"
         )
 
         if self._active_name is not None:
+            # o cursor e a aba sobreviveram a recriacao da janela
+            self._active.save_ui_state()
             name = self._active_name
             self._active = None
             self.switch(name)

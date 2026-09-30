@@ -53,20 +53,40 @@ class Config:
     def clamp(self) -> "Config":
         """Ajusta valores invalidos, para um arquivo corrompido nao
         quebrar o jogo na hora de abrir."""
-        if (self.width, self.height) not in RESOLUTION_CHOICES:
-            self.width, self.height = settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT
-        # resolucao maior que a tela nao vira padrao aqui: em tela
-        # cheia ela e valida, e filtrar aqui quebraria o fullscreen
+        self.width = int(self.width or settings.SCREEN_WIDTH)
+        self.height = int(self.height or settings.SCREEN_HEIGHT)
+        # coerido antes de ser lido abaixo: o limite depende do modo
+        self.fullscreen = bool(self.fullscreen)
+
+        # invertido (altura maior que largura) e config invalido: corrige
         if self.height > self.width:
             self.width, self.height = self.height, self.width
 
-        # a resolucao salva precisa caber na tela; senao o jogo abre com
-        # a janela estourando a lateral e o menu fica inacessivel
-        limit = usable_window_size()
-        if limit and not self.fullscreen:
+        # a resolucao precisa caber na tela; senao o jogo abre com a
+        # janela estourando a lateral e o menu fica inacessivel.
+        # O limite depende do modo: em janela a moldura e descontada, em
+        # tela cheia nao ha moldura e a superficie e escalada pelo SDL.
+        limit = (
+            logical_desktop_size()
+            if self.fullscreen
+            else usable_window_size()
+        )
+        if limit:
             if self.width > limit[0] or self.height > limit[1]:
                 self.width = min(self.width, limit[0])
                 self.height = min(self.height, limit[1])
+
+        # so agora, depois de ajustar para o que cabe, se ainda assim o
+        # tamanho estiver absurdo (0x0, arquivo lixo), volta ao padrao.
+        # A checagem NAO e contra RESOLUTION_CHOICES: essa lista e so a
+        # oferta do menu. A maior resolucao que cabe no desktop e
+        # adicionada em tempo de execucao e nunca esta na lista, entao
+        # exigir pertencer a ela fazia o config salvo com ela voltar
+        # para 1280x720 em toda abertura. Era esse o bug de "a
+        # resolucao nao fica": a escolha era aceita, salva, e descartada
+        # na hora de carregar.
+        if self.width < 640 or self.height < 360:
+            self.width, self.height = settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT
 
         if self.sprite_scale not in SCALE_CHOICES:
             self.sprite_scale = 3
@@ -88,13 +108,27 @@ class Config:
         vez de oferecer e falhar, a lista e filtrada. A resolucao atual
         sempre entra, senao um config antigo com 2560x1440 ficaria
         travado sem como sair.
+
+        O limite depende do modo, e essa distincao e o que mantem a
+        tela cheia funcionando:
+
+        - em JANELA a resolucao e o tamanho da janela, que tem borda e
+          barra de titulo. O desktop e descontado de uma moldura
+          medida de verdade.
+        - em TELA CHEIA a resolucao e a superficie de desenho, que o
+          SDL escala para a tela inteira. Nao ha moldura, e usar uma
+          aqui faria o filtro oferecer resolucoes pequenas demais.
         """
         from .config import usable_window_size
 
         # o limite e o desktop MENOS a moldura: uma janela do tamanho
         # exato do desktop ultrapassa a tela, porque a borda e a barra
         # de titulo somam alguns pixels de cada lado
-        limit = usable_window_size()
+        limit = (
+            logical_desktop_size()
+            if self.fullscreen
+            else usable_window_size()
+        )
         if not limit:
             return RESOLUTION_CHOICES
 
@@ -283,10 +317,21 @@ _FRAME_CACHE: tuple[int, int] | None = None
 
 
 def set_window_frame(frame: tuple[int, int]) -> None:
-    """Guarda a moldura medida, para o filtro de resolucao usar."""
+    """Guarda a moldura medida, para o filtro de resolucao usar.
+
+    Medicao absurda e descartada. Uma borda de janela tem poucos pixels:
+    16 de lado e 39 de altura no Windows com barra de titulo. Se a
+    medicao vier muito maior, nao e moldura, e sim alguma outra coisa
+    (o espaco da escala em tela cheia, ou uma janela nao recriada), e
+    aceitar o numero faria o filtro rebaixar a resolucao do jogador sem
+    ele pedir. Errar para o padrao e melhor do que persistir o errado.
+    """
     global _FRAME_CACHE
-    if frame[0] >= 0 and frame[1] >= 0:
-        _FRAME_CACHE = (int(frame[0]), int(frame[1]))
+    if frame[0] < 0 or frame[1] < 0:
+        return
+    if frame[0] > 64 or frame[1] > 96:
+        return
+    _FRAME_CACHE = (int(frame[0]), int(frame[1]))
 
 
 def logical_desktop_size() -> tuple[int, int] | None:

@@ -74,8 +74,15 @@ class OptionsScreen(Scene):
         self.config: Config = manager.config
         self.controls: InputMap = manager.controls
         self.group = input_map.GROUP_VIDEO
-        self.index = 0
-        self.slot = 0
+
+        # o cursor e a aba voltam de onde estavam quando a janela e
+        # recriada (troca de resolucao ou de tela cheia): sem isso, mexer
+        # na resolucao devolvia o jogador para o topo da lista
+        saved = manager.ui_state.get("options", {})
+        self.index = int(saved.get("index", 0))
+        self.slot = int(saved.get("slot", 0))
+        if saved.get("group") in (input_map.GROUP_VIDEO, input_map.GROUP_TECLAS):
+            self.group = saved["group"]
 
         self.notice: str | None = None
         self.notice_timer = 0.0
@@ -87,10 +94,19 @@ class OptionsScreen(Scene):
 
         self.options: List[Option] = self._build_video()
         self.rows: List[Tuple[str, str, list[str]]] = []
+        self.rows: List[Tuple[str, str, list[str]]] = []
         # caixas desenhadas no ultimo frame, para o clique acertar
         self._hit_video: List[pygame.Rect] = []
         self._hit_tabs: List[Tuple[pygame.Rect, str]] = []
         self._hit_slots: List[pygame.Rect] = []
+
+    def save_ui_state(self) -> None:
+        """Guarda cursor e aba para sobreviver a recriacao da janela."""
+        self.manager.ui_state["options"] = {
+            "index": self.index,
+            "slot": self.slot,
+            "group": self.group,
+        }
 
     # --- construcao das linhas -------------------------------------
     def _resolution_hint(self) -> str:
