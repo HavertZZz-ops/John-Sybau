@@ -108,10 +108,8 @@ def main(frame_limit: int | None = None) -> int:
         manager.update(dt)
         manager.draw()
 
-        if config.show_fps:
-            draw_fps(
-                manager.window, clock.get_fps(), refresh, config.fps_limit, config
-            )
+        # o contador fica sempre ligado, sem opcao
+        draw_fps(manager.window, clock.get_fps(), refresh, config.fps_limit)
 
         pygame.display.flip()
         running = manager.running
@@ -130,45 +128,26 @@ def draw_fps(
     fps: float,
     refresh: int | None,
     limit: int,
-    config: Config,
 ) -> None:
-    """Descontra FPS e resolucao no canto da tela.
+    """Descontra o FPS no canto superior direito.
 
-    Mostrar a resolucao real da superficie responde a duvida mais
-    comum nas opcoes: "mudei a resolucao, mas o jogo continua igual?".
-    A janela e a superficie podem diferir em modo fullscreen, entao
-    o que aparece e o que esta sendo desenhado agora.
+    Uma linha so. A resolucao nao entra aqui: o titulo da janela ja
+    mostra o tamanho, e repetir na tela so polui. O contador e sempre
+    visivel, nao existe opcao de ligar e desligar.
     """
-    width, height = surface.get_size()
-    fps_line = f"{fps:5.1f} fps"
+    text = f"{fps:5.1f} fps"
     if refresh:
-        fps_line += f"  ({refresh}Hz)"
+        text += f"  {refresh}Hz"
     if limit:
-        fps_line += f"  / {limit}"
-
-    res_line = f"{width} x {height}"
-    if config.fullscreen:
-        res_line += " (tela cheia)"
-
-    lines = [fps_line, res_line]
-
-    if config.fullscreen:
-        lines[1] += " (tela cheia)"
+        text += f" / {limit}"
 
     font = assets.get_font(18)
-    height_px = len(lines) * 20 + 6
-    box = pygame.Rect(0, 0, 0, 0)
-    rendered = [font.render(line, True, settings.COLOR_TEXT_DIM) for line in lines]
-    width_px = max(r.get_width() for r in rendered) + 16
-
-    box.size = (width_px, height_px)
+    rendered = font.render(text, True, settings.COLOR_TEXT_DIM)
+    box = rendered.get_rect()
+    box.inflate_ip(14, 6)
     box.topright = (surface.get_width() - 4, 4)
     surface.fill(settings.COLOR_PANEL, box)
-
-    y = box.top + 3
-    for item in rendered:
-        surface.blit(item, item.get_rect(midleft=(box.left + 8, y + item.get_height() // 2)))
-        y += 20
+    surface.blit(rendered, rendered.get_rect(center=box.center))
 
 
 if __name__ == "__main__":

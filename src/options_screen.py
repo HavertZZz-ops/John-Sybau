@@ -1,9 +1,19 @@
-"""Tela de opcoes: video (resolucao, tela cheia, vsync, FPS) e teclas.
+"""Tela de configuracoes: video (resolucao, tela cheia, vsync, escala, FPS)
+e teclas.
 
-A tela tem duas abas. As mudancas de video entram em vigor na hora; as
-de tecla pedem que o jogador aperte a tecla nova, e o jogo espera o
-`enter` ser solto antes de gravar, senao o proprio `enter` que abriu a
-captura viraria a tecla gravada.
+Duas decisoes importantes:
+
+1. A navegacao desta tela NAO usa o mapa de teclas do jogador. Setas,
+   WASD, enter e esc sao sempre as mesmas coisas aqui. Se a navegacao
+   usasse as teclas remapeadas, trocar a tecla de "voltar" deixaria o
+   jogador preso nesta tela sem como sair.
+
+2. Tudo funciona com o mouse tambem. Setar opcoes e um trabalho de
+   cliques, e ficar so no teclado atrapalha.
+
+As mudancas de video entram em vigor na hora. Para gravar uma tecla, o
+jogo espera a tecla de confirmacao ser solta antes de aceitar a nova,
+senao o proprio enter que abriu a captura viraria a tecla gravada.
 """
 from __future__ import annotations
 
@@ -12,29 +22,33 @@ from typing import Callable, List, Optional, Tuple
 import pygame
 
 from . import assets, input_map, settings
-from .config import RESOLUTION_CHOICES, Config, logical_desktop_size
+from .config import RESOLUTION_CHOICES, Config, logical_desktop_size, native_refresh_rate
 from .input_map import InputMap
 from .scene import Scene
 from .ui import draw_panel, draw_text
 
-PANEL_W = 560
-ROW_H = 42
-TABS_H = 40
-MENU_H = 44
+# teclas fixas desta tela: nao vem do mapa do jogador, para nunca ficar
+# sem como navegar
+NAV_UP = (pygame.K_UP, pygame.K_w)
+NAV_DOWN = (pygame.K_DOWN, pygame.K_s)
+NAV_LEFT = (pygame.K_LEFT, pygame.K_a)
+NAV_RIGHT = (pygame.K_RIGHT, pygame.K_d)
+NAV_CONFIRM = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
+NAV_BACK = (pygame.K_ESCAPE,)
+NAV_CLEAR = (pygame.K_BACKSPACE, pygame.K_DELETE)
+NAV_RESET = (pygame.K_r,)
 
-# teclas que cancelam a captura sem gravar
-CANCEL_KEY = pygame.K_ESCAPE
-# teclas de confirmacao dentro da propria tela de opcoes
-SAVE_KEY = pygame.K_RETURN
-RESET_KEY = pygame.K_r
+SLOTS_PER_ACTION = 3
+MIN_PANEL_W = 520
+ROW_GAP = 6
 
 
 def _fps_label(value: int) -> str:
-    return "sem limite" if value == 0 else f"{value}"
+    return "sem limite" if value == 0 else str(value)
 
 
 class Option:
-    """Linha de opcao: rotulo, valor atual e como alterar."""
+    """Linha de opcao: rotulo, valor atual, e como alterar."""
 
     def __init__(
         self,
@@ -57,54 +71,50 @@ class OptionsScreen(Scene):
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self.config: Config = manager.config
-        self.controls = manager.controls
-        # a aba e a linha escolhidas vivem no manager, nao aqui: esta
-        # cena e recriada a cada entrada, e o menu precisa continuar
-        # onde o jogador parou
-        saved = manager.ui_state.setdefault(
-            "options", {"group": input_map.GROUP_VIDEO, "index": 0, "slot": 0}
-        )
-        self.group = str(saved.get("group", input_map.GROUP_VIDEO))
-        self.index = int(saved.get("index", 0))  # type: ignore[arg-type]
-        self.slot = int(saved.get("slot", 0))  # type: ignore[arg-type]
+        self.controls: InputMap = manager.controls
+        self.group = input_map.GROUP_VIDEO
+        self.index = 0
+        self.slot = 0
+
         self.notice: str | None = None
         self.notice_timer = 0.0
         self._needs_rebuild = False
 
-        # captura de tecla: enquanto True, o proximo KEYDOWN e gravado
         self._capturing: Optional[str] = None
         self._awaiting_release = False
-        self._capture_msg = ""
 
         self.options: List[Option] = self._build_video()
         self.rows: List[Tuple[str, str, list[str]]] = []
+        # caixas desenhadas no ultimo frame, para o clique acertar
+        self._hit_video: List[pygame.Rect] = []
+        self._hit_tabs: List[Tuple[pygame.Rect, str]] = []
+        self._hit_slots: List[pygame.Rect] = []
 
+    # --- construcao das linhas -------------------------------------
     def _resolution_hint(self) -> str:
-        """Explica por que so algumas resolucoes aparecem."""
         desktop = logical_desktop_size()
         if not desktop:
             return "esquerda/direita"
-        total = len(RESOLUTION_CHOICES)
-        shown = len(self.config.available_resolutions())
-        if shown >= total:
+        offered = len(self.config.available_resolutions())
+        if offered >= len(RESOLUTION_CHOICES):
             return "esquerda/direita"
         return (
             f"sua tela e {desktop[0]}x{desktop[1]}; "
             f"resolucoes maiores ficariam cortadas"
         )
 
-    # --- construcao das linhas -------------------------------------
     def _build_video(self) -> List[Option]:
         config = self.config
+        refresh = native_refresh_rate()
 
         def set_resolution(delta: int) -> bool:
             config.cycle_resolution(delta)
-            return True  # recria a janela
+            return True
 
         def set_scale(delta: int) -> bool:
             config.cycle_scale(delta)
             assets.set_sprite_scale(config.sprite_scale)
-            return True
+            return False
 
         def set_fps(delta: int) -> bool:
             config.cycle_fps(delta)
@@ -117,12 +127,15 @@ class OptionsScreen(Scene):
 
             return inner
 
+        vsync_hint = "liga o travamento com o monitor; evita rasgo"
+        if refresh:
+            vsync_hint += f" (seu monitor: {refresh}Hz)"
+
         return [
             Option(
                 "resolucao", "Resolucao",
                 lambda: f"{config.width} x {config.height}",
-                set_resolution,
-                hint=self._resolution_hint(),
+                set_resolution, hint=self._resolution_hint(),
             ),
             Option(
                 "escala", "Escala dos sprites",
@@ -134,20 +147,19 @@ class OptionsScreen(Scene):
                 lambda: _fps_label(config.fps_limit),
                 set_fps, hint="esquerda/direita",
             ),
-            Option("fullscreen", "Tela cheia",
-                   lambda: "sim" if config.fullscreen else "nao",
-                   toggle("fullscreen"), hint="enter para alternar"),
-            Option("vsync", "Vsync",
-                   lambda: "sim" if config.vsync else "nao",
-                   toggle("vsync"),
-                   hint="reduz rasgo de imagem; recria a janela"),
-            Option("show_fps", "Mostrar FPS",
-                   lambda: "sim" if config.show_fps else "nao",
-                   toggle("show_fps"), hint="enter para alternar"),
+            Option(
+                "fullscreen", "Tela cheia",
+                lambda: "sim" if config.fullscreen else "nao",
+                toggle("fullscreen"), hint="enter para alternar",
+            ),
+            Option(
+                "vsync", "Vsync",
+                lambda: "sim" if config.vsync else "nao",
+                toggle("vsync"), hint=vsync_hint,
+            ),
         ]
 
     def _build_keys(self) -> None:
-        """Lista de (acao, rotulo, teclas) da aba de teclas."""
         self.rows = [
             (action, input_map.ACTION_LABELS[action], self.controls.keys(action))
             for action in input_map.actions_in(input_map.GROUP_TECLAS)
@@ -161,15 +173,42 @@ class OptionsScreen(Scene):
         self.options = self._build_video()
         self._build_keys()
         self.index = min(self.index, max(0, self._current_count() - 1))
+        self.slot = min(self.slot, SLOTS_PER_ACTION - 1)
         self._capturing = None
         self._awaiting_release = False
 
-    def on_exit(self) -> None:
-        self.manager.ui_state["options"] = {
-            "group": self.group,
-            "index": self.index,
-            "slot": self.slot,
-        }
+    # --- layout ----------------------------------------------------
+    def _layout(self) -> dict:
+        """Medidas do painel, derivadas do tamanho da janela."""
+        w, h = self.size
+        count = max(1, self._current_count())
+
+        # o painel e sempre centralizado e nunca mais largo que a tela
+        max_w = int(w * 0.92)
+        min_w = min(MIN_PANEL_W, max_w)
+        if self.group == input_map.GROUP_TECLAS:
+            # 3 slots + rotulo: precisa de mais espaco que a aba de video
+            ideal = int(w * 0.62)
+        else:
+            ideal = int(w * 0.42)
+        panel_w = max(min_w, min(ideal, max_w))
+
+        top = int(h * 0.20)
+        bottom_reserved = int(h * 0.16)
+        available = max(120, h - top - bottom_reserved)
+        row_h = max(24, min(44, (available - 40) // count))
+        panel_h = row_h * count + 40
+
+        # o painel e centralizado no espaco entre as abas e o rodape,
+        # para nao ficar colado no titulo com a tela toda vazia embaixo
+        space_top = int(h * 0.18)
+        space_bottom = int(h * 0.18)
+        center_y = (space_top + (h - space_bottom)) // 2
+
+        panel = pygame.Rect(0, center_y - panel_h // 2, panel_w, panel_h)
+        panel.centerx = w // 2
+
+        return {"panel": panel, "row_h": row_h, "row_top": panel.top + 14}
 
     # entrada -------------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -177,63 +216,41 @@ class OptionsScreen(Scene):
             self._awaiting_release = False
             return
 
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self._click(event.pos)
+            return
+
         if event.type != pygame.KEYDOWN:
             return
 
-        # captura tem prioridade sobre tudo
         if self._capturing is not None:
             self._handle_capture(event)
             return
 
-        up = self.controls.pressed(event.key, "mover_cima")
-        down = self.controls.pressed(event.key, "mover_baixo")
-        left = self.controls.pressed(event.key, "mover_esquerda")
-        right = self.controls.pressed(event.key, "mover_direita")
-        confirm = self.controls.pressed(event.key, "confirmar")
-        back = self.controls.pressed(event.key, "voltar")
-        restore = self.controls.pressed(event.key, "restaurar")
-
-        if self.group == input_map.GROUP_TECLAS:
-            # TAB troca de aba, sem depender das teclas remapeaveis
-            if event.key == pygame.K_TAB:
-                self._switch_tab()
-                return
-            if up:
-                self._move(-1)
-            elif down:
-                self._move(1)
-            elif left:
-                self.slot = max(0, self.slot - 1)
-            elif right:
-                self.slot = min(2, self.slot + 1)
-            elif confirm:
-                self._start_capture()
-            elif event.key == pygame.K_BACKSPACE:
-                self._clear_slot()
-            elif back:
-                self._apply()
-                self.manager.switch("title")
-            elif restore:
-                self._reset_keys()
-            return
-
-        if event.key == pygame.K_TAB:
-            self._switch_tab()
-        elif up:
+        key = event.key
+        if key in NAV_CONFIRM:
+            self._activate()
+        elif key in NAV_UP:
             self._move(-1)
-        elif down:
+        elif key in NAV_DOWN:
             self._move(1)
-        elif left:
-            self._adjust(-1)
-        elif right:
-            self._adjust(1)
-        elif confirm:
-            self._adjust(1)
-        elif restore:
-            self._reset()
-        elif back:
+        elif key in NAV_LEFT:
+            self._left()
+        elif key in NAV_RIGHT:
+            self._right()
+        elif key in NAV_CLEAR:
+            if self.group == input_map.GROUP_TECLAS:
+                self._clear_slot()
+        elif key in NAV_RESET:
+            if self.group == input_map.GROUP_TECLAS:
+                self._reset_action()
+            else:
+                self._reset_all()
+        elif key in NAV_BACK:
             self._apply()
             self.manager.switch("title")
+        elif key == pygame.K_TAB:
+            self._switch_tab()
 
     def _switch_tab(self) -> None:
         self.group = (
@@ -249,16 +266,70 @@ class OptionsScreen(Scene):
         if count:
             self.index = (self.index + delta) % count
 
+    def _left(self) -> None:
+        if self.group == input_map.GROUP_TECLAS:
+            self.slot = max(0, self.slot - 1)
+        else:
+            self._adjust(-1)
+
+    def _right(self) -> None:
+        if self.group == input_map.GROUP_TECLAS:
+            self.slot = min(SLOTS_PER_ACTION - 1, self.slot + 1)
+        else:
+            self._adjust(1)
+
+    def _click(self, pos: Tuple[int, int]) -> None:
+        for rect, group in self._hit_tabs:
+            if rect.collidepoint(pos):
+                if group != self.group:
+                    self._switch_tab()
+                return
+
+        if self.group == input_map.GROUP_VIDEO:
+            for i, rect in enumerate(self._hit_video):
+                if rect.collidepoint(pos):
+                    if i == self.index:
+                        self._adjust(1)
+                    else:
+                        self.index = i
+                    return
+            return
+
+        for i, rect in enumerate(self._hit_slots):
+            if not rect.collidepoint(pos):
+                continue
+            row, slot = divmod(i, SLOTS_PER_ACTION)
+            if row != self.index or slot != self.slot:
+                self.index, self.slot = row, slot
+                return
+            self._activate()
+            return
+
+        # clique na linha, fora das caixas: so move a selecao
+        for i, rect in enumerate(self._hit_video):
+            if rect.collidepoint(pos):
+                self.index = i
+                return
+
+    def _activate(self) -> None:
+        if self.group == input_map.GROUP_VIDEO:
+            self._adjust(1)
+        else:
+            self._start_capture()
+
     # --- aba de video ----------------------------------------------
     def _adjust(self, delta: int) -> None:
-        if self.group != input_map.GROUP_VIDEO or not self.options:
+        if not self.options:
             return
         option = self.options[self.index]
         if option.adjust(delta):
             self._needs_rebuild = True
-            self._apply()
+            self._apply(silent=True)
+        else:
+            self._apply(silent=True)
+        self._show(f"{option.label}: {option.read()}")
 
-    def _reset(self) -> None:
+    def _reset_all(self) -> None:
         fresh = Config().clamp()
         self.config.copy_from(fresh)
         self.controls.reset()
@@ -266,8 +337,9 @@ class OptionsScreen(Scene):
         assets.set_sprite_scale(self.config.sprite_scale)
         self._needs_rebuild = True
         self.options = self._build_video()
-        self._apply()  # _apply sincroniza config.bindings a partir do mapa
-        self._show("padroes restaurados")
+        self.index = 0
+        self._apply()
+        self._show("tudo restaurado para o padrao")
 
     # --- aba de teclas ---------------------------------------------
     def _current_action(self) -> Optional[str]:
@@ -280,19 +352,11 @@ class OptionsScreen(Scene):
         if action is None:
             return
         self._capturing = action
-        # espera soltar o enter: se gravasse no KEYDOWN, o proprio
-        # enter que abriu a captura viraria a tecla gravada
+        # espera soltar a tecla: sem isso, o enter que abriu a captura
+        # seria gravado como a tecla nova
         self._awaiting_release = True
-        self._capture_msg = "solte a tecla para confirmar"
 
     def _handle_capture(self, event: pygame.event.Event) -> None:
-        # ESC cancela em qualquer momento da captura
-        if event.key == CANCEL_KEY and not self._awaiting_release:
-            action = self._capturing
-            self._capturing = None
-            self._show("captura cancelada" if action else "")
-            return
-
         if self._awaiting_release:
             return
 
@@ -301,6 +365,12 @@ class OptionsScreen(Scene):
         if action is None:
             return
 
+        if event.key in NAV_BACK:
+            self._show("captura cancelada")
+            return
+        if event.key in (pygame.K_TAB, pygame.K_LALT, pygame.K_RALT):
+            self._show("essa tecla e reservada para navegar nesta tela")
+            return
         if not input_map.is_bindable(event.key):
             self._show("essa tecla nao pode ser usada")
             return
@@ -309,57 +379,55 @@ class OptionsScreen(Scene):
         shared = [a for a in self.controls.conflicts(name) if a != action]
         self.controls.assign(action, self.slot, name)
         self._build_keys()
-        self._apply()
+        self._apply(silent=True)
 
+        label = input_map.ACTION_LABELS.get(action, action)
         if shared:
             nomes = ", ".join(input_map.ACTION_LABELS.get(a, a) for a in shared)
-            self._show(f"'{name}' tambem usada em: {nomes}")
+            self._show(f"{label}: '{name}'  (tambem em {nomes})")
         else:
-            self._show(f"'{name}' gravada")
+            self._show(f"{label}: '{name}' gravada")
 
     def _clear_slot(self) -> None:
         action = self._current_action()
         if action is None:
             return
+        label = input_map.ACTION_LABELS.get(action, action)
         if self.controls.clear_slot(action, self.slot):
             self._build_keys()
-            self._apply()
-            self._show("tecla removida")
+            self._apply(silent=True)
+            self._show(f"{label}: slot {self.slot + 1} vazado")
         else:
             self._show("cada acao precisa de ao menos uma tecla")
 
-    def _reset_keys(self) -> None:
+    def _reset_action(self) -> None:
         action = self._current_action()
-        if action is not None:
-            self.controls.reset_action(action)
-            self._show(f"{input_map.ACTION_LABELS[action]} restaurada")
-        else:
-            self.controls.reset()
-            self._show("todas as teclas restauradas")
+        if action is None:
+            return
+        self.controls.reset_action(action)
         self._build_keys()
-        self._apply()
+        self._apply(silent=True)
+        self._show(f"{input_map.ACTION_LABELS[action]} restaurada")
 
     # --- aplicacao -------------------------------------------------
-    def _apply(self) -> None:
+    def _apply(self, silent: bool = False) -> None:
         """Salva e, se preciso, recria a janela.
 
         O `InputMap` vivo e o `config.bindings` sao coisas separadas: o
         remapeamento acontece no mapa, e o arquivo guarda o dicionario.
         Sem copiar um no outro aqui, a tela mostra a tecla nova mas o
-        config.json continua vazio e o remapeamento se perde ao fechar
-        o jogo.
+        config.json continua vazio e o remapeamento se perde ao fechar.
         """
         self.config.sync_from_input_map(self.controls)
         self.config.save()
         self.manager.apply_config(rebuild=self._needs_rebuild)
         self._needs_rebuild = False
-        if self.manager.window.get_size() != self.size:
-            self.options = self._build_video()
-        self._show("configuracoes salvas")
+        if not silent:
+            self._show("configuracoes salvas")
 
     def _show(self, message: str) -> None:
         self.notice = message or None
-        self.notice_timer = 2.5
+        self.notice_timer = 3.0
 
     # atualizacao ---------------------------------------------------
     def update(self, dt: float) -> None:
@@ -374,173 +442,149 @@ class OptionsScreen(Scene):
         w, h = self.size
         center_x = w // 2
 
-        draw_text(surface, "OPCOES", 40, (center_x, 44), settings.COLOR_ACCENT)
+        draw_text(
+            surface, "CONFIGURACOES", max(26, int(h * 0.055)),
+            (center_x, int(h * 0.075)), settings.COLOR_ACCENT,
+        )
         self._draw_tabs(surface, center_x)
-        self._draw_panel(surface, center_x)
-        self._draw_hint(surface, center_x, h)
+        if self.group == input_map.GROUP_VIDEO:
+            self._draw_video_rows(surface)
+        else:
+            self._draw_key_rows(surface)
+        self._draw_footer(surface, center_x, h)
 
     def _draw_tabs(self, surface: pygame.Surface, center_x: int) -> None:
         tabs = (("Video", input_map.GROUP_VIDEO), ("Teclas", input_map.GROUP_TECLAS))
-        width = 150
+        width = 170
+        height = max(26, int(self.size[1] * 0.042))
         x = center_x - width
+        self._hit_tabs = []
         for label, group in tabs:
-            rect = pygame.Rect(x, 74, width - 8, TABS_H - 8)
+            rect = pygame.Rect(x, int(self.size[1] * 0.12), width - 10, height)
             active = group == self.group
             draw_panel(
-                surface,
-                rect,
+                surface, rect,
                 color=settings.COLOR_PANEL_LIGHT if active else settings.COLOR_PANEL,
                 border_color=settings.COLOR_ACCENT if active else settings.COLOR_PANEL_LIGHT,
                 border_width=2,
             )
             draw_text(
-                surface, label, 22, rect.center,
+                surface, label, max(16, int(height * 0.5)), rect.center,
                 settings.COLOR_ACCENT if active else settings.COLOR_TEXT_DIM,
             )
+            self._hit_tabs.append((rect, group))
             x += width
 
-    def _draw_panel(self, surface: pygame.Surface, center_x: int) -> None:
-        if self.group == input_map.GROUP_VIDEO:
-            self._draw_video_rows(surface, center_x)
-        else:
-            self._draw_key_rows(surface, center_x)
-
-    def _draw_video_rows(self, surface: pygame.Surface, center_x: int) -> None:
+    def _draw_video_rows(self, surface: pygame.Surface) -> None:
         rows = self.options
-        panel = self._panel_rect(len(rows))
+        lay = self._layout()
+        panel = lay["panel"]
+        row_h = lay["row_h"]
+        font = max(16, int(row_h * 0.52))
+
         draw_panel(
             surface, panel, color=settings.COLOR_PANEL,
             border_color=settings.COLOR_PANEL_LIGHT,
         )
 
-        y = panel.top + 14
+        y = lay["row_top"]
+        self._hit_video = []
         for i, option in enumerate(rows):
+            rect = pygame.Rect(panel.left + 10, y, panel.width - 20, row_h)
+            self._hit_video.append(rect)
             selected = i == self.index
             if selected:
-                row_rect = pygame.Rect(panel.left + 8, y - 2, panel.width - 16, ROW_H - 4)
-                draw_panel(surface, row_rect, color=settings.COLOR_PANEL_LIGHT, radius=4)
+                draw_panel(surface, rect, color=settings.COLOR_PANEL_LIGHT, radius=4)
 
             color = settings.COLOR_ACCENT if selected else settings.COLOR_TEXT
-            draw_text(surface, option.label, 22, (panel.left + 34, y + ROW_H // 2 - 2), color, center=False)
             value = option.read()
+            draw_text(surface, option.label, font, (rect.left + 12, rect.centery), color, center=False)
             draw_text(
-                surface, f"< {value} >" if selected else value, 22,
-                (panel.right - 34, y + ROW_H // 2 - 2), color, center=False,
+                surface, f"< {value} >" if selected else value, font,
+                (rect.right - 12, rect.centery), color, center=False,
             )
-            y += ROW_H
+            y += row_h
 
-        self._draw_menu(surface, panel, "enter  salvar      R  restaurar padroes      esc  voltar")
-
-    def _panel_rect(self, count: int) -> pygame.Rect:
-        """Retangulo do painel, dimensionado para caber na janela.
-
-        A altura vem do numero de linhas, mas nao pode passar da faixa
-        disponivel: com 9 acoes, um painel alto demais cobria o rodape
-        e a dica embaixo dele.
-        """
-        wanted = count * ROW_H + MENU_H + 28
-        w, h = self.size
-        available = int(h * 0.62)  # entre o titulo e a dica
-        panel = pygame.Rect(0, 124, PANEL_W, min(wanted, available))
-        panel.centerx = w // 2
-        return panel
-
-    def _draw_key_rows(self, surface: pygame.Surface, center_x: int) -> None:
+    def _draw_key_rows(self, surface: pygame.Surface) -> None:
         rows = self.rows
-        slot_w = 92
-        panel_w = max(PANEL_W, 420)
-        panel = self._panel_rect(len(rows))
-        panel.width = panel_w
+        lay = self._layout()
+        panel = lay["panel"]
+        row_h = lay["row_h"]
+        font = max(15, int(row_h * 0.5))
+        slot_w = min(96, panel.width // 6)
+
         draw_panel(
             surface, panel, color=settings.COLOR_PANEL,
             border_color=settings.COLOR_PANEL_LIGHT,
         )
 
-        # com o painel apertado, a linha encolhe para caber
-        inner = panel.height - MENU_H - 28
-        row_h = max(24, min(ROW_H, inner // max(1, len(rows))))
-
-        y = panel.top + 14
+        y = lay["row_top"]
+        self._hit_slots = []
+        self._hit_video = []
         for i, (action, label, keys) in enumerate(rows):
+            row_rect = pygame.Rect(panel.left + 10, y, panel.width - 20, row_h)
+            self._hit_video.append(row_rect)
             selected = i == self.index
             if selected:
-                row_rect = pygame.Rect(panel.left + 8, y - 2, panel.width - 16, row_h - 4)
                 draw_panel(surface, row_rect, color=settings.COLOR_PANEL_LIGHT, radius=4)
 
             color = settings.COLOR_ACCENT if selected else settings.COLOR_TEXT
-            font_size = 22 if row_h >= 34 else 19
-            draw_text(surface, label, font_size, (panel.left + 34, y + row_h // 2 - 2), color, center=False)
+            # o rotulo comeca depois do recuo, e nao colado na borda
+            label_x = row_rect.left + 12
+            draw_text(surface, label, font, (label_x, row_rect.centery), color, center=False)
 
-            # ate tres slots de tecla por acao
-            cell_h = max(14, row_h - 12)
-            for slot in range(3):
-                sx = panel.right - 40 - (2 - slot) * slot_w
-                cell = pygame.Rect(sx - slot_w // 2, y + 6, slot_w - 8, cell_h)
+            for slot in range(SLOTS_PER_ACTION):
+                cell = pygame.Rect(
+                    panel.right - 34 - (SLOTS_PER_ACTION - 1 - slot) * slot_w,
+                    y + 3, slot_w - 8, row_h - 6,
+                )
+                self._hit_slots.append(cell)
                 active = selected and slot == self.slot
+                capturing = active and self._capturing is not None
                 draw_panel(
                     surface, cell,
-                    color=settings.COLOR_PANEL if not active else settings.COLOR_BACKGROUND,
+                    color=settings.COLOR_BACKGROUND if active else settings.COLOR_PANEL,
                     border_color=settings.COLOR_ACCENT if active else settings.COLOR_PANEL_LIGHT,
                     border_width=2, radius=4,
                 )
                 name = keys[slot] if slot < len(keys) else ""
-                texto = (
-                    input_map.key_name(code)
-                    if (code := input_map.key_code(name))
-                    else "--"
+                if capturing:
+                    texto = "aperte" if not self._awaiting_release else "solte"
+                elif name:
+                    texto = input_map.key_name(code) if (code := input_map.key_code(name)) else name
+                else:
+                    texto = "--"
+                draw_text(
+                    surface, texto, max(13, font - 3), cell.center,
+                    color if name or capturing else settings.COLOR_TEXT_DIM,
                 )
-                draw_text(surface, texto, 18, cell.center, color if name else settings.COLOR_TEXT_DIM)
             y += row_h
 
-        self._draw_menu(
-            surface, panel,
-            "enter  gravar      backspace  remover      R  restaurar      esc  voltar",
-        )
+    def _draw_footer(self, surface: pygame.Surface, center_x: int, height: int) -> None:
+        lay = self._layout()
+        y = lay["panel"].bottom
 
-    def _draw_menu(self, surface: pygame.Surface, panel: pygame.Rect, text: str) -> None:
-        draw_text(surface, text, 17, (panel.centerx, panel.bottom - MENU_H // 2 - 6), settings.COLOR_TEXT_DIM)
-
-    def _draw_hint(self, surface: pygame.Surface, center_x: int, height: int) -> None:
-        # a dica fica logo abaixo do painel, nunca numa posicao fixa
-        # que o painel pudesse cobrir
-        panel_bottom = self._panel_rect(self._current_count()).bottom
-        y = panel_bottom + 30
+        if self.group == input_map.GROUP_VIDEO:
+            hint = "setas trocam o valor      enter  salvar      R  padroes      esc  voltar"
+        else:
+            hint = (
+                "enter  gravar      backspace  limpar slot      "
+                "R  restaurar acao      esc  voltar"
+            )
+        draw_text(surface, hint, max(13, int(height * 0.024)), (center_x, y + 22), settings.COLOR_TEXT_DIM)
 
         if self._capturing is not None:
             label = input_map.ACTION_LABELS.get(self._capturing, self._capturing)
-            if self._awaiting_release:
-                msg = f"{label}: solte a tecla atual"
-            else:
-                msg = f"{label}: aperte a tecla nova  (esc cancela)"
-            draw_text(surface, msg, 24, (center_x, y), settings.COLOR_ACCENT)
-        else:
-            hint = self._hint_text()
-            if hint:
-                draw_text(surface, hint, 17, (center_x, y), (110, 104, 126))
+            msg = (
+                f"{label}: solte a tecla atual"
+                if self._awaiting_release
+                else f"{label}: aperte a tecla nova    (esc cancela)"
+            )
+            draw_text(surface, msg, max(18, int(height * 0.032)), (center_x, y + 52), settings.COLOR_ACCENT)
+        elif self.notice:
+            draw_text(surface, self.notice, max(15, int(height * 0.028)), (center_x, y + 52), settings.COLOR_ACCENT)
 
         draw_text(
-            surface, "TAB  troca de aba", 17,
-            (center_x, y + 28), (110, 104, 126),
+            surface, "TAB  troca de aba      o mouse tambem funciona",
+            max(12, int(height * 0.022)), (center_x, y + 80), (104, 98, 120),
         )
-
-        if self.notice:
-            draw_text(surface, self.notice, 21, (center_x, y + 58), settings.COLOR_ACCENT)
-
-    def _hint_text(self) -> str:
-        if self.group == input_map.GROUP_VIDEO:
-            if self.options and self.index < len(self.options):
-                return self.options[self.index].hint
-            return ""
-
-        action = self._current_action()
-        if action is None:
-            return ""
-        keys = self.controls.keys(action)
-        if not keys:
-            return ""
-        name = keys[min(self.slot, len(keys) - 1)] if keys else ""
-        shared = [a for a in self.controls.conflicts(name) if a != action] if name else []
-        if shared:
-            nomes = ", ".join(input_map.ACTION_LABELS.get(a, a) for a in shared)
-            return f"esta tecla tambem esta em: {nomes}"
-        return "enter grava no slot selecionado; setas trocam o slot"

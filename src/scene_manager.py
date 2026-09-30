@@ -69,6 +69,11 @@ class SceneManager:
     def active(self) -> Scene | None:
         return self._active
 
+    @property
+    def active_name(self) -> str | None:
+        """Nome da cena ativa, util para depurar e testar."""
+        return self._active_name
+
     def switch(self, name: str) -> None:
         """Ativa a cena registrada com o nome informado."""
         if name not in self._scenes:

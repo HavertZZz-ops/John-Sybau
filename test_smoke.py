@@ -82,12 +82,12 @@ def check_scenes() -> None:
 def check_config_roundtrip() -> None:
     """Grava e le a configuracao, incluindo arquivo invalido."""
     path = ROOT / "_test_config.json"
-    original = Config(sprite_scale=2, fps_limit=120, show_fps=False)
+    original = Config(sprite_scale=2, fps_limit=120, vsync=False)
     original.save(path)
     loaded = Config.load(path)
     assert loaded.sprite_scale == 2, loaded
     assert loaded.fps_limit == 120, loaded
-    assert loaded.show_fps is False, loaded
+    assert loaded.vsync is False, loaded
     print("[ok] config salva e lida")
 
     path.write_text("{ isso nao e json", encoding="utf-8")
@@ -171,18 +171,17 @@ def check_internal_resolution() -> None:
 
 
 def check_hud_shows_resolution() -> None:
-    """O HUD tem que mostrar a resolucao atual."""
+    """O HUD tem que mostrar o FPS, sempre, no canto superior."""
     from src.main import draw_fps
 
     for size in [(1280, 720), (1536, 960)]:
-        config = Config(width=size[0], height=size[1])
         surface = pygame.Surface(size)
         surface.fill(settings.COLOR_BACKGROUND)
-        draw_fps(surface, 60.0, 60, 60, config)
+        draw_fps(surface, 60.0, 60, 60)
         assert surface.get_size() == size
         # o canto superior direito precisa ter mudado (HUD desenhado)
         assert surface.get_at((size[0] - 20, 10))[:3] != settings.COLOR_BACKGROUND
-    print("[ok] HUD mostra FPS e resolucao em 2 tamanhos")
+    print("[ok] HUD mostra FPS sempre, em 2 resolucoes")
 
 
 def check_bindings_persist() -> None:
@@ -252,6 +251,145 @@ def check_native_resolution() -> None:
     config.width, config.height = 2560, 1440
     assert (2560, 1440) in config.available_resolutions()
     print("[ok] resolucao fora da tela continua acessivel para poder sair dela")
+
+
+def check_options_not_lockable() -> None:
+    """A tela de opcoes tem que ser sempre navegavel.
+
+    Se a navegacao usasse as teclas remapeadas, trocar a tecla de
+    "voltar" ou de "mover_baixo" deixaria o jogador preso na tela sem
+    como sair. Aqui as teclas da tela sao fixas, entao o teste confirma
+    que continua possivel sair e navegar depois de remapear tudo.
+    """
+    from src import input_map
+    from src.input_map import InputMap
+    from src.scene_manager import SceneManager
+
+    config = Config()
+    config.save = lambda *a, **k: None  # type: ignore[method-assign]
+    controls = InputMap()
+    manager = build_scene_manager(SceneManager(create_window(config), config, controls))
+    manager.switch("options")
+    screen = manager.active
+
+    # remapeia TUDO para teclas que nao servem para navegar
+    for action in input_map.DEFAULT_BINDINGS:
+        controls.assign(action, 0, "f9")
+    assert not controls.pressed(pygame.K_ESCAPE, "voltar"), "voltar sumiu"
+    assert not controls.pressed(pygame.K_DOWN, "mover_baixo")
+    print("[ok] remapeamento nao afeta a navegacao da propria tela")
+
+    # setas fixas continuam funcionando
+    screen.index = 0
+    screen.handle_event(keydown(pygame.K_DOWN))
+    assert screen.index == 1, f"navegacao travou no indice {screen.index}"
+    screen.handle_event(keydown(pygame.K_UP))
+    assert screen.index == 0
+    print("[ok] setas fixas navegam mesmo com tudo remapeado")
+
+    # e da para sair
+    screen.handle_event(keydown(pygame.K_ESCAPE))
+    assert manager.active_name == "title", f"preso em {manager.active_name}"
+    print("[ok] esc sempre leva de volta ao menu")
+
+    # gravar a tecla reservada TAB e recusado
+    manager.switch("options")
+    screen = manager.active
+    screen.handle_event(keydown(pygame.K_TAB))
+    assert screen.group == input_map.GROUP_TECLAS, screen.group
+    screen.handle_event(keydown(pygame.K_RETURN))
+    screen.handle_event(keyup(pygame.K_RETURN))
+    screen.handle_event(keydown(pygame.K_TAB))
+    assert screen._capturing is None, "TAB nao deveria entrar em captura"
+    print("[ok] TAB nao pode ser gravado como tecla de comando")
+
+
+def check_options_video_options() -> None:
+    """Todas as opcoes de video precisam mudar algo de verdade."""
+    from src import assets, input_map
+    from src.scene_manager import SceneManager
+
+    config = Config()
+    config.save = lambda *a, **k: None  # type: ignore[method-assign]
+    manager = build_scene_manager(
+        SceneManager(create_window(config), config, InputMap())
+    )
+    manager.switch("options")
+    screen = manager.active
+
+    def value_de(key):
+        return next(o.read() for o in screen.options if o.key == key)
+
+    # resolucao
+    antes = value_de("resolucao")
+    screen.index = 0
+    screen.handle_event(keydown(pygame.K_RIGHT))
+    assert value_de("resolucao") != antes, "resolucao nao mudou"
+    print(f"[ok] resolucao muda ({antes} -> {value_de('resolucao')})")
+
+    # escala dos sprites
+    screen.index = 1
+    antes = value_de("escala")
+    screen.handle_event(keydown(pygame.K_RIGHT))
+    assert value_de("escala") != antes, "escala nao mudou"
+    assert assets.get_sprite_scale() > 0
+    print(f"[ok] escala dos sprites muda ({antes} -> {value_de('escala')})")
+
+    # limite de fps
+    screen.index = 2
+    antes = value_de("fps")
+    screen.handle_event(keydown(pygame.K_RIGHT))
+    assert value_de("fps") != antes, "FPS nao mudou"
+    print(f"[ok] limite de FPS muda ({antes} -> {value_de('fps')})")
+
+    # vsync (booleano)
+    screen.index = 4
+    antes = value_de("vsync")
+    screen.handle_event(keydown(pygame.K_RETURN))
+    assert value_de("vsync") != antes, "vsync nao mudou"
+    print(f"[ok] vsync alterna ({antes} -> {value_de('vsync')})")
+
+    # toda opcao precisa ter rotulo, valor e dica
+    for option in screen.options:
+        assert option.label, "opcao sem rotulo"
+        assert option.read(), f"opcao {option.key} sem valor"
+    print(f"[ok] {len(screen.options)} opcoes de video com rotulo e valor")
+
+    # a aba de teclas tem 3 slots por acao
+    screen.handle_event(keydown(pygame.K_TAB))
+    assert screen.group == input_map.GROUP_TECLAS
+    for _, _, keys in screen.rows:
+        assert len(keys) <= 3, f"acao com {len(keys)} teclas"
+    print(f"[ok] aba de teclas com {len(screen.rows)} acoes, ate 3 slots cada")
+
+
+def check_options_layout() -> None:
+    """O painel e o rodape nao podem se sobrepor, em nenhuma resolucao."""
+    from src import input_map
+    from src.scene_manager import SceneManager
+
+    for width, height in RESOLUTION_CHOICES:
+        config = Config(width=width, height=height)
+        config.save = lambda *a, **k: None  # type: ignore[method-assign]
+        window = create_window(config)
+        manager = build_scene_manager(SceneManager(window, config, InputMap()))
+        for group in (input_map.GROUP_VIDEO, input_map.GROUP_TECLAS):
+            manager.switch("options")
+            screen = manager.active
+            screen.group = group
+            screen.index = 0
+            manager.update(1.0 / 60)
+            manager.draw()
+            panel = screen._layout()["panel"]
+            rodape = panel.bottom + 80
+            assert panel.top > 0, f"{width}x{height}: painel com topo {panel.top}"
+            assert rodape < height, (
+                f"{width}x{height}: rodape em {rodape} passa da altura {height}"
+            )
+            assert panel.left >= 0 and panel.right <= width, (
+                f"{width}x{height}: painel {panel} fora da tela"
+            )
+    print(f"[ok] layout cabe em {len(RESOLUTION_CHOICES)} resolucoes, nas 2 abas")
 
 
 def check_keybindings() -> None:
@@ -363,14 +501,14 @@ def check_rebinding_in_options() -> None:
     print("[ok] cena de jogo responde pela tecla ainda mapeada (W = cima)")
 
     # agora grava I de novo e confere que o jogo passa a responder por ela.
-    # a tela nova precisa lembrar a aba e a linha de antes.
+    # ao reentrar, a tela volta para a aba Video; a navegacao e feita
+    # com as teclas fixas, entao nao ha estado a preservar
     manager.switch("options")
     screen = manager.active
-    assert screen.group == input_map.GROUP_TECLAS, f"aba nao preservada: {screen.group}"
-    assert screen.rows[screen.index][0] == "mover_cima", "linha nao preservada"
-    assert screen.slot == 0, f"slot nao preservado: {screen.slot}"
-    print("[ok] aba, linha e slot voltam como estavam ao reentrar")
-
+    assert screen.group == input_map.GROUP_VIDEO, screen.group
+    screen.handle_event(keydown(pygame.K_TAB))
+    assert screen.group == input_map.GROUP_TECLAS, screen.group
+    screen.index = 0
     screen.handle_event(keydown(pygame.K_RETURN))
     screen.handle_event(keyup(pygame.K_RETURN))
     screen.handle_event(keydown(pygame.K_i))
@@ -504,6 +642,12 @@ def main() -> int:
     check_internal_resolution()
     print()
     check_hud_shows_resolution()
+    print()
+    check_options_video_options()
+    print()
+    check_options_layout()
+    print()
+    check_options_not_lockable()
     print()
     check_keybindings()
     print()

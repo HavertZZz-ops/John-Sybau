@@ -46,7 +46,6 @@ class Config:
     vsync: bool = True
     sprite_scale: int = 3
     fps_limit: int = 60
-    show_fps: bool = True
     # teclas por acao: {"mover_cima": ["up", "w"], ...}
     bindings: dict[str, list[str]] = field(default_factory=dict)
 
@@ -66,7 +65,6 @@ class Config:
             self.fps_limit = 60
         self.vsync = bool(self.vsync)
         self.fullscreen = bool(self.fullscreen)
-        self.show_fps = bool(self.show_fps)
         return self
 
     @property
