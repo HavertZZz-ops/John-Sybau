@@ -94,6 +94,22 @@ def main() -> int:
     pygame.image.save(window, ROOT / "preview_dungeon_jogo.png")
     print(f"jogando: fase {cena.fase}, tempo {cena.tempo_jogado:.0f}s")
 
+    # a aula na tela, no meio do cenario
+    cena.tutorial.mostrar("Use as setas para andar")
+    cena.tutorial.tempo = 1.2
+    manager.draw()
+    pygame.image.save(window, ROOT / "preview_dungeon_aula.png")
+    print("aula na tela:", cena.tutorial.atual.texto)
+
+    # o esqueleto guardado, antes da luta
+    cena.passos = 999
+    cena.moving = True
+    manager.update(DT)
+    manager.update(DT)
+    manager.draw()
+    pygame.image.save(window, ROOT / "preview_dungeon_esqueleto.png")
+    print("esqueleto guardado:", cena.esqueleto is not None)
+
     manager.ui_state["store"].apagar()
     pygame.quit()
     return 0

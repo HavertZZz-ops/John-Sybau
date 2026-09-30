@@ -1213,8 +1213,17 @@ def check_tutorial_na_masmorra() -> None:
     assert cena.esqueleto is not None, (
         f"o esqueleto nao acordou depois de {cena.passos} passos"
     )
+    # o esqueleto tem de CONTINUAR ali. Ele ja nasceu e sumia no quadro
+    # seguinte, e o teste antigo nao pegou porque conferia no mesmo
+    # quadro do nascimento
+    for _ in range(120):
+        manager.update(dt)
+    assert cena.esqueleto is not None, "o esqueleto sumiu depois de nascer"
+    assert manager.active_name == "dungeon", (
+        f"a luta comecou sozinha: {manager.active_name}"
+    )
     manager.draw()
-    print(f"[ok] o esqueleto acordou depois de {cena.passos} passos")
+    print(f"[ok] o esqueleto acordou depois de {cena.passos} passos e ficou")
 
     # chega perto: a luta tem de comecar
     cx = cena.mapa.caixao[0] + 3

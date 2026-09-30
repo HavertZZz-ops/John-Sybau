@@ -318,12 +318,10 @@ class DungeonScene(Scene):
         """
         if self.esqueleto is None:
             if self.passos >= PASSOS_ATE_O_ESQUELETO:
-                # duas casas a leste do caixao, se tiver chao
-                cx = self.mapa.caixao[0] + 3
-                cy = self.mapa.caixao[1]
-                if self.mapa.andavel(cx, cy):
+                casa = self._casa_do_esqueleto()
+                if casa is not None:
                     self.esqueleto = pygame.Vector2(
-                        self.mapa.para_pixels(cx, cy, self.tile)
+                        self.mapa.para_pixels(*casa, self.tile)
                     )
                     self.esqueleto_vivo = True
                     self.tutorial.mostrar("O esqueleto acordou")
@@ -331,13 +329,38 @@ class DungeonScene(Scene):
 
         if not self.esqueleto_vivo:
             return
+        # so a luta apaga o esqueleto. Antes, cair no fim da funcao
+        # depois do teste de distancia o apagava em TODO quadro, e ele
+        # vivia exatamente um quadro: nascia e sumia antes de o jogador
+        # chegar perto. O teste antigo nao pegou porque conferia logo
+        # apos o nascimento.
         if self.esqueleto.distance_to(self.posicao) < ALCANCE_LUTA:
             self.esqueleto_vivo = False
             self.manager.iniciar_combate(1)
-            return
-        # some da tela assim que a luta comeca
-        self.esqueleto = None
-        self.esqueleto_vivo = False
+        return
+
+    def _casa_do_esqueleto(self) -> tuple[int, int] | None:
+        """Um tile de chao para o esqueleto ficar, longe do caixao.
+
+        Um deslocamento fixo nao funciona: a sala do caixao tem tamanho
+        variavel e muitas vezes as tres casas a leste sao parede. Sem
+        essa busca o esqueleto nunca acordava, e o tutorial ficava
+        travado na aula de combate.
+        """
+        cx, cy = self.mapa.caixao
+        melhor = None
+        for raio in range(2, 7):
+            for dx in range(-raio, raio + 1):
+                for dy in range(-raio, raio + 1):
+                    # um anel, nao o quadrado todo
+                    if max(abs(dx), abs(dy)) != raio:
+                        continue
+                    alvo = (cx + dx, cy + dy)
+                    if not self.mapa.andavel(*alvo):
+                        continue
+                    if melhor is None:
+                        melhor = alvo
+        return melhor
 
     def _passo(self, dt: float) -> pygame.Vector2:
         passo = MOVE_SPEED * dt
