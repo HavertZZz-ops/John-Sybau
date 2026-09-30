@@ -13,13 +13,10 @@ from __future__ import annotations
 
 import pygame
 
-from . import assets, coffin, settings, theme
+from . import assets, cenarios, coffin, settings, theme, wang
 from .area_title import AreaTitle
 from .dungeon_map import (
-    ENFEITES,
     PAREDE,
-    TILES_CHAO,
-    TILES_PAREDE,
     Mapa,
     gerar_mapa,
 )
@@ -52,64 +49,113 @@ FASE_DURADA = {
     "saindo": 1.6,
 }
 
-NOME_AREA = "Catacumbas"
-SUBTITULO_AREA = "onde os ossos descansam"
-
-# o tileset e lido uma vez e reaproveitado por todas as instancias
-_TILESET: pygame.Surface | None = None
 
 
-def _tileset() -> pygame.Surface | None:
-    """Tileset carregado, com a paleta ajustada para pedra fria.
 
-    O tileset original e bem roxo e saturado. Deixado como esta, a
-    masmorra parece um level de plataforma colorida, e nao uma
-    catacumba. Converter para luminancia e dar um tom levemente azulado
-    deixa tudo em pedra cinza fria, que e a paleta do resto do jogo.
+# o tileset de cada cenario e lido uma vez e reusado
+_TABLES_WANG: dict[str, dict] = {}
 
-    O ajuste e feito uma vez e o resultado fica em cache, entao o
-    custo por quadro e zero.
+
+def _tabela_wang(cenario) -> dict | None:
+    """Monta e guarda a tabela de tiles Wang do cenario.
+
+    Sem cache, os 16 tiles seriam lidos do disco e recortados a cada
+    quadro. A tabela so depende do cenario, entao e montada uma vez.
+
+    `_TABELA_ATUAL` e atualizada nos DOIS caminhos, cacheado ou nao.
+    So no caminho novo, uma troca de cenario deixaria a tabela do
+    cenario anterior por tras e o desenho buscaria a peca de origem pelo
+    canto errado.
     """
-    global _TILESET
-    if _TILESET is not None:
-        return _TILESET
-    caminho = settings.TILES_DIR / "dungeon_tileset.png"
-    if not caminho.is_file():
-        return None
-    try:
-        _TILESET = _classificar(assets._load_image(caminho))
-    except (pygame.error, OSError) as exc:
-        print(f"[dungeon] tileset ausente: {exc}")
-        return None
-    return _TILESET
+    if cenario.tileset in _TABLES_WANG:
+        tabela = _TABLES_WANG[cenario.tileset]
+    else:
+        png = settings.TILES_DIR / cenario.png
+        meta = settings.TILES_DIR / cenario.json
+        if not png.is_file() or not meta.is_file():
+            print(f"[dungeon] tileset do cenario ausente: {png.name}")
+            return None
+        try:
+            tabela, _lado = wang.carregar_tileset_wang(png, meta)
+            tabela = _ajustar_legibilidade(tabela)
+        except (pygame.error, OSError, ValueError, KeyError) as exc:
+            print(f"[dungeon] tileset do cenario ilegivel: {exc}")
+            return None
+        _TABLES_WANG[cenario.tileset] = tabela
+
+    _TABELA_ATUAL.clear()
+    _TABELA_ATUAL.update(tabela)
+    return tabela
 
 
-def _classificar(surface: pygame.Surface) -> pygame.Surface:
-    """Tira a saturacao e puxa para o cinza azulado das catacumbas."""
-    img = surface.convert()
-    w, h = img.get_size()
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = img.get_at((x, y))
-            if a == 0:
-                continue
-# luminancia com os pesos perceptualmente aproximados
-            cinza = 0.299 * r + 0.587 * g + 0.114 * b
-            # Curva de contraste forte. O veu da masmorra escurece a
-            # tela inteira, e sem acentuar o chao e a parede chegam
-            # quase iguais no fim: a tela inteira vira um campo escuro
-            # sem leitura. Afastar os claros do meio da escala e o que
-            # faz o desenho do tileset voltar a aparecer.
-            cinza = (cinza - 92.0) * 2.05 + 92.0
-            cinza = max(0.0, min(255.0, cinza))
-            v = 6 + cinza * 1.02
-            if v > 210:
-                v = 210
-            img.set_at(
-                (x, y),
-                (int(v * 0.93), int(v * 0.96), int(v * 1.0), a),
-            )
-    return img
+def _ajustar_legibilidade(
+    tabela: dict[tuple[bool, bool, bool, bool], pygame.Surface],
+) -> dict[tuple[bool, bool, bool, bool], pygame.Surface]:
+    """Escurece a parede e clareia o chao, tile por tile.
+
+    A tela inteira passa por um veu escuro, e o tileset novo tem parede
+    e chao na mesma faixa de brilho. Sob o veu os dois viravam a mesma
+    coisa e nao dava para saber onde da para andar: o jogador via um
+    corredor de tijolo em todo lugar.
+
+    Como a tabela Wang sabe, tile por tile, quantos cantos sao parede,
+    nao precisa adivinhar pelo desenho: o chao e o unico tile sem
+    nenhum canto de parede.
+    """
+    ajustada = {}
+    for cantos, tile in tabela.items():
+        tem_parede = any(cantos)
+        img = tile.copy()
+        if tem_parede:
+            ganho = 0.62
+        else:
+            ganho = 1.18
+        w, h = img.get_size()
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = img.get_at((x, y))
+                if a == 0:
+                    continue
+                img.set_at(
+                    (x, y),
+                    (
+                        min(255, int(r * ganho)),
+                        min(255, int(g * ganho)),
+                        min(255, int(b * ganho)),
+                        a,
+                    ),
+                )
+        ajustada[cantos] = img
+    return ajustada
+
+
+def _tile_pronto(
+    chave: tuple[bool, bool, bool, bool], lado: tuple[int, int]
+) -> pygame.Surface:
+    """Tile de Wang ja no tamanho de tela, em cache.
+
+    O tileset novo e de 32px e o jogo desenha tile de 16px vezes a
+    escala dos sprites. Escalar a cada celula a cada quadro seria o
+    mesmo preco que o cache do tileset antigo evitava. A chave e a de
+    cantos, nunca o `id()` da imagem: o id de um objeto liberado volta
+    a ser usado e o cache entregaria a peca errada sem avisar.
+    """
+    global _TILES_ESCALA
+    if lado[0] != _TILES_ESCALA:
+        _TILES_ESCALADOS.clear()
+        _TILES_ESCALA = lado[0]
+    pega = _TILES_ESCALADOS.get(chave)
+    if pega is not None:
+        return pega
+    origem = _TABELA_ATUAL.get(chave)
+    if origem is None:
+        return _TILES_ESCALADOS.setdefault(
+            chave, pygame.Surface(lado, pygame.SRCALPHA)
+        )
+    tile = origem if origem.get_size() == lado else pygame.transform.scale(origem, lado)
+    _TILES_ESCALADOS[chave] = tile
+    return tile
+
 
 
 # o veu de luz e caro de montar, entao fica em cache e e REAPROVEITADO:
@@ -188,40 +234,27 @@ def _desenhar_luz(self, surface: pygame.Surface) -> None:
             surface.blit(recorte, (cx - r, cy - r))
 
 
-# tiles ja ampliados para o tamanho de tela, cacheados por coordenada.
-# A versao anterior escalava CADA tile visivel a CADA quadro: numa tela
-# 1520x921 sao mais de 600 tiles, e 600 `pygame.transform.scale` por
-# quadro era o suficiente para derrubar o jogo para metade da
-# velocidade. O tileset e estatico, entao ampliar uma vez e guardar.
-_TILES_ESCALADOS: dict[tuple[int, int], pygame.Surface] = {}
+# tiles ja ampliados para o tamanho de tela, cacheados pela chave de
+# cantos. A versao anterior escalava CADA tile visivel a CADA quadro: numa
+# tela 1520x921 sao mais de 600 tiles, e 600 `pygame.transform.scale` por
+# quadro era o suficiente para derrubar o jogo para metade da velocidade.
+# O tileset e estatico, entao ampliar uma vez e guardar.
+_TILES_ESCALADOS: dict[tuple, pygame.Surface] = {}
 _TILES_ESCALA = -1
 
-
-def _tile_escalado(tileset: pygame.Surface, indice: tuple[int, int], tamanho: int) -> pygame.Surface:
-    """Peca do tileset ja no tamanho de tela, em cache."""
-    global _TILES_ESCALA
-    if tamanho != _TILES_ESCALA:
-        _TILES_ESCALADOS.clear()
-        _TILES_ESCALA = tamanho
-    pega = _TILES_ESCALADOS.get(indice)
-    if pega is not None:
-        return pega
-    pedaco = tileset.subsurface(
-        pygame.Rect(indice[0] * TILE_BASE, indice[1] * TILE_BASE,
-                    TILE_BASE, TILE_BASE)
-    )
-    if tamanho != TILE_BASE:
-        pedaco = pygame.transform.scale(pedaco, (tamanho, tamanho))
-    _TILES_ESCALADOS[indice] = pedaco
-    return pedaco
+# a tabela do cenario em uso, para o cache de escala achar a imagem de
+# origem a partir da chave
+_TABELA_ATUAL: dict[tuple, pygame.Surface] = {}
 
 
 class DungeonScene(Scene):
-    """As Catacumbas, com a entrada pelo caixao."""
+    """Um cenario de masmorra, com autotiling de Wang."""
 
-    def __init__(self, manager) -> None:
+    def __init__(self, manager, cenario=None) -> None:
         super().__init__(manager)
-        self.mapa: Mapa = gerar_mapa()
+        self.cenario = cenario or cenarios.primeiro()
+        self._wang: wang.GradeWang | None = None
+        self.mapa: Mapa = gerar_mapa(semente=self.cenario.semente)
         self.direction = "sul"
         self.moving = False
         self.anim_time = 0.0
@@ -231,7 +264,7 @@ class DungeonScene(Scene):
         self.idle_frames = assets.load_animation(self.direction, "idle")
 
         self.tile = TILE_BASE * assets.get_sprite_scale()
-        self.posicao = pygame.Vector2(self._centro_caixao())
+        self.posicao = pygame.Vector2(self._posicao_inicial())
         self.camera = pygame.Vector2(self.posicao)
 
         self.tampa = 0.0  # 0 fechada, 1 aberta
@@ -297,13 +330,13 @@ class DungeonScene(Scene):
         # um save com posicao 0,0 (ou de outra versao) cai no caixao,
         # em vez de deixar o jogador preso dentro da parede
         if not self._livre(self.posicao, max(4, self.tile // 6)):
-            self.posicao = pygame.Vector2(self._centro_caixao())
+            self.posicao = pygame.Vector2(self._posicao_inicial())
         self.posicao = self._sem_bater(self.posicao, pygame.Vector2())
         self.camera = pygame.Vector2(self.posicao)
         self.moving = False
         # o nome do lugar aparece igual: quem chega numa area nova ou
         # quem volta para ela precisa saber onde esta
-        self.titulo.show(NOME_AREA, SUBTITULO_AREA)
+        self.titulo.show(self.cenario.nome, self.cenario.subtitulo)
         self._titulo_mostrado = True
 
     def _avisar(self, texto: str, segundos: float = 2.4) -> None:
@@ -311,6 +344,19 @@ class DungeonScene(Scene):
         self._aviso_tempo = segundos
 
     # --- posicoes ---------------------------------------------------
+    def _posicao_inicial(self) -> tuple[float, float]:
+        """Onde o jogador comeca.
+
+        No cenario com caixao, dentro dele. Nos outros, na entrada do
+        mapa: comecar no meio de um cenario que o jogador nao conhecia
+        deixa o lugar sem nome e sem sentido de chegada.
+        """
+        if self.cenario.tem_caixao:
+            cx, cy = self.mapa.caixao
+        else:
+            cx, cy = self.mapa.entrada
+        return self.mapa.para_pixels(cx, cy, self.tile)
+
     def _centro_caixao(self) -> tuple[float, float]:
         cx, cy = self.mapa.caixao
         return self.mapa.para_pixels(cx, cy, self.tile)
@@ -506,7 +552,7 @@ class DungeonScene(Scene):
             # show() reinicia o relogio: so na primeira vez, senao o
             # titulo nunca chegaria ao fim
             if not self._titulo_mostrado:
-                self.titulo.show(NOME_AREA, SUBTITULO_AREA)
+                self.titulo.show(self.cenario.nome, self.cenario.subtitulo)
                 self._titulo_mostrado = True
             if self.fase_tempo >= duracao:
                 self.fase = "saindo"
@@ -633,35 +679,34 @@ class DungeonScene(Scene):
                                 altura_mapa - h / 2)
 
     def _desenhar_mapa(self, surface: pygame.Surface) -> None:
-        tileset = _tileset()
-        if tileset is None:
+        tabela = _tabela_wang(self.cenario)
+        if tabela is None:
             theme.text_tracked_at(
                 surface,
-                "tileset ausente: rode tools/import_sprites.py", 18,
-                (20, 20), theme.TEXT_DIM,
+                f"tileset ausente: {self.cenario.png}",
+                18, (20, 20), theme.TEXT_DIM,
             )
             return
+        if self._wang is None:
+            self._wang = wang.GradeWang(self.mapa.celulas, tabela=tabela)
 
         w, h = self.size
         x0, y0 = self._tela_para_mapa((0, 0))
         x1, y1 = self._tela_para_mapa((w, h))
         x_desenho = w // 2 - self.camera.x - self.tile // 2
         y_desenho = h // 2 - self.camera.y - self.tile // 2
+        lado = (self.tile, self.tile)
 
         # os tiles sao filtrados antes do desenho: dois em cada direcao,
         # por causa da sombra da parede
         for y in range(max(0, y0 - 1), min(self.mapa.altura, y1 + 2)):
             linha = y * self.tile + y_desenho
             for x in range(max(0, x0 - 1), min(self.mapa.largura, x1 + 2)):
-                celula = self.mapa.em(x, y)
-                if celula == PAREDE:
-                    indice = TILES_PAREDE[(x * 2 + y) % len(TILES_PAREDE)]
-                elif celula in ENFEITES:
-                    indice = ENFEITES[celula]
-                else:
-                    indice = TILES_CHAO[(x * 3 + y * 5) % len(TILES_CHAO)]
+                if self.mapa.em(x, y) == PAREDE:
+                    continue
+                chave, _img = self._wang.tile_e_chave(x, y)
                 surface.blit(
-                    _tile_escalado(tileset, indice, self.tile),
+                    _tile_pronto(chave, lado),
                     (x * self.tile + x_desenho, linha),
                 )
 

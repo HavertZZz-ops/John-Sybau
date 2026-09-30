@@ -760,6 +760,29 @@ def check_fps() -> None:
     )
 
 
+def check_wang() -> None:
+    """Roda a suite da autotilagem de Wang e do registro de cenarios.
+
+    Fica em arquivo separado porque testa arte em disco (os tilesets do
+    PixelLab tem de estar la) e nao so logica. `GradeWang` escolhe o
+    tile pelos quatro vertices, e um canto trocado de lugar nao quebra
+    nada: a borda simplesmente fecha do lado errado.
+    """
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_wang.py")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] autotilagem de Wang:")
+        print(result.stdout[-3000:])
+        print(result.stderr[-2000:])
+        raise SystemExit(result.returncode)
+    print("[ok] autotilagem de Wang e cenarios")
+
+
 def check_entrypoint() -> None:
     """Executa run.py de verdade."""
     result = subprocess.run(
@@ -1353,6 +1376,8 @@ def main() -> int:
     check_moldura_zero_nao_apaga_cache()
     print()
     check_dungeon_map()
+    print()
+    check_wang()
     print()
     check_dungeon_intro()
     print()

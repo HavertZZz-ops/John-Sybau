@@ -150,3 +150,31 @@ As issues #N sao as do repositorio. Um item por commit entregue.
         (318 -> 216) para produzir a mesma imagem. Com o cache: 329.
       `tools/preview_caixao.py` foi criado aqui: mostra a tampa em
       0/25/50/75/100% de abertura lado a lado.
+- [x] #29  Cenarios com tileset Wang do PixelLab       (este commit)
+      Os cenarios paravam no tileset do pacote, com indices fixos
+      numa grade 12x13. Agora cada cenario e um tileset Wang 4x4
+      gerado pelo PixelLab, e o tile de cada celula sai dos quatro
+      VERTICES que ela toca. Adicionar cenario e uma entrada em
+      `CENARIOS` (src/cenarios.py), sem tocar na cena.
+      - `src/wang.py` monta a tabela de cantos a partir do METADATA do
+        tileset, sem adivinhar a ordem dos bits do `wang_N`. Palpite na
+        ordem dos bits poe a borda do lado errado;
+      - o cache do desenho era chaveado pelo `id()` da imagem. O id de
+        um objeto liberado volta a ser usado por outro, e o cache
+        passava a devolver a peca errada sem nenhum aviso. Agora e
+        chaveado pela chave de cantos. So isso levou a masmorra de
+        214 para 419 fps;
+      - a paleta e ajustada por tile, e nao mais na tela inteira. O
+        filtro antigo foi afinado para o tileset do pacote e esmagava o
+        novo num campo quase preto. Como a tabela Wang sabe quais
+        cantos sao parede, parede escurece e chao clareia sem adivinhar
+        pelo desenho;
+      - o primeiro tileset saiu com o CHAO em laje, que sob o veu da
+        masmorra lia como parede: o jogador via um corredor de tijolo
+        em todo lugar. O prompt passou a pedir terra e cascalho, sem
+        padrao de alvenaria.
+      Dois cenarios: Catacumbas (terra e tijolo) e Cemiterio (terra
+      morta e muro com vinha). `tools/test_wang.py` cobre a escolha do
+      tile, incluindo o caso que pega permutao de cantos, e roda dentro
+      do `test_smoke.py`. `tools/preview_cenario.py` mostra a sala
+      autotilada de cada cenario.

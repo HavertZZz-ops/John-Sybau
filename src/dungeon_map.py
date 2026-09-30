@@ -45,6 +45,7 @@ class Mapa:
     altura: int
     celulas: list[list[str]] = field(default_factory=list)
     caixao: tuple[int, int] = (0, 0)
+    entrada: tuple[int, int] = (0, 0)
     saida: tuple[int, int] = (0, 0)
 
     def em(self, x: int, y: int) -> str:
@@ -134,6 +135,7 @@ def gerar_mapa(
     if boxes:
         x, y, w, h = boxes[0]
         mapa.caixao = (x + w // 2, y + h // 2)
+        mapa.entrada = mapa.caixao
         mapa.celulas[mapa.caixao[1]][mapa.caixao[0]] = CHAO
     if len(boxes) > 1:
         x, y, w, h = boxes[-1]
