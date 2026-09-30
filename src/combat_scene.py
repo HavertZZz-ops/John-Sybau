@@ -207,7 +207,12 @@ class CombatScene(Scene):
             sprite = lista[idx]
             x = w * INIMIGO_X[i % len(INIMIGO_X)]
             y = h * (0.50 + 0.07 * (i % 3))
-            rect = sprite.get_rect(center=(int(x), int(y)))
+            # o esqueleto e mais alto que largo: o rect centrado o
+            # deixava flutuando, porque o pe dele ficava no meio da
+            # linha de chao. Pinar pelo pe e o que coloca todo mundo
+            # apoiado no mesmo chao
+            chao = int(h * (0.66 + 0.07 * (i % 3)))
+            rect = sprite.get_rect(midbottom=(int(x), chao))
 
             if inimigo.vivo:
                 surface.blit(sprite, rect)
@@ -222,17 +227,25 @@ class CombatScene(Scene):
             surface.blit(chapa, rect)
 
     def _desenhar_nome(self, surface, lutador, rect) -> None:
-        """Nome e barra de vida em cima do sprite."""
+        """Nome e barra de vida em cima do sprite.
+
+        A barra tem fundo escuro desenhado primeiro: sem ele, a parte
+        vazia e tao escura quanto a tela e o que sobra e so um risco
+        dourado, que parece um sublinhado em vez de medidor.
+        """
         theme.text_tracked_at(
             surface, lutador.nome.upper(), 13,
-            (rect.centerx, rect.top - 26), theme.TEXT_DIM,
+            (rect.centerx, rect.top - 30), theme.TEXT_DIM,
         )
-        largura = max(46, rect.width)
+        largura = max(52, rect.width)
         barra = pygame.Rect(
-            rect.centerx - largura // 2, rect.top - 14, largura, 4
+            rect.centerx - largura // 2, rect.top - 18, largura, 5
         )
+        pygame.draw.rect(surface, (24, 22, 20), barra.inflate(2, 2))
         pygame.draw.rect(surface, theme.HAIRLINE, barra)
-        cheio = pygame.Rect(barra.x, barra.y, int(barra.width * lutador.fracao_vida), barra.height)
+        cheio = pygame.Rect(
+            barra.x, barra.y, int(barra.width * lutador.fracao_vida), barra.height
+        )
         cor = theme.GOLD if lutador.vivo else theme.TEXT_DIM
         pygame.draw.rect(surface, cor, cheio)
 

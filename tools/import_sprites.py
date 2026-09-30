@@ -245,6 +245,68 @@ def importar_armas(alvo: Path) -> int:
     return total
 
 
+def _caixa_da_arte(quadros: list) -> tuple[int, int, int, int]:
+    """Caixa que contem a arte de todos os quadros, em conjunto.
+
+    A folha do esqueleto nao segue a grade de 16px: o desenho fica no
+    canto DIREITO de cada celula, e recortar pela grade dava uma tira
+    estreita encostada na borda. Unir a arte de todos os quadros e
+    recortar por essa caixa alinha a animacao e tira o espaco vazio.
+    """
+    x0 = y0 = 10 ** 6
+    x1 = y1 = -1
+    for img in quadros:
+        r = img.get_bounding_rect()
+        if r is None or r.width == 0 or r.height == 0:
+            continue
+        x0 = min(x0, r.x)
+        y0 = min(y0, r.y)
+        x1 = max(x1, r.right)
+        y1 = max(y1, r.bottom)
+    if x1 < 0:
+        return (0, 0, 1, 1)
+    return (x0, y0, x1, y1)
+
+
+def _recortar_e_centralizar(quadros: list) -> list:
+    """Centraliza cada quadro numa tela do tamanho da arte maior.
+
+    Tres coisas estavam erradas na folha do esqueleto, e as tres so
+    aparecem olhando o resultado, nao o codigo:
+
+    1. o desenho fica encostado num canto da celula, nao centrado
+    2. a arte anda na horizontal de um quadro para o outro
+    3. o quadro tem altura de sobra acima da cabeca
+
+    Cada quadro e recortado pela propria arte e colado no centro de uma
+    tela do tamanho da maior arte, apoiado pela BASE. Alinhar pela base
+    e o que mantem o pe no chao; centralizar em X tira o vaivem. O
+    tamanho da tela vem da uniao, senao a animacao encolhe a cada
+    quadro e o esqueleto treme.
+    """
+    import pygame
+
+    if not quadros:
+        return quadros
+
+    areas = []
+    for img in quadros:
+        r = img.get_bounding_rect()
+        areas.append(r if r and r.width and r.height else pygame.Rect(0, 0, 1, 1))
+
+    largura = max(r.width for r in areas)
+    altura = max(r.height for r in areas)
+
+    saida = []
+    for img, r in zip(quadros, areas):
+        recorte = img.subsurface(r).copy()
+        tela = pygame.Surface((largura, altura), pygame.SRCALPHA)
+        # base apoiada, eixo X centrado
+        tela.blit(recorte, ((largura - r.width) // 2, altura - r.height))
+        saida.append(tela)
+    return saida
+
+
 def importar_squeletos() -> int:
     """Extrai as folhas de esqueleto do .rar e quebra por direcao.
 
@@ -317,15 +379,24 @@ def importar_squeletos() -> int:
                 ):
                     if faixa + FH > folha.get_height():
                         break
+                    quadros = []
                     for i in range(n):
                         x = i * FW
                         if x + FW > folha.get_width():
                             break
-                        pedaco = folha.subsurface(
-                            pygame.Rect(x, faixa, FW, FH)
+                        quadros.append(
+                            folha.subsurface(
+                                pygame.Rect(x, faixa, FW, FH)
+                            ).copy()
                         )
+                    if not quadros:
+                        continue
+                    quadros = _recortar_e_centralizar(quadros)
+                    for i, quadro in enumerate(quadros):
                         grande = pygame.transform.scale(
-                            pedaco, (FW * UPSCALE, FH * UPSCALE)
+                            quadro,
+                            (quadro.get_width() * UPSCALE,
+                             quadro.get_height() * UPSCALE),
                         )
                         pygame.image.save(
                             grande,
