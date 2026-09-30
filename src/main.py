@@ -16,7 +16,7 @@ import sys
 import pygame
 
 from . import assets, settings
-from .config import Config, native_refresh_rate
+from .config import Config, logical_desktop_size, native_refresh_rate
 from .game_scene import GameScene
 from .input_map import InputMap
 from .options_screen import OptionsScreen
@@ -34,10 +34,30 @@ def build_scene_manager(manager: SceneManager) -> SceneManager:
 def create_window(config: Config) -> pygame.Surface:
     """Cria (ou recria) a janela conforme a configuracao.
 
-    Tenta primeiro SCALED, que permite resolucoes maiores que a tela e
-    respeita o DPI. Se o driver nao conseguir, cai para o modo comum,
-    porque perder SCALED e melhor do que nao abrir janela.
+    Resolucao maior que a tela logica e rebaixada de imediato: abrir
+    2560x1440 numa tela de 1536x960 cria uma janela que nao cabe, e
+    sobra uma faixa em branco na direita e embaixo. Em tela cheia a
+    resolucao escolhida e o que o monitor deve exibir, entao nao se
+    mexe.
+
+    SCALED permite resolucoes maiores que a tela, mas depende de
+    aceleracao. Onde ela nao existe (driver virtual de teste), o pygame
+    reclama e a janela nao abre, entao ha um caminho sem SCALED.
     """
+    size = config.size
+    desktop = logical_desktop_size()
+
+    if not config.fullscreen and desktop:
+        if size[0] > desktop[0] or size[1] > desktop[1]:
+            # encolhe mantendo a proporcao, sem passar do desktop
+            factor = min(desktop[0] / size[0], desktop[1] / size[1])
+            size = (
+                max(640, int(size[0] * factor)),
+                max(360, int(size[1] * factor)),
+            )
+            config.width, config.height = size
+            print(f"[video] resolucao maior que a tela; usando {size[0]}x{size[1]}")
+
     # SCALED exige aceleracao. Em driver virtual (teste headless) ela
     # nao existe, e o proprio pygame avisa "no fast renderer available".
     headless = os.environ.get("SDL_VIDEODRIVER") == "dummy"
@@ -47,13 +67,19 @@ def create_window(config: Config) -> pygame.Surface:
         if config.fullscreen:
             flags |= pygame.FULLSCREEN
         try:
-            return pygame.display.set_mode(config.size, flags, vsync=1 if config.vsync else 0)
+            return pygame.display.set_mode(
+                size, flags, vsync=1 if config.vsync else 0
+            )
         except pygame.error as exc:
-            print(f"[video] SCALED indisponivel ({exc}), usando modo padrao")
+            # SCALED|FULLSCREEN falha em alguns drivers; tenta sem vsync
+            try:
+                return pygame.display.set_mode(size, flags)
+            except pygame.error:
+                print(f"[video] SCALED indisponivel ({exc}), usando modo padrao")
     else:
         flags = pygame.FULLSCREEN if config.fullscreen else 0
 
-    return pygame.display.set_mode(config.size, flags)
+    return pygame.display.set_mode(size, flags)
 
 
 def main(frame_limit: int | None = None) -> int:

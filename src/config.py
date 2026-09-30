@@ -53,6 +53,10 @@ class Config:
         quebrar o jogo na hora de abrir."""
         if (self.width, self.height) not in RESOLUTION_CHOICES:
             self.width, self.height = settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT
+        # resolucao maior que a tela nao vira padrao aqui: em tela
+        # cheia ela e valida, e filtrar aqui quebraria o fullscreen
+        if self.height > self.width:
+            self.width, self.height = self.height, self.width
         if self.sprite_scale not in SCALE_CHOICES:
             self.sprite_scale = 3
         if self.fps_limit not in FPS_CHOICES:
@@ -66,11 +70,39 @@ class Config:
     def size(self) -> tuple[int, int]:
         return self.width, self.height
 
-    def cycle_resolution(self, delta: int) -> None:
-        index = RESOLUTION_CHOICES.index(self.size)
-        self.width, self.height = RESOLUTION_CHOICES[
-            (index + delta) % len(RESOLUTION_CHOICES)
+    def available_resolutions(self) -> tuple[tuple[int, int], ...]:
+        """Resolucoes que cabem na tela, mais a que estiver em uso.
+
+        Uma resolucao maior que o desktop logico cria uma janela maior
+        que a tela: sobra uma faixa em branco na direita e embaixo. Em
+        vez de oferecer e falhar, a lista e filtrada. A resolucao atual
+        sempre entra, senao um config antigo com 2560x1440 ficaria
+        travado sem como sair.
+        """
+        from .config import logical_desktop_size
+
+        desktop = logical_desktop_size()
+        if not desktop:
+            return RESOLUTION_CHOICES
+
+        usable = [
+            r
+            for r in RESOLUTION_CHOICES
+            if r[0] <= desktop[0] and r[1] <= desktop[1]
         ]
+        # a resolucao em uso sempre entra, senao um config antigo com
+        # algo maior que a tela ficaria travado sem como sair
+        if self.size not in usable:
+            usable.append(self.size)
+            usable.sort()
+        return tuple(usable)
+
+    def cycle_resolution(self, delta: int) -> None:
+        choices = self.available_resolutions()
+        if self.size not in choices:
+            choices = RESOLUTION_CHOICES
+        index = choices.index(self.size)
+        self.width, self.height = choices[(index + delta) % len(choices)]
 
     def cycle_scale(self, delta: int) -> None:
         index = SCALE_CHOICES.index(self.sprite_scale)
@@ -185,5 +217,23 @@ def native_refresh_rate() -> int | None:
             index += 1
 
         return best[2] if best else None
+    except Exception:
+        return None
+
+
+def logical_desktop_size() -> tuple[int, int] | None:
+    """Tamanho util da tela em pixels logicos, ja considerando DPI.
+
+    Com DPI 125%, uma tela de 1920x1200 fisicos vale 1536x960 logicos,
+    e e esse numero que limita a janela. Se pygame ainda nao foi
+    inicializado, nao ha como descobrir: devolve None.
+    """
+    try:
+        import pygame
+
+        if not pygame.display.get_init():
+            return None
+        sizes = pygame.display.get_desktop_sizes()
+        return max(sizes) if sizes else None
     except Exception:
         return None

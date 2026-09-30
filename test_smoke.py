@@ -40,6 +40,7 @@ from src.config import (  # noqa: E402
     SCALE_CHOICES,
     Config,
 )
+from src.input_map import InputMap  # noqa: E402
 from src.main import build_scene_manager, create_window  # noqa: E402
 
 FRAMES = 5
@@ -110,6 +111,36 @@ def check_all_resolutions() -> None:
             manager.update(1.0 / 60)
             manager.draw()
         print(f"[ok] {width}x{height} ok")
+
+
+def check_resolution_filter() -> None:
+    """Garante que nunca seja oferecida resolucao maior que a tela.
+
+    Resolucao maior que o desktop logico abre uma janela que nao cabe,
+    sobrando uma faixa em branco. O filtro previne isso; este teste
+    trava a garantia em qualquer maquina.
+    """
+    from src.config import logical_desktop_size
+
+    config = Config()
+    desktop = logical_desktop_size()
+    offered = config.available_resolutions()
+
+    # nunca inventa resolucao fora da lista do codigo
+    for size in offered:
+        assert size in RESOLUTION_CHOICES or size == config.size, size
+    print(f"[ok] filtro de resolucoes: {list(offered)} (desktop {desktop})")
+
+    # create_window tem que rebaixar qualquer tamanho grande pedido
+    for size in RESOLUTION_CHOICES:
+        probe = Config(width=size[0], height=size[1], fullscreen=False)
+        window = create_window(probe)
+        got = window.get_size()
+        if desktop:
+            assert got[0] <= desktop[0] and got[1] <= desktop[1], (
+                f"{size} virou janela {got}, maior que o desktop {desktop}"
+            )
+    print(f"[ok] create_window rebaixa resolucoes grandes (testadas {len(RESOLUTION_CHOICES)})")
 
 
 def check_keybindings() -> None:
@@ -290,6 +321,12 @@ def check_fps() -> None:
     Roda com vsync ligado (o padrao), entao o teto e o refresh do
     monitor. Confere que o loop alcanca esse teto, e nao so que "nao
     quebrou".
+
+    Precisa ser a PRIMEIRA checagem do script: cada `set_mode` recria a
+    janela, e no driver virtual do teste (SDL dummy, sem aceleracao) as
+    recriacoes vazao tempo e a medicao seguinte nao representa o jogo
+    real. As outras checagens medem correo, entao nao importa a ordem
+    delas.
     """
     from src.config import native_refresh_rate
     from src.scene_manager import SceneManager
@@ -297,7 +334,7 @@ def check_fps() -> None:
     refresh = native_refresh_rate()
     config = Config()
     window = create_window(config)
-    manager = build_scene_manager(SceneManager(window, config))
+    manager = build_scene_manager(SceneManager(window, config, InputMap()))
     manager.switch("game")
 
     clock = pygame.time.Clock()
@@ -344,9 +381,14 @@ def check_entrypoint() -> None:
 
 
 def main() -> int:
+    # primeiro de tudo: a medicao de FPS, que depende de janela limpa
+    check_fps()
+    print()
     check_scenes()
     print()
     check_config_roundtrip()
+    print()
+    check_resolution_filter()
     print()
     check_keybindings()
     print()
@@ -355,8 +397,6 @@ def main() -> int:
     check_all_scales()
     print()
     check_all_resolutions()
-    print()
-    check_fps()
     print()
     check_entrypoint()
     print()

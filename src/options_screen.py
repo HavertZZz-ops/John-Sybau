@@ -12,7 +12,7 @@ from typing import Callable, List, Optional, Tuple
 import pygame
 
 from . import assets, input_map, settings
-from .config import Config
+from .config import RESOLUTION_CHOICES, Config, logical_desktop_size
 from .input_map import InputMap
 from .scene import Scene
 from .ui import draw_panel, draw_text
@@ -79,6 +79,20 @@ class OptionsScreen(Scene):
         self.options: List[Option] = self._build_video()
         self.rows: List[Tuple[str, str, list[str]]] = []
 
+    def _resolution_hint(self) -> str:
+        """Explica por que so algumas resolucoes aparecem."""
+        desktop = logical_desktop_size()
+        if not desktop:
+            return "esquerda/direita"
+        total = len(RESOLUTION_CHOICES)
+        shown = len(self.config.available_resolutions())
+        if shown >= total:
+            return "esquerda/direita"
+        return (
+            f"sua tela e {desktop[0]}x{desktop[1]}; "
+            f"resolucoes maiores ficariam cortadas"
+        )
+
     # --- construcao das linhas -------------------------------------
     def _build_video(self) -> List[Option]:
         config = self.config
@@ -107,7 +121,8 @@ class OptionsScreen(Scene):
             Option(
                 "resolucao", "Resolucao",
                 lambda: f"{config.width} x {config.height}",
-                set_resolution, hint="esquerda/direita",
+                set_resolution,
+                hint=self._resolution_hint(),
             ),
             Option(
                 "escala", "Escala dos sprites",
