@@ -16,6 +16,7 @@ import pygame
 
 from . import assets, cenarios, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
+from . import equipamento as equip_mod
 from . import itens as itens_mod
 from .scene import Scene
 
@@ -215,13 +216,7 @@ class RoadScene(Scene):
                 )
 
         # heroi
-        quadros = self.frames
-        if quadros:
-            indice = int(self.anim_time * 8) % len(quadros)
-            sprite = quadros[indice]
-            surface.blit(sprite, sprite.get_rect(
-                center=(int(self.posicao.x - self.camera.x + w // 2),
-                        int(self.posicao.y - self.camera.y + h // 2))))
+        self._desenhar_heroi_equipado(surface)
 
         if self.avisar_tempo > 0 and self.avisar:
             theme.text_tracked_at(
@@ -255,3 +250,92 @@ class RoadScene(Scene):
             surface, inv, (w // 2 - 165, h // 2 - 60),
             rodape="q ou esc fecha",
         )
+
+    def _tecla_equip(self, event) -> None:
+        """Trocar o que esta nas maos, com as setas e o enter.
+
+        E um submenu do Q. Uma tela a parte para isso seria demais
+        para cinco conjuntos, e o jogador teria de sair do lugar para
+        trocar de arma no meio de uma sala.
+        """
+        conjuntos = equip_mod.todos_os_conjuntos()
+        if "voltar" in self.acoes_do_evento(event):
+            self.modo_equip = None
+            return
+        if "mover_cima" in self.acoes_do_evento(event):
+            self.index_equip = (self.index_equip - 1) % len(conjuntos)
+        elif "mover_baixo" in self.acoes_do_evento(event):
+            self.index_equip = (self.index_equip + 1) % len(conjuntos)
+        elif "confirmar" in self.acoes_do_evento(event):
+            escolhido = conjuntos[self.index_equip]
+            p = self.progresso
+            p.arma = escolhido.arma or "espada"
+            p.escudo = escolhido.escudo
+            self.manager.ui_state["progresso"] = p
+            self.manager.salvar_progresso()
+            self.modo_equip = None
+
+    def _acoes_do_evento(self, event) -> set:
+        if hasattr(self, "key"):
+            return {a for a in self.acoes if self.key(event, a)}
+        return set(self.manager.input.actions_for(event))
+
+    def _desenhar_equipamento(self, surface: pygame.Surface) -> None:
+        """A lista de conjuntos, sobre o inventario."""
+        if self.modo_equip is None:
+            return
+        conjuntos = equip_mod.todos_os_conjuntos()
+        w, h = self.size
+        caixa = pygame.Rect(0, 0, min(420, w - 60), 70 + 34 * len(conjuntos))
+        caixa.center = (w // 2, h // 2)
+        pygame.draw.rect(surface, theme.BACKGROUND, caixa.inflate(12, 12))
+        pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(12, 12), 1)
+        theme.text_tracked_at(
+            surface, "NAS MAOS", 17, (caixa.x, caixa.y - 26), theme.GOLD)
+        for i, c in enumerate(conjuntos):
+            y = caixa.y + i * 34
+            marcado = i == self.index_equip
+            cor = theme.GOLD if marcado else theme.TEXT
+            pygame.draw.rect(
+                surface, theme.BACKGROUND_SOFT,
+                pygame.Rect(caixa.x - 4, y - 4, caixa.width + 8, 30))
+            if marcado:
+                pygame.draw.rect(
+                    surface, theme.GOLD,
+                    pygame.Rect(caixa.x - 4, y - 4, 3, 30))
+            arte = assets.carregar_equipado(c.chave, escala=1)
+            if arte is not None:
+                surface.blit(arte, arte.get_rect(
+                    midleft=(caixa.x + 4, y + 11)))
+            theme.text_tracked_at(
+                surface, c.rotulo, 15, (caixa.x + 76, y + 8), cor)
+        theme.text_tracked_at(
+            surface, "enter usa   esc volta", 13,
+            (caixa.x, caixa.bottom + 10), theme.TEXT_DIM)
+
+    def _desenhar_heroi_equipado(self, surface: pygame.Surface) -> None:
+        """O heroi no mapa, com o que esta nas maos.
+
+        A animacao de caminhada vem sempre do espadachim do pacote de
+        mercado: ela nao tem variante por arma, e um desenho estatico de
+        64px ao lado de uma animacao de 12 quadros faz o personagem
+        piscar de desenho a cada passo. Entao o conjunto equipado
+        aparece na PARADA, e a animacao assume assim que o jogador se
+        move.
+        """
+        p = self.progresso
+        chave = equip_mod.chave_com_desenho(
+            p.arma if p else None, p.escudo if p else None
+        )
+        arte = assets.carregar_equipado(chave, escala=assets.get_sprite_scale())
+        if arte is None or self.moving:
+            quadros = self.frames
+            if quadros:
+                sprite = quadros[int(self.anim_time * 8) % len(quadros)]
+                surface.blit(sprite, sprite.get_rect(
+                    center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                            int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+            return
+        surface.blit(arte, arte.get_rect(
+            center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                    int(self.posicao.y - self.camera.y + self.size[1] // 2))))

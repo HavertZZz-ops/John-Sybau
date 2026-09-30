@@ -252,6 +252,58 @@ HERO_FPS = 6
 HERO_FPS_ESTADO = {
     "idle": 5, "walk": 8, "attack": 14, "hit": 12, "death": 8,
 }
+EQUIP_DIR: Path = settings.SPRITES_DIR / "heroi_equipado"
+ARMA_DIR: Path = settings.SPRITES_DIR / "armas"
+
+_EQUIP_CACHE: dict[tuple[str, int], pygame.Surface] = {}
+_ARMA_CACHE: dict[tuple[str, int], pygame.Surface] = {}
+
+
+def _escala_de(img: pygame.Surface, escala: int) -> pygame.Surface:
+    alvo = (img.get_width() * escala, img.get_height() * escala)
+    return img if img.get_size() == alvo else pygame.transform.scale(img, alvo)
+
+
+def carregar_equipado(conjunto: str, escala: int = 2) -> pygame.Surface | None:
+    """O desenho do heroi com aquele conjunto nas maos."""
+    if not EQUIP_DIR.is_dir():
+        return None
+    caminho = EQUIP_DIR / f"{conjunto}.png"
+    if not caminho.is_file():
+        return None
+    chave = (conjunto, escala)
+    pega = _EQUIP_CACHE.get(chave)
+    if pega is not None:
+        return pega
+    try:
+        img = _escala_de(_load_image(caminho), escala)
+    except (pygame.error, OSError) as exc:
+        print(f"[assets] conjunto ausente: {caminho.name} ({exc})")
+        return None
+    _EQUIP_CACHE[chave] = img
+    return img
+
+
+def carregar_arma(nome: str, escala: int = 2) -> pygame.Surface | None:
+    """O desenho solto de uma arma, para o menu de equipamento."""
+    if not ARMA_DIR.is_dir():
+        return None
+    caminho = ARMA_DIR / f"{nome}.png"
+    if not caminho.is_file():
+        return None
+    chave = (nome, escala)
+    pega = _ARMA_CACHE.get(chave)
+    if pega is not None:
+        return pega
+    try:
+        img = _escala_de(_load_image(caminho), escala)
+    except (pygame.error, OSError) as exc:
+        print(f"[assets] arma ausente: {caminho.name} ({exc})")
+        return None
+    _ARMA_CACHE[chave] = img
+    return img
+
+
 CASA_DIR: Path = settings.SPRITES_DIR / "casas"
 
 _CASA_CACHE: dict[tuple[str, int], pygame.Surface] = {}

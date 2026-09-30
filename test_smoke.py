@@ -760,6 +760,20 @@ def check_fps() -> None:
     )
 
 
+def check_equipamento() -> None:
+    """As armas, os cinco conjuntos e a troca de equipamento."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_equipamento.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] equipamento:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] equipamento")
+
+
 def check_refugio() -> None:
     """Fogueira, taverna e mercador: tem de funcionar junto."""
     result = subprocess.run(
@@ -1522,6 +1536,8 @@ def main() -> int:
     check_cidade()
     print()
     check_refugio()
+    print()
+    check_equipamento()
     print()
     check_persistencia()
     print()

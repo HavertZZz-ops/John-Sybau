@@ -117,6 +117,8 @@ def desenhar_inventario(
     posicao: tuple[int, int],
     titulo: str = "ITENS",
     rodape: str = "q ou esc fecha",
+    conjunto=None,
+    extra: list[str] | None = None,
 ) -> pygame.Rect:
     """Desenha o inventario. Usado na luta e no mundo.
 
@@ -125,6 +127,7 @@ def desenhar_inventario(
     coisa andando pelo mapa. Duas telas parecidas para o mesmo objeto
     transforma a lista em coisa a se decifrar de novo.
     """
+    from . import assets
     from . import theme
 
     linhas = rotulos(inventario)
@@ -154,4 +157,21 @@ def desenhar_inventario(
 
     theme.text_tracked_at(
         surface, rodape, 13, (caixa.x, caixa.bottom + 10), theme.TEXT_DIM)
+
+    # o que esta nas maos, e o botao de trocar
+    if conjunto is not None:
+        y = caixa.bottom + 34
+        arte = assets.carregar_equipado(conjunto.chave, escala=1)
+        if arte is not None:
+            surface.blit(arte, arte.get_rect(
+                midbottom=(caixa.x + 20, y + 60)))
+        theme.text_tracked_at(
+            surface, "NAS MAOS", 13, (caixa.x + 54, y), theme.GOLD)
+        theme.text_tracked_at(
+            surface, conjunto.rotulo, 15, (caixa.x + 54, y + 18), theme.TEXT)
+        for i, linha in enumerate(extra or []):
+            theme.text_tracked_at(
+                surface, linha, 12, (caixa.x + 54, y + 40 + i * 15),
+                theme.TEXT_DIM)
+
     return caixa

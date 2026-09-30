@@ -110,6 +110,9 @@ class Progresso:
     vezes_saida: int = 0
     # itens no bolso: {"pocao": 1}
     itens: dict[str, int] = field(default_factory=dict)
+    # o que esta nas maos
+    arma: str = "espada"
+    escudo: str | None = None
     # para onde o mundo exterior esta liberado: "masmorra", "estrada", "cidade"
     mundo: str = "masmorra"
 
@@ -249,6 +252,18 @@ class Progresso:
         if mundo not in ("masmorra", "estrada", "cidade"):
             mundo = padrao.mundo
 
+        # arma e escudo vem do save, mas nunca um valor que o jogo nao
+        # conhece: um "escudo_rachado" num save editado a mao deixaria o
+        # heroi sem desenho nenhum
+        from . import equipamento
+
+        arma = limpo.get("arma", padrao.arma)
+        if arma not in equipamento.ARMAS:
+            arma = padrao.arma
+        escudo = limpo.get("escudo", padrao.escudo)
+        if escudo not in equipamento.ESCUDOS:
+            escudo = padrao.escudo
+
         return cls(
             cenario=str(limpo.get("cenario", padrao.cenario)),
             sala=sala,
@@ -257,4 +272,6 @@ class Progresso:
             vezes_saida=completada,
             itens=itens,
             mundo=mundo,
+            arma=arma,
+            escudo=escudo,
         )
