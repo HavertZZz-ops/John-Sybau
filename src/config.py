@@ -15,7 +15,10 @@ from . import settings
 
 CONFIG_PATH = settings.ROOT_DIR / "config.json"
 
-# resolucoes oferecidas na tela de opcoes, em pixels
+# resolucoes oferecidas na tela de opcoes, em pixels logicos.
+# A lista e filtrada em tempo de execucao pelo que cabe na tela, e a
+# resolucao nativa do desktop e incluida automaticamente, entao uma
+# tela 1536x960 ganha essa opcao mesmo sem estar aqui.
 RESOLUTION_CHOICES: tuple[tuple[int, int], ...] = (
     (1280, 720),
     (1366, 768),
@@ -90,11 +93,19 @@ class Config:
             for r in RESOLUTION_CHOICES
             if r[0] <= desktop[0] and r[1] <= desktop[1]
         ]
-        # a resolucao em uso sempre entra, senao um config antigo com
+
+        # a resolucao nativa da tela entra sempre: e a que preenche a
+        # janela sem sobra, e sem ela o jogador fica sem opcao ideal
+        native = (desktop[0], desktop[1])
+        if native not in usable:
+            usable.append(native)
+
+        # a resolucao em uso tambem entra, senao um config antigo com
         # algo maior que a tela ficaria travado sem como sair
         if self.size not in usable:
             usable.append(self.size)
-            usable.sort()
+
+        usable.sort()
         return tuple(usable)
 
     def cycle_resolution(self, delta: int) -> None:
@@ -124,6 +135,15 @@ class Config:
         """Copia tudo de outro config (usado pelo botao de restaurar)."""
         for f in fields(self):
             setattr(self, f.name, getattr(other, f.name))
+
+    def sync_from_input_map(self, controls) -> None:
+        """Copia o mapeamento vivo do InputMap para o config.
+
+        O remapeamento acontece no InputMap (que as cenas consultam),
+        enquanto este dataclass e o que vai para o arquivo. Sem esta
+        copia, a tela mostra a tecla nova mas o config.json fica vazio.
+        """
+        self.bindings = controls.to_dict()
 
     # --- persistencia ----------------------------------------------
     def save(self, path: Path = CONFIG_PATH) -> None:

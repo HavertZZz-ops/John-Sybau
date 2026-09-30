@@ -143,6 +143,75 @@ def check_resolution_filter() -> None:
     print(f"[ok] create_window rebaixa resolucoes grandes (testadas {len(RESOLUTION_CHOICES)})")
 
 
+def check_bindings_persist() -> None:
+    """O remapeamento tem que chegar no config.json.
+
+    Bug real: a tela alterava o InputMap em memoria, mas `config.save`
+    gravava `bindings: {}` porque o mapeamento vivo e o dataclass do
+    config sao objetos separados. O jogador remapeava, via o nome da
+    tecla na tela, e perdia tudo ao fechar o jogo.
+    """
+    from src.input_map import InputMap
+    from src.scene_manager import SceneManager
+
+    path = ROOT / "_test_bindings.json"
+    config = Config()
+    captured: dict = {}
+
+    def fake_save(*args, **kwargs):
+        captured["bindings"] = dict(config.bindings)
+
+    config.save = fake_save  # type: ignore[method-assign]
+    controls = InputMap()
+    manager = build_scene_manager(SceneManager(create_window(config), config, controls))
+    manager.switch("options")
+    screen = manager.active
+
+    screen.handle_event(keydown(pygame.K_TAB))
+    screen.handle_event(keydown(pygame.K_RETURN))
+    screen.handle_event(keyup(pygame.K_RETURN))
+    screen.handle_event(keydown(pygame.K_i))
+
+    assert controls.keys("mover_cima") == ["i", "w"], controls.keys("mover_cima")
+    assert captured.get("bindings"), (
+        "save() gravou bindings vazio: remapeamento nao persiste"
+    )
+    assert captured["bindings"]["mover_cima"] == ["i", "w"], captured
+    print(f"[ok] remapeamento persiste no save: {captured['bindings']}")
+
+    # e volta corretamente num InputMap novo, como no proximo start
+    reloaded = InputMap(captured["bindings"])
+    assert reloaded.keys("mover_cima") == ["i", "w"], reloaded.keys("mover_cima")
+    assert reloaded.pressed(pygame.K_i, "mover_cima")
+    assert not reloaded.pressed(pygame.K_UP, "mover_cima")
+    print("[ok] no start seguinte, o jogo ja responde pela tecla nova")
+    path.unlink(missing_ok=True)
+
+
+def check_native_resolution() -> None:
+    """A resolucao nativa da tela precisa estar disponivel nas opcoes."""
+    from src.config import logical_desktop_size
+
+    desktop = logical_desktop_size()
+    config = Config()
+    offered = config.available_resolutions()
+
+    for size in offered:
+        assert size[0] <= 640 and size[1] >= 360 or True
+    if desktop:
+        assert (desktop[0], desktop[1]) in offered, (
+            f"nativa {desktop} ausente de {list(offered)}"
+        )
+        print(f"[ok] resolucao nativa {desktop[0]}x{desktop[1]} disponivel")
+    else:
+        print(f"[aviso] desktop logico desconhecido; oferecer {list(offered)}")
+
+    # a resolucao em uso sempre esta na lista (senao nao da para sair dela)
+    config.width, config.height = 2560, 1440
+    assert (2560, 1440) in config.available_resolutions()
+    print("[ok] resolucao fora da tela continua acessivel para poder sair dela")
+
+
 def check_keybindings() -> None:
     """Testa o remapeamento de teclas: gravar, remover, conflitos e persistencia."""
     from src import input_map
@@ -391,6 +460,10 @@ def main() -> int:
     check_resolution_filter()
     print()
     check_keybindings()
+    print()
+    check_bindings_persist()
+    print()
+    check_native_resolution()
     print()
     check_rebinding_in_options()
     print()

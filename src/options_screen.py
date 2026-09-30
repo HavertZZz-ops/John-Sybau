@@ -262,10 +262,11 @@ class OptionsScreen(Scene):
         fresh = Config().clamp()
         self.config.copy_from(fresh)
         self.controls.reset()
+        self._build_keys()
         assets.set_sprite_scale(self.config.sprite_scale)
         self._needs_rebuild = True
         self.options = self._build_video()
-        self._apply()
+        self._apply()  # _apply sincroniza config.bindings a partir do mapa
         self._show("padroes restaurados")
 
     # --- aba de teclas ---------------------------------------------
@@ -340,7 +341,15 @@ class OptionsScreen(Scene):
 
     # --- aplicacao -------------------------------------------------
     def _apply(self) -> None:
-        """Salva e, se preciso, recria a janela."""
+        """Salva e, se preciso, recria a janela.
+
+        O `InputMap` vivo e o `config.bindings` sao coisas separadas: o
+        remapeamento acontece no mapa, e o arquivo guarda o dicionario.
+        Sem copiar um no outro aqui, a tela mostra a tecla nova mas o
+        config.json continua vazio e o remapeamento se perde ao fechar
+        o jogo.
+        """
+        self.config.sync_from_input_map(self.controls)
         self.config.save()
         self.manager.apply_config(rebuild=self._needs_rebuild)
         self._needs_rebuild = False
