@@ -95,17 +95,17 @@ class TitleScreen(Scene):
             return
 
         if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_UP, pygame.K_w):
+            if self.key(event, "mover_cima"):
                 self._move(-1)
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
+            elif self.key(event, "mover_baixo"):
                 self._move(1)
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            elif self.key(event, "confirmar"):
                 self._activate()
-            elif event.key == pygame.K_a:
+            elif self.key(event, "girar_esquerda"):
                 self._cycle_hero(-1)
-            elif event.key == pygame.K_d:
+            elif self.key(event, "girar_direita"):
                 self._cycle_hero(1)
-            elif event.key == pygame.K_ESCAPE:
+            elif self.key(event, "voltar"):
                 self.manager.quit()
 
     def _click(self, pos: Tuple[int, int]) -> None:
@@ -341,7 +341,14 @@ class TitleScreen(Scene):
         self, surface: pygame.Surface, rect: pygame.Rect, sprite_name: str, image_box
     ) -> None:
         if sprite_name == assets.SPRITE_PROTAGONIST and self.hero_frames:
-            status = f"idle {self.hero_dir} - {self._effective_scale()}x (A/D)"
+            # `labels` devolve uma lista por acao (cada uma pode ter
+            # varias teclas), entao achata antes de juntar
+            girar = "/".join(
+                label
+                for action in ("girar_esquerda", "girar_direita")
+                for label in self.controls.labels(action)
+            )
+            status = f"idle {self.hero_dir} - {self._effective_scale()}x ({girar})"
             color = settings.COLOR_ACCENT
         elif assets.has_sprite(sprite_name):
             status = "sprite ok"
@@ -386,11 +393,25 @@ class TitleScreen(Scene):
                 )
 
     def _draw_footer(self, surface: pygame.Surface, center_x: int, height: int) -> None:
-        hint = "WASD / setas  navegar      enter  confirmar      esc  sair"
+        # as teclas vem do mapa do jogador, entao o rodape sempre
+        # mostra o que ele realmente configurado
+        def joined(*actions: str) -> str:
+            # achata: cada acao pode ter varias teclas
+            flat = [
+                label
+                for action in actions
+                for label in self.controls.labels(action)
+            ]
+            return " ou ".join(flat)
+
+        parts = [f"{joined('mover_cima', 'mover_baixo')}  navegar"]
         if assets.has_animation():
-            hint = "A / D  girar o heroi      " + hint
+            parts.append(f"{joined('girar_esquerda', 'girar_direita')}  girar o heroi")
+        parts.append(f"{joined('confirmar')}  confirmar")
+        parts.append(f"{joined('voltar')}  sair")
         draw_text(
-            surface, hint, 18, (center_x, height - 52), settings.COLOR_TEXT_DIM
+            surface, "      ".join(parts), 18,
+            (center_x, height - 52), settings.COLOR_TEXT_DIM,
         )
 
         if self._sprites_ready() < len(CHARACTER_LABELS):

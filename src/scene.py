@@ -20,6 +20,12 @@ class Scene:
     def __init__(self, manager: "SceneManager") -> None:
         self.manager = manager
         self.window = manager.window
+        # mapa de teclas do jogador; cenas usam isto em vez de pygame.K_*
+        self.controls = manager.controls
+
+    def key(self, event: pygame.event.Event, action: str) -> bool:
+        """True se o evento e a tecla da acao."""
+        return self.controls.pressed(event.key, action)
 
     @property
     def size(self) -> tuple[int, int]:

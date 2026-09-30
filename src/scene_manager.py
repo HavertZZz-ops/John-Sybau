@@ -1,19 +1,25 @@
 """Gerenciador de cenas: mantém a cena ativa e faz a troca entre elas."""
 from __future__ import annotations
 
-from typing import Callable, Dict, Type
+from typing import Dict, Type
 
 import pygame
 
+from .input_map import InputMap
 from .scene import Scene
 
 
 class SceneManager:
     """Pilha simples de cenas com troca instantanea."""
 
-    def __init__(self, window: pygame.Surface, config=None) -> None:
+    def __init__(self, window: pygame.Surface, config=None, controls=None) -> None:
         self.window = window
         self.config = config
+        # mapa de teclas compartilhado por todas as cenas
+        self.controls: InputMap = controls if controls is not None else InputMap()
+        # estado de UI que precisa sobreviver a troca de cena; a cena em si
+        # e recriada toda vez que entra
+        self.ui_state: Dict[str, object] = {}
         self._scenes: Dict[str, Type[Scene]] = {}
         self._active: Scene | None = None
         self._active_name: str | None = None

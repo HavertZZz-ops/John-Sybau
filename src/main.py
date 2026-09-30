@@ -18,6 +18,7 @@ import pygame
 from . import assets, settings
 from .config import Config, native_refresh_rate
 from .game_scene import GameScene
+from .input_map import InputMap
 from .options_screen import OptionsScreen
 from .scene_manager import SceneManager
 from .title_screen import TitleScreen
@@ -61,13 +62,16 @@ def main(frame_limit: int | None = None) -> int:
     config = Config.load()
     assets.set_sprite_scale(config.sprite_scale)
 
+    # teclas do jogador; o config pode sobrescrever os padroes
+    controls = InputMap(config.bindings)
+
     window = create_window(config)
     pygame.display.set_caption(settings.GAME_TITLE)
 
     clock = pygame.time.Clock()
     refresh = native_refresh_rate()
 
-    manager = SceneManager(window, config)
+    manager = SceneManager(window, config, controls)
     build_scene_manager(manager)
     manager.switch("title")
 

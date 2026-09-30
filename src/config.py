@@ -44,6 +44,8 @@ class Config:
     sprite_scale: int = 3
     fps_limit: int = 60
     show_fps: bool = True
+    # teclas por acao: {"mover_cima": ["up", "w"], ...}
+    bindings: dict[str, list[str]] = field(default_factory=dict)
 
     # --- validacao ------------------------------------------------
     def clamp(self) -> "Config":
@@ -81,6 +83,15 @@ class Config:
     def toggle(self, name: str) -> None:
         """Inverte um booleano (fullscreen, vsync, show_fps)."""
         setattr(self, name, not getattr(self, name))
+
+    def reset_bindings(self) -> None:
+        """Apaga o mapeamento customizado, voltando ao padrao."""
+        self.bindings = {}
+
+    def copy_from(self, other: "Config") -> None:
+        """Copia tudo de outro config (usado pelo botao de restaurar)."""
+        for f in fields(self):
+            setattr(self, f.name, getattr(other, f.name))
 
     # --- persistencia ----------------------------------------------
     def save(self, path: Path = CONFIG_PATH) -> None:

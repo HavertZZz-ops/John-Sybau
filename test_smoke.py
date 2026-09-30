@@ -112,6 +112,146 @@ def check_all_resolutions() -> None:
         print(f"[ok] {width}x{height} ok")
 
 
+def check_keybindings() -> None:
+    """Testa o remapeamento de teclas: gravar, remover, conflitos e persistencia."""
+    from src import input_map
+    from src.input_map import InputMap
+
+    controls = InputMap()
+    assert controls.keys("mover_cima") == ["up", "w"], controls.keys("mover_cima")
+
+    # gravar substitui o slot sem mexer no outro
+    controls.assign("mover_cima", 0, "i")
+    assert controls.keys("mover_cima") == ["i", "w"], controls.keys("mover_cima")
+
+    # remover esvazia o slot, mas nunca a ultima tecla da acao.
+    # o slot fica vazio no lugar: e a posicao que a tela desenha.
+    assert controls.clear_slot("mover_cima", 1) is True
+    assert controls.keys("mover_cima") == ["i", ""], controls.keys("mover_cima")
+    assert controls.clear_slot("mover_cima", 0) is False, "nao pode ficar sem tecla"
+    assert controls.keys("mover_cima") == ["i", ""], "recusa deve manter a tecla"
+    assert controls.has("mover_cima")
+    print("[ok] gravar e remover tecla, com trava de ultima tecla")
+
+    # remapear de verdade: W deixa de andar para cima
+    assert controls.pressed(pygame.K_i, "mover_cima")
+    assert not controls.pressed(pygame.K_w, "mover_cima")
+    assert not controls.pressed(pygame.K_UP, "mover_cima")
+    controls.assign("mover_cima", 1, "up")
+    assert controls.pressed(pygame.K_UP, "mover_cima")
+    print("[ok] remapeamento muda o que o jogo responde")
+
+    # entrada invalida nao quebra: acao desconhecida e tecla inexistente
+    controls.update({"acao_que_nao_existe": ["q"], "mover_baixo": ["tecla_fake"]})
+    assert controls.keys("mover_baixo") == ["down", "s"], controls.keys("mover_baixo")
+    print("[ok] mapeamento invalido e ignorado")
+
+    # toda acao tem pelo menos uma tecla, sempre
+    controls.update({a: [] for a in input_map.DEFAULT_BINDINGS})
+    for action in input_map.DEFAULT_BINDINGS:
+        assert controls.has(action), f"{action} ficou sem tecla"
+    print("[ok] nenhuma acao fica sem tecla apos remapear tudo")
+
+    # conflito e detectado (a anda para esquerda e gira o heroi)
+    assert "mover_esquerda" in controls.conflicts("a"), controls.conflicts("a")
+    print("[ok] conflito de tecla detectado")
+
+    # persistencia pelo config
+    path = ROOT / "_test_config.json"
+    config = Config(bindings=controls.to_dict())
+    config.save(path)
+    reloaded = InputMap(Config.load(path).bindings)
+    assert reloaded.keys("mover_cima") == controls.keys("mover_cima"), reloaded.keys("mover_cima")
+    print("[ok] teclas salvam e voltam do config.json")
+    path.unlink(missing_ok=True)
+
+
+def check_rebinding_in_options() -> None:
+    """Percorre a aba de teclas: trocar aba, gravar, cancelar, remover."""
+    from src import input_map
+    from src.input_map import InputMap
+    from src.scene_manager import SceneManager
+
+    config = Config()
+    config.save = lambda *a, **k: None  # nao mexe no config.json do projeto
+    manager = build_scene_manager(SceneManager(create_window(config), config, InputMap()))
+    manager.switch("options")
+    screen = manager.active
+
+    assert screen.group == input_map.GROUP_VIDEO, screen.group
+    screen.handle_event(keydown(pygame.K_TAB))
+    assert screen.group == input_map.GROUP_TECLAS, screen.group
+    assert len(screen.rows) == len(input_map.actions_in(input_map.GROUP_TECLAS))
+    print(f"[ok] aba de teclas com {len(screen.rows)} acoes")
+
+    # navega ate "mover_cima" e grava I no primeiro slot
+    screen.index = 0
+    screen.handle_event(keydown(pygame.K_RETURN))
+    assert screen._capturing == "mover_cima", screen._capturing
+    assert screen._awaiting_release, "deve esperar soltar o enter"
+    screen.handle_event(keyup(pygame.K_RETURN))
+    assert not screen._awaiting_release
+    screen.handle_event(keydown(pygame.K_i))
+    assert screen._capturing is None
+    assert screen.controls.keys("mover_cima") == ["i", "w"], screen.controls.keys("mover_cima")
+    print("[ok] enter abre captura, I e gravada em 'mover_cima'")
+
+    # esc cancela sem gravar
+    screen.handle_event(keydown(pygame.K_RETURN))
+    screen.handle_event(keyup(pygame.K_RETURN))
+    screen.handle_event(keydown(pygame.K_ESCAPE))
+    assert screen._capturing is None
+    assert screen.controls.keys("mover_cima") == ["i", "w"], "esc nao deveria gravar"
+    print("[ok] esc cancela a captura sem gravar")
+
+    # backspace remove, mas a ultima tecla fica
+    screen.handle_event(keydown(pygame.K_BACKSPACE))
+    assert screen.controls.keys("mover_cima") == ["", "w"], screen.controls.keys("mover_cima")
+    assert screen.controls.has("mover_cima"), "a outra tecla ainda vale"
+    assert screen.controls.pressed(pygame.K_w, "mover_cima")
+    assert not screen.controls.pressed(pygame.K_i, "mover_cima"), "slot vazio nao dispara"
+    print("[ok] slot esvaziado deixa de disparar, a outra tecla segue valendo")
+    print("[ok] backspace remove, com trava da ultima tecla")
+
+    # o slot 0 ficou vazio, entao 'mover_cima' responde so por W
+    manager.switch("game")
+    game = manager.active
+    game.handle_event(keydown(pygame.K_w))
+    assert game.direction == "norte", game.direction
+    print("[ok] cena de jogo responde pela tecla ainda mapeada (W = cima)")
+
+    # agora grava I de novo e confere que o jogo passa a responder por ela.
+    # a tela nova precisa lembrar a aba e a linha de antes.
+    manager.switch("options")
+    screen = manager.active
+    assert screen.group == input_map.GROUP_TECLAS, f"aba nao preservada: {screen.group}"
+    assert screen.rows[screen.index][0] == "mover_cima", "linha nao preservada"
+    assert screen.slot == 0, f"slot nao preservado: {screen.slot}"
+    print("[ok] aba, linha e slot voltam como estavam ao reentrar")
+
+    screen.handle_event(keydown(pygame.K_RETURN))
+    screen.handle_event(keyup(pygame.K_RETURN))
+    screen.handle_event(keydown(pygame.K_i))
+    assert screen.controls.keys("mover_cima") == ["i", "w"], screen.controls.keys("mover_cima")
+    manager.switch("game")
+    game = manager.active
+    game.handle_event(keydown(pygame.K_i))
+    assert game.direction == "norte", game.direction
+    print("[ok] apos gravar I, o jogo responde por I")
+
+    manager.update(1 / 60)
+    manager.draw()
+    print("[ok] cena de jogo desenhou com tecla remapeada")
+
+
+def keydown(key: int) -> pygame.event.Event:
+    return pygame.event.Event(pygame.KEYDOWN, key=key, mod=0, unicode="", scancode=0)
+
+
+def keyup(key: int) -> pygame.event.Event:
+    return pygame.event.Event(pygame.KEYUP, key=key, mod=0, unicode="", scancode=0)
+
+
 def check_all_scales() -> None:
     """Testa a escala de sprite, que invalida o cache.
 
@@ -207,6 +347,10 @@ def main() -> int:
     check_scenes()
     print()
     check_config_roundtrip()
+    print()
+    check_keybindings()
+    print()
+    check_rebinding_in_options()
     print()
     check_all_scales()
     print()

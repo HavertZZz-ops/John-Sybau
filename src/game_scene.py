@@ -12,12 +12,20 @@ from . import assets, settings
 from .scene import Scene
 from .ui import draw_text
 
-# direcao -> (animacao do heroi, teclas que ativam)
-DIRECTION_KEYS = {
-    "sul": (pygame.K_s, pygame.K_DOWN),
-    "norte": (pygame.K_w, pygame.K_UP),
-    "leste": (pygame.K_d, pygame.K_RIGHT),
-    "oeste": (pygame.K_a, pygame.K_LEFT),
+# direcao -> acoes do mapa de teclas que ativam o movimento
+DIRECTION_ACTIONS = {
+    "sul": "mover_baixo",
+    "norte": "mover_cima",
+    "leste": "mover_direita",
+    "oeste": "mover_esquerda",
+}
+
+# rotulo da acao, para mostrar no HUD
+ACTION_LABELS = {
+    "mover_cima": "cima",
+    "mover_baixo": "baixo",
+    "mover_esquerda": "esquerda",
+    "mover_direita": "direita",
 }
 
 MOVE_SPEED = 140  # pixels por segundo
@@ -56,18 +64,19 @@ class GameScene(Scene):
 
     # entrada -------------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+        if event.type == pygame.KEYDOWN and self.key(event, "voltar"):
             self.manager.switch("title")
             return
 
         if event.type == pygame.KEYUP:
-            if event.key in _keyset(self.direction):
+            # solta o movimento quando a tecla da direcao atual sai
+            if self.controls.pressed(event.key, DIRECTION_ACTIONS[self.direction]):
                 self.moving = False
             return
 
         if event.type == pygame.KEYDOWN:
-            for direction, keys in DIRECTION_KEYS.items():
-                if event.key in keys:
+            for direction, action in DIRECTION_ACTIONS.items():
+                if self.key(event, action):
                     if direction != self.direction:
                         self.direction = direction
                         self._reload_frames()
@@ -155,9 +164,10 @@ class GameScene(Scene):
             (center_x, 56),
             settings.COLOR_ACCENT,
         )
+        teclas = "/".join(self.controls.labels(DIRECTION_ACTIONS[self.direction]))
         draw_text(
             surface,
-            f"direcao: {self.direction}    posicao: "
+            f"direcao: {self.direction}  ({teclas})    posicao: "
             f"{int(self.position.x)}, {int(self.position.y)}",
             20,
             (center_x, 92),
@@ -171,14 +181,20 @@ class GameScene(Scene):
                 (center_x, 120),
                 settings.COLOR_TEXT,
             )
+        # as teclas do jogador, nao valores fixos
+        hints = [
+            f"{'/'.join(self.controls.labels(a))}  andar"
+            for a in ("mover_cima", "mover_direita")
+        ]
+        voltar = "/".join(self.controls.labels("voltar")) or "esc"
         draw_text(
             surface,
-            "WASD ou setas  andar      esc  voltar",
+            f"{hints[0] if hints else 'setas'}  andar      {voltar}  voltar",
             18,
             (center_x, height - 30),
             settings.COLOR_TEXT_DIM,
         )
 
-
-def _keyset(direction: str) -> tuple[int, ...]:
-    return DIRECTION_KEYS.get(direction, ())
+    def _direction_label(self) -> str:
+        """Nome da acao da direcao atual, para o HUD."""
+        return ACTION_LABELS.get(DIRECTION_ACTIONS[self.direction], self.direction)
