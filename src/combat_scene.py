@@ -116,6 +116,12 @@ class CombatScene(Scene):
         self.anim_acao = "heroi"
         self.anim_quadro = 0
         self.menu_aberto = False
+        if self.batalha.fugiu:
+            # Fugiu pelo menu e o mesmo que apertar Esc: a luta acaba e
+            # o jogador volta para a masmorra com a vida que tinha. A
+            # masmorra e quem decide se isso vira saida da masmorra,
+            # porque so ela sabe em que sala a luta aconteceu.
+            self.resultado = "fuga"
 
     # atualizacao ---------------------------------------------------
     def update(self, dt: float) -> None:

@@ -78,6 +78,10 @@ SALAS: tuple[Sala, ...] = (
 PRIMEIRA = SALAS[0]
 CHEFE = SALAS[-1]
 
+# A masmorra tem cinco salas. A SEXTA e fora: e a estrada que leva a
+# cidade. "Sair da masmorra" e chegar na sexta, nao terminar a quinta.
+SAIDA = 6
+
 
 @dataclass
 class Progresso:
@@ -89,8 +93,9 @@ class Progresso:
     vencidas: list[int] = field(default_factory=list)
     # chefe que o jogador ja fugiu uma vez
     chefe_fugiu: bool = False
-    # quantas vezes o jogador chegou ao fim da masmorra
-    vezes_completada: int = 0
+    # quantas vezes o jogador SAIU da masmorra, ou seja, chegou na
+    # sala 6. Este e o portao do recambio do chefe, e nao a quinta sala
+    vezes_saida: int = 0
     # itens no bolso: {"pocao": 1}
     itens: dict[str, int] = field(default_factory=dict)
     # para onde o mundo exterior esta liberado: "masmorra", "estrada", "cidade"
@@ -107,21 +112,24 @@ class Progresso:
         return numero in self.vencidas
 
     def ja_saiu_da_masmorra(self) -> bool:
-        """True depois de terminar a masmorra pelo menos uma vez.
+        """True depois de chegar na sala 6 pelo menos uma vez.
 
         E o portao do recambio do chefe. Sem esta flag o chefe volta
-        para a ultima sala em toda visita, e o jogador nunca ve o
-        que o proprio texto promete.
+        para a quinta sala em toda visita, e o jogador nunca ve o que
+        a propria regra promete.
         """
-        return self.vezes_completada >= 1
+        return self.vezes_saida >= 1
 
     def onde_esta_o_chefe(self) -> int:
         """Em que sala o chefe esta.
 
-        Antes de o jogador completar a masmorra, o chefe fica na ultima
-        sala e a fuga ensina a mecanica. Depois de uma fuga, ele e
-        recambiado para a PRIMEIRA sala, que e onde o jogador nasce
-        dentro da masmorra.
+        O chefe comeca na quinta, a ultima da masmorra, e e forte demais
+        para quem esta aprendendo a fugir.
+
+        Depois que o jogador FUGIU e JA SAIU da masmorra pelo menos uma
+        vez, o chefe deixa a quinta e passa a estar na PRIMEIRA, que e
+        onde o jogador nasce dentro da masmorra. Uma condicao sem a
+        outra nao move o chefe.
         """
         if self.ja_saiu_da_masmorra() and self.chefe_fugiu:
             return PRIMEIRA.numero
@@ -147,8 +155,9 @@ class Progresso:
     def fugir_do_chefe(self) -> None:
         self.chefe_fugiu = True
 
-    def completar(self) -> None:
-        self.vezes_completada += 1
+    def sair_da_masmorra(self) -> None:
+        """Chegou na sala 6. Vale tanto por fuga quanto por vitoria."""
+        self.vezes_saida += 1
         if self.mundo == "masmorra":
             self.mundo = "estrada"
 
@@ -201,7 +210,7 @@ class Progresso:
             for k, v in (limpo.get("itens") or {}).items()
             if isinstance(v, int) and v > 0
         }
-        completada = limpo.get("vezes_completada", 0)
+        completada = limpo.get("vezes_saida", 0)
         if not isinstance(completada, int) or completada < 0:
             completada = 0
         mundo = limpo.get("mundo", padrao.mundo)
@@ -213,7 +222,7 @@ class Progresso:
             sala=sala,
             vencidas=sorted(set(vencidas)),
             chefe_fugiu=bool(limpo.get("chefe_fugiu", False)),
-            vezes_completada=completada,
+            vezes_saida=completada,
             itens=itens,
             mundo=mundo,
         )

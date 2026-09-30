@@ -14,6 +14,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from src.progresso import (  # noqa: E402
     CHEFE,
     PRIMEIRA,
+    SAIDA,
     SALAS,
     Progresso,
 )
@@ -78,17 +79,17 @@ checa(novo.chefe_fugiu, "a fuga fica marcada")
 checa(novo.onde_esta_o_chefe() == CHEFE.numero,
       "fugir SEM ter completado a masmorra nao move o chefe")
 
-novo.completar()
-checa(novo.ja_saiu_da_masmorra(), "completar marca que saiu da masmorra")
+novo.sair_da_masmorra()
+checa(novo.ja_saiu_da_masmorra(), "sair marca que saiu da masmorra")
 checa(novo.onde_esta_o_chefe() == PRIMEIRA.numero,
-      "completar depois de fugir: ai sim o chefe vai para a primeira sala")
+      "sair depois de fugir: ai sim o chefe vai para a primeira sala")
 
 # as DUAS condicoes. Este bloco usa um progresso novo de proposito: o
 # de cima ja tinha fugido, entao nao servia para provar que completar
 # sozinho nao move o chefe.
-so_completou = Progresso(vezes_completada=1)
-checa(so_completou.onde_esta_o_chefe() == CHEFE.numero,
-      "so ter completado nao move o chefe: falta ter fugido")
+so_saiu = Progresso(vezes_saida=1)
+checa(so_saiu.onde_esta_o_chefe() == CHEFE.numero,
+      "so ter saido nao move o chefe: falta ter fugido")
 
 novo.fugir_do_chefe()
 checa(novo.onde_esta_o_chefe() == PRIMEIRA.numero,
@@ -98,6 +99,32 @@ checa(novo.onde_esta_o_chefe() == PRIMEIRA.numero,
 so_fuga = Progresso(chefe_fugiu=True)
 checa(so_fuga.onde_esta_o_chefe() == CHEFE.numero,
       "so ter fugido nao move o chefe: falta ter saido da masmorra")
+
+# --- a saida e a sala 6, e vale tanto por fuga quanto por vitoria -----
+checa(SAIDA == 6, "a saida da masmorra e a sala 6")
+
+# fugir da quinta E sair: o chefe recambia para a primeira
+f = Progresso()
+checa(f.onde_esta_o_chefe() == CHEFE.numero, "no comecao o chefe esta na quinta")
+f.fugir_do_chefe()
+f.sair_da_masmorra()
+checa(f.mundo == "estrada", "sair da masmorra abre a estrada")
+checa(f.onde_esta_o_chefe() == PRIMEIRA.numero,
+      "depois de fugir e sair, o chefe esta na primeira sala")
+
+# vencer o chefe tambem e sair
+v = Progresso()
+v.vencer(5)
+v.sair_da_masmorra()
+checa(v.mundo == "estrada", "vencer e sair tambem abre a estrada")
+checa(v.onde_esta_o_chefe() == CHEFE.numero,
+      "vencer sem ter fugido deixa o chefe na quinta")
+
+# sair sem fugir: o portao exige as DUAS coisas
+s = Progresso()
+s.sair_da_masmorra()
+checa(s.onde_esta_o_chefe() == CHEFE.numero,
+      "sair sem fugir nao move o chefe")
 
 # --- itens -----------------------------------------------------------
 i = Progresso()
@@ -116,8 +143,8 @@ ida.sala = 4
 ida.vencer(1)
 ida.vencer(2)
 ida.fugir_do_chefe()
-ida.completar()
-ida.completar()
+ida.sair_da_masmorra()
+ida.sair_da_masmorra()
 ida.itens["pocao"] = 2
 ida.mundo = "cidade"
 voltou = Progresso.de_extra(ida.para_extra())
@@ -129,8 +156,8 @@ for bruto in [
     {"sala": 99},
     {"vencidas": [1, "dois", 42]},
     {"itens": {"pocao": -3, "elixir": 0}},
-    {"vezes_completada": -1},
-    {"vezes_completada": "muitas"},
+    {"vezes_saida": -1},
+    {"vezes_saida": "muitas"},
     {"mundo": "marte"},
 ]:
     r = Progresso.de_extra(bruto)
@@ -142,7 +169,7 @@ for bruto in [
         r.sala == 1
         and r.vencidas == esperado_vencidas
         and r.itens == {}
-        and r.vezes_completada == 0
+        and r.vezes_saida == 0
         and r.mundo == "masmorra"
         and r.chefe_fugiu is False
     )

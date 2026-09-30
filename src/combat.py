@@ -38,6 +38,7 @@ class Acao(Enum):
     ATACAR = "Atacar"
     DEFENDER = "Defender"
     HABILIDADE = "Habilidade"
+    FUGIR = "Fugir"
 
 
 @dataclass
@@ -162,6 +163,8 @@ class Batalha:
     turno_heroi: bool = False
     concluida: bool = False
     vencida: bool = False
+    # o jogador escolheu sair da luta em vez de ganhar
+    fugiu: bool = False
     sorteio: random.Random = field(default_factory=random.Random)
 
     # --- estado ------------------------------------------------------
@@ -215,6 +218,16 @@ class Batalha:
             ditos.extend(self._golpe(self.heroi, self.alvo_aleatorio(), forte=True))
             self.heroi.barra.gastar(self.heroi.custo_habilidade)
             self._encerrar_turno_heroi()
+            return ditos
+
+        if acao is Acao.FUGIR:
+            # Fugir nao e uma acao como as outras: nao consome barra,
+            # nao machuca ninguem e nao da tempo de o inimigo revidar.
+            # A luta acaba na hora, com o heroi como esta. Quem trata
+            # o resto (sair da masmorra) e a cena, olhando `fugiu`.
+            self.fugiu = True
+            self.concluida = True
+            ditos.append(Evento(f"{self.heroi.nome} foge da luta", "info"))
             return ditos
 
         return ditos
