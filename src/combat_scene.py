@@ -78,13 +78,21 @@ class CombatScene(Scene):
         if event.type != pygame.KEYDOWN:
             return
 
+        # Fim da batalha: QUALQUER tecla volta para a masmorra. O texto
+        # na tela dizia "qualquer tecla para voltar" e so o Esc
+        # respondia, entao a tela ficava presa ate o jogador adivinhar
+        # que precisava de um botao especifico.
+        if self.batalha.concluida:
+            self._sair_para_masmorra()
+            return
+
         if self.key(event, "voltar"):
             # fugir sai da luta com a vida que tinha
             self.resultado = "fuga"
             self.manager.switch("dungeon")
             return
 
-        if not self.menu_aberto or self.batalha.concluida:
+        if not self.menu_aberto:
             return
 
         opcoes = list(combat.Acao)
@@ -94,6 +102,12 @@ class CombatScene(Scene):
             self.index = (self.index + 1) % len(opcoes)
         elif self.key(event, "confirmar"):
             self._escolher(opcoes[self.index])
+
+    def _sair_para_masmorra(self) -> None:
+        """Volta para a masmorra depois do fim da luta."""
+        if self.resultado != "fuga":
+            self.manager.salvar_progresso()
+        self.manager.switch("dungeon")
 
     def _escolher(self, acao: combat.Acao) -> None:
         eventos = self.batalha.acao_do_heroi(acao)
@@ -118,6 +132,11 @@ class CombatScene(Scene):
         if self.batalha.concluida:
             if self.resultado == "" and self.batalha.vencida:
                 self.resultado = "vitoria"
+            # A animacao do golpe precisa terminar MESMO com a batalha
+            # acabada. O return abaixo vinha antes de desligar
+            # `anim_acao`, entao a espada ficava congelada na tela de
+            # vitoria para sempre.
+            self._atualizar_animacao(dt)
             return
 
         eventos = self.batalha.avancar(dt)
@@ -132,12 +151,16 @@ class CombatScene(Scene):
             self.menu_aberto = True
             self.index = 0
 
-        # anima da acao: o golpe tem duracao fixa e depois volta a pose
-        if self.anim_acao:
-            self.anim_quadro += dt * 12
-            if self.anim_quadro > 1.0:
-                self.anim_acao = ""
-                self.anim_quadro = 0.0
+        self._atualizar_animacao(dt)
+
+    def _atualizar_animacao(self, dt: float) -> None:
+        """Roda o golpe e volta para a pose quando ele acaba."""
+        if not self.anim_acao:
+            return
+        self.anim_quadro += dt * 12
+        if self.anim_quadro > 1.0:
+            self.anim_acao = ""
+            self.anim_quadro = 0.0
 
     def _flutuar(self, eventos) -> None:
         w, h = self.size
@@ -221,12 +244,19 @@ class CombatScene(Scene):
                 self._desenhar_nome(surface, inimigo, rect)
                 continue
 
-            # caido: o sprite some sob um véu escuro, o que dá menos
-            # trabalho do que ter uma pose de morte e marca o estado sem
-            # depender de cor
-            chapa = pygame.Surface(rect.size, pygame.SRCALPHA)
-            chapa.fill((0, 0, 0, 190))
-            surface.blit(chapa, rect)
+            # Caido: o sprite simplesmente nao e desenhado. A versao
+            # anterior punha um retangulo escuro no lugar dele, que
+            # aparecia como um bloco preto solto no chao e nao lia
+            # como nada. O que sobra e o nome com o risco zerado, que
+            # e o que diz que o inimigo caiu.
+            pygame.draw.rect(
+                surface, theme.HAIRLINE,
+                pygame.Rect(rect.centerx - 24, rect.top - 18, 48, 3),
+            )
+            theme.text_tracked_at(
+                surface, inimigo.nome.upper(), 12,
+                (rect.centerx, rect.top - 30), theme.HAIRLINE,
+            )
 
     def _desenhar_nome(self, surface, lutador, rect) -> None:
         """Nome e barra de vida em cima do sprite.
