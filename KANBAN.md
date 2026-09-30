@@ -116,3 +116,20 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       nunca bloqueiam o controle. Nao e painel nem manual.
       O esqueleto dorme na masmorra e so acorda depois de alguns
       passos, para a primeira luta nao ser uma emboscada.
+- [x] #22  Heroi do pacote de mercado                (este commit)
+      Troca o heroi pelo espadachim lvl1 (cabelo castanho, tunica
+      verde, espada e brilho vermelho no impacto). Medido, nao
+      adivinhado: cada folha tem quadro de 64x64, 4 linhas = 4
+      direcoes. Idle 12, walk 6, ataque 8, run 8, hit 5, death 7.
+      Tres defeitos reais apareceram no caminho:
+      - o HERO_BASE era um numero escrito a mao (32x32) que passava
+        a mentir a cada troca de sprite e quebrava a escala sem aviso.
+        Agora e medido do disco, nao declarado;
+      - o carregador ordenava os quadros alfabeticamente, entao um
+        idle de 12 quadros tocava na ordem 0,1,10,11,2,3...
+      - death e alling sao estados SEM direcao: o jogo procura
+        \hero_death_*.png\. Gravar \hero_sul_death_*\ deixava a
+        morte vazia em silencio, sem erro no log.
+      Os 5 estados que o pacote nao tem sao derivados dos
+      equivalentes, para o heroi nunca cair no desenho de reserva.
+- [ ] #23  Coixao de pedra                              (pendente)

@@ -252,10 +252,29 @@ HERO_FPS = 6
 HERO_FPS_ESTADO = {
     "idle": 5, "walk": 8, "attack": 14, "hit": 12, "death": 8,
 }
-# tamanho do quadro do heroi como esta no disco (32x32). E a referencia
-# de "1x": as opcoes multiplicam a partir daqui. Quadrado porque o
-# personagem do pacote e 16x16 e a importacao dobra cada quadro.
-HERO_BASE: Tuple[int, int] = (32, 32)
+def _medir_heroi() -> Tuple[int, int]:
+    """Le do disco o tamanho de um quadro do heroi.
+
+    A referencia de escala nao pode ser escrita a mao. O heroi ja foi
+    trocado duas vezes (o sprite de 16x16 do Adventure Pack, depois o
+    espadachim de 64x64 do pacote de mercado) e cada troca fazia o
+    numero declarado divergir do arquivo, o que quebrava a caixa de
+    escala e o teste de escala sem nenhum aviso.
+    """
+    if not HERO_DIR.is_dir():
+        return (32, 32)
+    for caminho in sorted(HERO_DIR.glob("hero_sul_idle_*.png")):
+        try:
+            imagem = pygame.image.load(caminho)
+        except (pygame.error, OSError):
+            continue
+        return imagem.get_size()
+    return (32, 32)
+
+
+# tamanho do quadro do heroi como esta NO DISCO. As opcoes de escala
+# multiplicam a partir daqui.
+HERO_BASE: Tuple[int, int] = _medir_heroi()
 # proporcao do quadro (largura / altura), usada para caber na tela
 HERO_ASPECT = HERO_BASE[0] / HERO_BASE[1]
 
@@ -304,8 +323,17 @@ def carregar_animacao(
     else:
         padrao = f"{prefixo}_{direction}_{state}_*.png"
 
+    # Ordena pelo NUMERO do quadro, nao alfabeticamente. Com mais de
+    # dez quadros, `sorted` entrega 0, 1, 10, 11, 2, 3... e a animacao
+    # salta de um quadro para outro sem parar. O espadachim do pacote
+    # de mercado tem 12 quadros de idle, que e exatamente onde isso
+    # aparece.
+    def numero(p: Path) -> tuple:
+        digitos = p.stem.rsplit("_", 1)[-1]
+        return (int(digitos),) if digitos.isdigit() else (10**9, p.name)
+
     frames = []
-    for path in sorted(raiz.glob(padrao)):
+    for path in sorted(raiz.glob(padrao), key=numero):
         try:
             image = _load_image(path)
             frames.append(fit_box(image, box, scale=scale))

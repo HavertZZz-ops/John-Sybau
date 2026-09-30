@@ -20,12 +20,16 @@ o efeito ao meio.
 """
 from __future__ import annotations
 
+import io
 import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(ROOT))
+from src.assets import HERO_ANY_DIR  # noqa: E402
 sys.path.insert(0, str(ROOT))
 
 DOWNLOADS = Path.home() / "Downloads"
@@ -36,6 +40,152 @@ PACK = "Top_Down_Adventure_Pack_v.1.0"
 
 TILES_DIR = ROOT / "assets" / "tiles"
 HERO_DIR = ROOT / "assets" / "sprites" / "hero"
+
+# --- o heroi de mercado -------------------------------------------
+# O pacote da CraftPix tem tres niveleis de espadachim. O nivel 1 e o
+# mais simples e cabe no visual do jogo. As folhas vem com a sombra ja
+# embutida (`With_shadow`), entao o jogo nao precisa desenhar a sua.
+ESPADA_ZIP = DOWNLOADS / (
+    "craftpix-net-180537-free-swordsman-1-3-level-pixel-top-down"
+    "-sprite-character.zip"
+)
+ESPADA_RAIZ = "craftpix-net-180537-free-swordsman-1-3-level-pixel-top-down-sprite-character"
+ESPADA_PKG = "PNG/Swordsman_lvl1/With_shadow"
+
+# folha do pacote -> (estado do jogo, quadros por linha)
+ESPADA_FOLHAS = {
+    "Idle": ("idle", 12),
+    "Walk": ("walk", 6),
+    "attack": ("attack", 8),
+    "Run": ("run", 8),
+    "Hurt": ("hit", 5),
+    "Death": ("death", 7),
+}
+ESPADA_CELULA = 64
+# a ordem das linhas na folha: frente, esquerda, costas, direita
+ESPADA_ORDEM = ("sul", "oeste", "norte", "leste")
+
+
+# O pacote de mercado nao tem `pushing`, `climbing`, `shielded`,
+# `shielded_hit` nem `falling`, mas o jogo pede esses estados. Sem eles
+# o carregador volta ao desenho de reserva e o heroi pisca entre o
+# espadachim e um retangulo. Derivamos de animacoes que existem.
+DERIVADOS = {
+    "pushing": "walk",
+    "climbing": "walk",
+    "shielded": "walk",
+    "shielded_hit": "hit",
+    "falling": "death",
+}
+
+
+def _derivados() -> int:
+    """Cria os estados ausentes copiando o estado equivalente."""
+    total = 0
+    for destino, origem in DERIVADOS.items():
+        sem_dir = destino in HERO_ANY_DIR
+        alvo_padrao = f"hero_{destino}_*.png" if sem_dir else f"hero_*_{destino}_*.png"
+        if list(HERO_DIR.glob(alvo_padrao)):
+            continue
+        origem_padrao = "hero_death_*.png" if sem_dir else f"hero_*_{origem}_*.png"
+        base = f"hero_{destino}" if sem_dir else "hero_sul_" + destino
+        for fonte in HERO_DIR.glob(origem_padrao):
+            numero = fonte.stem.rsplit("_", 1)[-1]
+            (HERO_DIR / f"{base}_{numero}.png").write_bytes(fonte.read_bytes())
+            total += 1
+    return total
+
+
+def importar_espadachim() -> int:
+    """Troca o heroi pelo espadachim do pacote de mercado.
+
+    Todas as folhas tem a mesma forma: 64x64 por quadro, 4 linhas (uma
+    por direcao) e N colunas de quadros. Medido, nao adivinhado.
+    """
+    import pygame
+
+    if not ESPADA_ZIP.is_file():
+        print(f"  pacote nao encontrado: {ESPADA_ZIP.name}")
+        return 0
+
+    pygame.init()
+    pygame.display.set_mode((8, 8))
+
+    # apaga o heroi antigo. Sem isso as duas Convencoes convivem na
+    # mesma pasta e o carregador mistura os quadros: o `idle` antigo
+    # (6 quadros) entra no meio dos 12 do espadachim.
+    HERO_DIR.mkdir(parents=True, exist_ok=True)
+    for velho in HERO_DIR.glob("hero_*.png"):
+        velho.unlink(missing_ok=True)
+
+    total = 0
+    try:
+        with zipfile.ZipFile(ESPADA_ZIP) as zf:
+            nomes = {
+                f"{ESPADA_PKG}/Swordsman_lvl1_{folha}_with_shadow.png": folha
+                for folha in ESPADA_FOLHAS
+            }
+            for caminho, folha in nomes.items():
+                if caminho not in zf.namelist():
+                    print(f"  AUSENTE no pacote: {caminho}")
+                    continue
+                estado, quadros = ESPADA_FOLHAS[folha]
+                dados = io.BytesIO(zf.read(caminho))
+                bruta = pygame.image.load(dados).convert_alpha()
+
+                largura, altura = bruta.get_size()
+                for linha, direcao in enumerate(ESPADA_ORDEM):
+                    y = linha * ESPADA_CELULA
+                    if y + ESPADA_CELULA > altura:
+                        break
+                    pedacos = []
+                    for i in range(quadros):
+                        x = i * ESPADA_CELULA
+                        if x + ESPADA_CELULA > largura:
+                            break
+                        pedacos.append(
+                            bruta.subsurface(
+                                pygame.Rect(x, y, ESPADA_CELULA, ESPADA_CELULA)
+                            ).copy()
+                        )
+                    if not pedacos:
+                        continue
+                    # corta o vazio e deixa todos os quadros no mesmo
+                    # tamanho, apoiados pela base
+                    pedacos = _recortar_e_centralizar(pedacos)
+                    # 40 de altura no disco. O heroi precisa ser o
+                    # maior desenho da tela: com 32 ele saia menor que
+                    # o proprio inimigo.
+                    pedacos = _normalizar_esqueleto(pedacos, 40 // UPSCALE)
+                    for i, quad in enumerate(pedacos):
+                        grande = pygame.transform.scale(
+                            quad,
+                            (quad.get_width() * UPSCALE,
+                             quad.get_height() * UPSCALE),
+                        )
+                        # `death` e `falling` estao em HERO_ANY_DIR: o
+                        # carregador procura `hero_death_*.png`, sem o
+                        # trecho da direcao. Gravar `hero_sul_death_*`
+                        # criava 7 arquivos que o jogo nunca via e a
+                        # animacao de morte saia vazia em silencio.
+                        # Sem direcao: `hero_death_0`.
+                        # Com direcao: `hero_sul_idle_0`, nesta ordem.
+                        nome = (
+                            f"hero_{estado}_{i}.png"
+                            if estado in HERO_ANY_DIR
+                            else f"hero_{direcao}_{estado}_{i}.png"
+                        )
+                        pygame.image.save(grande, HERO_DIR / nome)
+                        total += 1
+    except (zipfile.BadZipFile, OSError, pygame.error) as exc:
+        print(f"  falha ao ler o pacote do espadachim: {exc}")
+        return 0
+    finally:
+        pygame.quit()
+    return total
+
+
+
 FOE_DIR = ROOT / "assets" / "sprites" / "inimigo"
 RAW = ROOT / "assets" / "raw"
 
@@ -529,6 +679,15 @@ def main() -> int:
         print(f"  {total} quadros do ghoul")
     print()
 
+    print()
+    print(chr(10) + "heroi de mercado:")
+    total = importar_espadachim()
+    if total:
+        print(f"  {total} quadros do espadachim")
+    derivados = _derivados()
+    if derivados:
+        print(f"  {derivados} quadros derivados "
+              f"(estados que o pacote nao tem)")
     total = importar_squeletos()
     if total:
         print(f"  {total} quadros de esqueleto em "
