@@ -161,17 +161,29 @@ class SceneManager:
 
         Quem decide o que entra no save e a propria cena: o gerenciador
         nao sabe o que e "posicao" em cada uma delas.
+
+        Estrada e aldeia nao tem posicao que faça sentido no mapa da
+        masmorra, entao nao descrevem cena nenhuma. Ainda assim a
+        campanha precisa de ser salva dali: sem este desvio, apertar F5
+        na aldeia nao gravava nada e a pocao, a sala e o chefe
+        recambiado se perdiam.
         """
         from . import saves
 
         if self._active is None:
             return False
         montar = getattr(self._active, "para_save", None)
-        if montar is None:
-            return False
-        dados = montar()
+        dados = montar() if montar is not None else None
+
         if dados is None:
-            return False
+            progresso = self.ui_state.get("progresso")
+            if progresso is None:
+                return False
+            dados = saves.Save(
+                area="mundo",
+                extra={"progresso": progresso.para_extra()},
+            )
+
         store = self.ui_state.get("store") or saves.escolher_store()
         self.ui_state["store"] = store
         return store.salvar(dados)

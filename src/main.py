@@ -19,6 +19,7 @@ import pygame
 from . import assets, settings
 from .combat_scene import CombatScene
 from .config import Config, native_refresh_rate, set_window_frame
+from .city_scene import CityScene
 from .dungeon_scene import DungeonScene
 from .game_scene import GameScene
 from .road_scene import RoadScene
@@ -78,6 +79,7 @@ def build_scene_manager(manager: SceneManager) -> SceneManager:
     manager.register("game", GameScene)
     manager.register("dungeon", DungeonScene)
     manager.register("road", RoadScene)
+    manager.register("city", CityScene)
     manager.register("combat", CombatScene)
     return manager
 

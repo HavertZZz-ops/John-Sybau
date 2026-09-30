@@ -308,6 +308,9 @@ class DungeonScene(Scene):
         self.item_no_chao: pygame.Vector2 | None = None
         # a aula da sala da pocao: a luta aponta a opcao de item
         self.ensinar_item = False
+        # em que sala o jogador esta agora. Comeca na sala do cofre,
+        # senao a primeira frase de dica apareceria duas vezes
+        self.sala_atual = self.mapa.sala_de(*self.mapa.caixao)
         self._colocar_item()
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
@@ -323,6 +326,14 @@ class DungeonScene(Scene):
         carregado = manager.ui_state.get("save_carregado")
         if carregado is not None:
             self._aplicar_save(carregado)
+            # o progresso da campanha vem do `extra` do save. Sem isto
+            # a sala, a pocao, o chefe recambiado e o mundo aberto
+            # voltavam ao zero a cada F5, e a campanha nao sobrevivia
+            # nem a uma ida ao menu.
+            self.progresso = progresso_mod.Progresso.de_extra(
+                (getattr(carregado, "extra", None) or {}).get("progresso")
+            )
+            manager.ui_state["progresso"] = self.progresso
         else:
             self.fase = "acordando"
             self.fase_tempo = 0.0
@@ -345,6 +356,7 @@ class DungeonScene(Scene):
             y=float(self.posicao.y),
             direcao=self.direction,
             tempo_jogado=self.tempo_jogado,
+            extra={"progresso": self.progresso.para_extra()},
         )
 
     def _aplicar_save(self, save) -> None:
@@ -561,25 +573,64 @@ class DungeonScene(Scene):
             self.passos += 1
         self.camera += (self.posicao - self.camera) * min(1.0, dt * 8.0)
 
+        self._acompanhar_sala()
         self._atualizar_esqueleto(dt)
         self.tutorial.update(dt, self._acao_do_quadro)
 
-    def _atualizar_esqueleto(self, dt: float) -> None:
-        """Acorda o esqueleto depois de alguns passos e chama a luta.
+    def _acompanhar_sala(self) -> None:
+        """Avisa a sala em que o jogador entrou, e arma a licao dela.
 
-        O esqueleto fica guardado parado ate a hora: acorda-lo junto com
-        a abertura transformaria a primeira luta numa emboscada, e o
-        jogador nem teriaandedado ainda.
+        O numero da sala vem da posicao, nao de um contador: se o
+        jogador andar para tras e voltar, o numero e o mesmo e a
+        frase nao pisca a cada passo.
+        """
+        numero = self.mapa.sala_de(*self._celula())
+        if numero == self.sala_atual:
+            return
+        primeira_visita = numero != 0 and not self.progresso.concluida(numero)
+        self.sala_atual = numero
+        if not primeira_visita:
+            return
+
+        sala = self.progresso.sala_atual()
+        if numero == sala.numero and sala.dica:
+            self.tutorial.mostrar(sala.dica)
+
+    def _atualizar_esqueleto(self, dt: float) -> None:
+        """Arma o esqueleto da sala em que o jogador esta.
+
+        A sala 4 tem tratamento proprio: o esqueleto dela so aparece
+        quando o jogador pega a pocao, para a aula do item comecar
+        com o item na mao. A sala 5 e a do chefe.
         """
         if self.esqueleto is None:
-            if self.passos >= PASSOS_ATE_O_ESQUELETO:
+            numero = self.sala_atual
+            if numero in (0, 4):
+                return
+            # a espera vale para TODA sala, e nao so para as que nao
+            # sejam a primeira. Sem esse passo aqui, o esqueleto da
+            # sala 1 nascia no instante em que a abertura acabava, e a
+            # aula de "ande um pouco" ficava sem tempo de acontecer
+            if self.passos < PASSOS_ATE_O_ESQUELETO:
+                return
+            if numero == self.progresso.onde_esta_o_chefe():
                 casa = self._casa_do_chefe()
-                if casa is not None:
-                    self.esqueleto = pygame.Vector2(
-                        self.mapa.para_pixels(*casa, self.tile)
-                    )
-                    self.esqueleto_vivo = True
-                    self.tutorial.mostrar("O esqueleto acordou")
+            else:
+                casa = self.mapa.centro_da_sala(numero)
+            if casa is None:
+                return
+            # um esqueleto por sala: o proximo so nasce quando o
+            # jogador entra numa sala ainda nao limpa
+            if not self.mapa.andavel(*casa):
+                return
+            self.esqueleto = pygame.Vector2(
+                self.mapa.para_pixels(*casa, self.tile)
+            )
+            self.esqueleto_vivo = True
+            if numero == 1:
+                self.tutorial.mostrar("O esqueleto acordou")
+            else:
+                self.tutorial.mostrar("Ha alguem aqui")
             return
 
         if not self.esqueleto_vivo:

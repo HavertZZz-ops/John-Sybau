@@ -178,3 +178,34 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       tile, incluindo o caso que pega permutao de cantos, e roda dentro
       do `test_smoke.py`. `tools/preview_cenario.py` mostra a sala
       autotilada de cada cenario.
+- [x] #30  A masmorra como campanha de 5 salas       (este commit)
+      A masmorra deixou de ser um mapa com uma luta. Sao cinco salas em
+      ordem, e cada uma ensina UMA mecanica de combate:
+        1 Ataacar   2 Defender   3 Habilidade   4 Usar item   5 Fugir
+      O esqueleto nasce na sala em que o jogador esta, e nao no meio do
+      mapa. A sala 4 e a excecao: o esqueleto dela so aparece quando o
+      jogador pega a pocao, para a aula do item comecar com o item na
+      mao.
+      - o numero de salas e uma REGRA, e o gerador aceitava o que
+        coubesse. A semente 23 dava 4 salas, a saida ia para a 4 e a
+        mecanica de fuga nunca aparecia. As salas ocupam slots de uma
+        grade com jitter agora: 14 sementes, todas com saida na 5;
+      - a espera de passos do esqueleto valia so para as salas que nao
+        eram a primeira. Invertida, a sala 1 punha o esqueleto no ar no
+        instante em que a abertura acabava;
+      - o numero da sala vem da POSICAO, e nao de um contador. Andar
+        para tras e voltar nao pode fazer a dica piscar.
+- [x] #31  Estrada, aldeia e os moradores             (este commit)
+      A fuga da masmorra tinha que levar a algum lugar. `road_scene.py`
+      e o trecho entre a masmorra e a aldeia; `city_scene.py` e a
+      aldeia, com quatro moradores que tem nome e uma frase cada. Sem
+      loja e sem cura: o lugar existe para dar para onde ir.
+      O Esc com alguem perto fecha a conversa antes de sair da cidade.
+- [x] #32  A campanha sobrevive ao save               (este commit)
+      O save gravava posicao e tempo, e o progresso da campanha vivia
+      so na memoria. A sala, a pocao, o chefe recambiado e o mundo
+      aberto voltavam ao zero a cada F5, sem reclamar.
+      Agora o progresso vai em `Save.extra`. Estrada e aldeia nao tem
+      posicao que faca sentido no mapa da masmorra e nao descrevem
+      cena nenhuma, entao o gerenciador grava o progresso sozinho
+      quando a cena ativa nao sabe se descrever.

@@ -133,6 +133,13 @@ class RoadScene(Scene):
             self.manager.salvar_progresso()
             self.manager.switch("title")
             return
+        if "interagir" in acoes:
+            # a estrada e o caminho para a aldeia. Sem isso a fuga da
+            # masmorra levaria a um lugar sem saida, e a aldeia ficaria
+            # inalcancavel.
+            if self._avisar_tempo <= 0:
+                self.manager.switch("city")
+            return
         for direcao, (dx, dy) in DIRECOES.items():
             acao = {"norte": "mover_cima", "sul": "mover_baixo",
                     "leste": "mover_direita", "oeste": "mover_esquerda"}[direcao]
@@ -212,6 +219,9 @@ class RoadScene(Scene):
 
         theme.text_tracked_at(
             surface, "ESTRADA", 17, (20, 20), theme.TEXT_DIM)
+        theme.text_tracked_at(
+            surface, "E segue para a aldeia", 15,
+            (w // 2 - 90, h - 44), theme.GOLD)
         theme.text_tracked_at(
             surface, "voltar para o menu", 14,
             (w - 190, h - 24), theme.TEXT_DIM)

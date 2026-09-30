@@ -760,6 +760,34 @@ def check_fps() -> None:
     )
 
 
+def check_cidade() -> None:
+    """A fuga da masmorra tem que levar a algum lugar, e esse lugar tem gente."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_cidade.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] moradores:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] moradores da aldeia")
+
+
+def check_persistencia() -> None:
+    """A campanha tem de sobreviver ao save e ao arquivo em disco."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_persistencia.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] persistencia:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] persistencia da campanha")
+
+
 def check_itens() -> None:
     """Roda a suite do item na luta e das aulas por sala."""
     result = subprocess.run(
@@ -893,6 +921,13 @@ def check_dungeon_collision() -> None:
     cena = manager.active
     dt = 1 / 60
 
+    # Este teste e de COLISAO. Com o esqueleto nascendo por sala, andar
+    # pelo mapa chega perto de um e troca a cena ativa por combate: a
+    # cena de colisao deixa de ser a cena do gerenciador e o teste
+    # passa a medir outra coisa. A armação do inimigo e desligada
+    # aqui de proposito.
+    cena._atualizar_esqueleto = lambda dt: None
+
     # a abertura tem de acabar antes: durante ela o heroi e movido por
     # script para o sul, e medir a colisao ali testaria a outra coisa
     for _ in range(int(7.0 / dt)):
@@ -918,7 +953,9 @@ def check_dungeon_collision() -> None:
     # o jogo vira um beco sem saida
     for _ in range(200):
         cena.direction = "sul"
+        cena.moving = True
         manager.update(dt)
+    assert manager.active is cena, "a cena mudou de lugar durante o teste"
     assert cena.posicao.y > y_topo + 10, "nao saiu andando para o sul"
     print(f"[ok] anda de volta (y={cena.posicao.y:.0f})")
 
@@ -1274,27 +1311,39 @@ def check_tutorial_na_masmorra() -> None:
     assert casa != tuple(cena.mapa.caixao), "o chefe nasceu em cima do caixao"
     print(f"[ok] o chefe nasce na sala {sala_chefe}, longe do caixao")
 
-    # teleporta o jogador para a sala do chefe e chega perto
-    px, py = cena.mapa.para_pixels(*casa, cena.tile)
-    cena.posicao = pygame.Vector2(px, py)
-    cena.camera = pygame.Vector2(cena.posicao)
-    cena.passos = 999
+    # o esqueleto nasce na sala em que o jogador esta, e o jogador
+    # precisa andar antes. Com o modelo por sala, a prova de que ele
+    # ESPERA e o corredor: em corredor nao nasce ninguem.
+    #
+    # Antes, este bloco teleportava o jogador para a sala 1 e esperava
+    # a luta nao comecar. Com o modelo novo isso nao prova nada: o
+    # esqueleto nasce na sala em que o jogador esta, e a sala 1 era
+    # justamente onde o jogador estava.
+    em_corredor = None
+    for x in range(cena.mapa.largura):
+        for y in range(cena.mapa.altura):
+            if cena.mapa.sala_de(x, y) == 0 and cena.mapa.andavel(x, y):
+                em_corredor = (x, y)
+                break
+        if em_corredor:
+            break
+    if em_corredor is not None:
+        px, py = cena.mapa.para_pixels(*em_corredor, cena.tile)
+        cena.posicao = pygame.Vector2(px, py)
+        cena.esqueleto = None
+        cena.esqueleto_vivo = False
+        cena.passos = 999
+        manager.update(dt)
+        manager.update(dt)
+        assert cena.sala_atual == 0, (
+            f"o jogador deveria estar em corredor, sala_atual={cena.sala_atual}"
+        )
+        assert cena.esqueleto is None, (
+            "nasceu esqueleto no corredor: o jogador nao entrou em sala nenhuma"
+        )
+        print("[ok] em corredor nao nasce esqueleto: ele espera o jogador entrar")
 
-    # longe o bastante para a luta NAO comecar sozinha, so para o chefe
-    # nascer: essa e a prova de que ele espera o jogador chegar
-    longe = cena.mapa.para_pixels(
-        *cena.mapa.centro_da_sala(1) or casa, cena.tile
-    )
-    cena.posicao = pygame.Vector2(longe)
-    cena.camera = pygame.Vector2(cena.posicao)
-    manager.update(dt)
-    manager.update(dt)
-    assert manager.active_name == "dungeon", (
-        f"a luta comecou antes do jogador chegar: {manager.active_name}"
-    )
-    print("[ok] o chefe espera o jogador andar ate ele")
-
-    # agora chega perto
+    # na sala do chefe: nasce la, e a luta comeca quando chega perto
     px, py = cena.mapa.para_pixels(*casa, cena.tile)
     cena.posicao = pygame.Vector2(px, py)
     for _ in range(400):
@@ -1455,6 +1504,10 @@ def main() -> int:
     check_fuga()
     print()
     check_itens()
+    print()
+    check_cidade()
+    print()
+    check_persistencia()
     print()
     check_dungeon_intro()
     print()
