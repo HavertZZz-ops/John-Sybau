@@ -284,6 +284,38 @@ def _recortar_e_centralizar(quadros: list) -> list:
     return saida
 
 
+def _normalizar_esqueleto(quadros: list, alvo_altura: int) -> list:
+    """Redimensiona o esqueleto para a altura do corpo do heroi.
+
+    A arte deste pacote e um esqueleto muito MAGRO: 6 pixels de largura
+    por 21 de altura dentro de uma celula de 16x32. Medido no alpha, nao
+    e falha de recorte. O problema e de proporcao: o heroi tem 32x32 na
+    referencia 1x, entao o esqueleto saia com 6 de largura contra 32 do
+    jogador e virava um palito na tela.
+
+    Aqui a arte e ampliada ate a altura do heroi, mantendo a
+    proporcao. Fica 10x32, que e estreito como o desenho original, mas
+    do tamanho certo: na escala 3x sai 30x96, a mesma altura do heroi.
+    """
+    import pygame
+
+    if not quadros:
+        return quadros
+    altura = max(q.get_height() for q in quadros)
+    if altura <= 0:
+        return quadros
+    if altura == alvo_altura:
+        return quadros
+
+    fator = alvo_altura / altura
+    saida = []
+    for q in quadros:
+        w = max(1, int(round(q.get_width() * fator)))
+        h = max(1, int(round(q.get_height() * fator)))
+        saida.append(pygame.transform.scale(q, (w, h)))
+    return saida
+
+
 def importar_squeletos() -> int:
     """Extrai as folhas de esqueleto do .rar e quebra por direcao.
 
@@ -369,6 +401,10 @@ def importar_squeletos() -> int:
                     if not quadros:
                         continue
                     quadros = _recortar_e_centralizar(quadros)
+                    # a arte deste pacote e um esqueleto esguio de 6x21;
+                    # sem isso ele sai menor que a propria cabeca do
+                    # jogador e vira um palito na tela
+                    quadros = _normalizar_esqueleto(quadros, 32)
                     for i, quadro in enumerate(quadros):
                         grande = pygame.transform.scale(
                             quadro,

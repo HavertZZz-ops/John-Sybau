@@ -111,45 +111,81 @@ def _classificar(surface: pygame.Surface) -> pygame.Surface:
     return img
 
 
-# o gradiente de luz e caro de calcular (um pixel por pixel) e nao muda
-# nunca, entao fica em cache e so e re-centralizado a cada quadro
-_GRADIENTE: pygame.Surface | None = None
-_GRADIENTE_RAIO = 0
+# o veu de luz e caro de montar (uma copia da tela por quadro) e nao
+# muda de tamanho, entao fica em cache
+_VEU: pygame.Surface | None = None
 
 
-def _gradiente(raio: int) -> pygame.Surface:
-    """Mascara circular: transparente no centro, opaca nas bordas.
+def _veu(w: int, h: int) -> pygame.Surface:
+    """Copia da tela, escurecida, usada para abafamento."""
+    global _VEU
+    if _VEU is not None and _VEU.get_size() == (w, h):
+        return _VEU.copy()
+    _VEU = pygame.Surface((w, h), pygame.SRCALPHA)
+    _VEU.fill((8, 8, 13, 138))
+    return _VEU.copy()
 
-    Tentando fazer isso com aneis concentricos nao funciona: desenhar
-    uma elipse com alfa zero numa surface SRCALPHA nao abre buraco
-    nenhum, ela so se mistura. A tela inteira ficava preta.
 
-    O gradiente nasce pequeno (96x96, um pixel por pixel, barato) e e
-    ampliado para o tamanho do circulo. Ampliar por software faz a
-    transicao ficar suave de graca, e evita o custo de um pixel por
-    pixel no tamanho final a cada quadro.
-    """
-    global _GRADIENTE, _GRADIENTE_RAIO
-    if _GRADIENTE is not None and _GRADIENTE_RAIO == raio:
-        return _GRADIENTE
+def _desenhar_luz(self, surface: pygame.Surface) -> None:
+        """Escuridao, com uma clara ao redor do heroi.
 
-    peq = 96
-    centro = (peq - 1) / 2.0
-    base = pygame.Surface((peq, peq), pygame.SRCALPHA)
-    for y in range(peq):
-        for x in range(peq):
-            dx = (x - centro) / centro
-            dy = (y - centro) / centro
-            dist = (dx * dx + dy * dy) ** 0.5
-            # 0 no centro, opaco a partir de 62% do raio
-            t = max(0.0, min(1.0, (dist - 0.45) / 0.55))
-            base.set_at((x, y), (10, 8, 12, int(212 * (t ** 1.6))))
+        E o que separa "masmorra" de "tabuleiro". Tres tentativas antes
+        desta, e todas erradas por um motivo diferente:
 
-    lado = raio * 2
-    mascara = pygame.transform.smoothscale(base, (lado, lado))
-    _GRADIENTE = mascara
-    _GRADIENTE_RAIO = raio
-    return mascara
+        1. aneis concentricos desenhando alfa zero: nao apaga nada, a
+           tela ficava preta
+        2. um gradiente radial smoothscale de uma surface com alpha por
+           pixel: o smoothscale PERDE o alpha e devolveu um QUADRADO
+           opaco. Era o retangulo preto em volta do jogador
+        3. um segundo circulo "quente" por cima: borda dura, aparecia
+           como um disco colado no chao
+
+        O caminho que funciona e guardar a REGIAO CLARA antes de
+        escurecer, e restaura-la em aneis do maior para o menor com
+        opacidade crescente. Sem alpha sobreposto, sem costura: o
+        degrade sai da propria sobreposicao das aneis.
+        """
+        w, h = self.size
+        cx = int(self.posicao.x - self.camera.x + w // 2)
+        cy = int(self.posicao.y - self.camera.y + h // 2)
+        raio = int(self.tile * 5.5)
+
+        # o quanto da tela a luz alcança
+        metade = min(raio, min(cx, cy, w - cx, h - cy) + raio)
+        if metade <= 8:
+            surface.blit(_veu(w, h), (0, 0))
+            return
+
+        # 1. guarda a regiao clara (com o mapa e o hero ja desenhados)
+        claro = surface.subsurface(
+            pygame.Rect(cx - metade, cy - metade, metade * 2, metade * 2)
+        ).copy()
+
+        # 2. escurece a tela inteira
+        surface.blit(_veu(w, h), (0, 0))
+
+        # 3. restaura a luz em aneis, do maior para o menor. Cada anel
+        # devolve um pouco da clareza; a soma das aneis faz o degrade.
+        aneis = 14
+        for i in range(aneis, 0, -1):
+            t = i / aneis
+            r = int(metade * t)
+            if r < 2:
+                continue
+            alfa = int(246 * (1.0 - t) ** 0.7) + 10
+            if alfa > 255:
+                alfa = 255
+            pedaco = pygame.Rect(
+                metade - r, metade - r, r * 2, r * 2
+            )
+            recorte = claro.subsurface(pedaco)
+            if recorte.get_width() < 2 or recorte.get_height() < 2:
+                continue
+            recorte = pygame.transform.scale(
+                recorte, (recorte.get_width(), recorte.get_height())
+            )
+            recorte.set_alpha(alfa)
+            surface.blit(recorte, (cx - r, cy - r))
 
 
 class DungeonScene(Scene):
@@ -638,12 +674,7 @@ class DungeonScene(Scene):
         raio = int(self.tile * 7.0)
 
         # veu base: cobre ate onde a luz nao alcanca
-        veu = pygame.Surface((w, h), pygame.SRCALPHA)
-        veu.fill((8, 7, 12, 150))
-        surface.blit(veu, (0, 0))
-
-        mascara = _gradiente(raio)
-        surface.blit(mascara, (cx - raio, cy - raio))
+        surface.blit(_veu(w, h), (0, 0))
 
         # Nao ha um segundo circulo "quente" por cima: desenhado com
         # draw.ellipse ele sai com borda dura e aparece como um disco
