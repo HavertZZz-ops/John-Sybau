@@ -21,6 +21,7 @@ from .combat_scene import CombatScene
 from .config import Config, native_refresh_rate, set_window_frame
 from .dungeon_scene import DungeonScene
 from .game_scene import GameScene
+from .road_scene import RoadScene
 from .input_map import InputMap
 from .options_screen import OptionsScreen
 from .scene_manager import SceneManager
@@ -76,6 +77,7 @@ def build_scene_manager(manager: SceneManager) -> SceneManager:
     manager.register("options", OptionsScreen)
     manager.register("game", GameScene)
     manager.register("dungeon", DungeonScene)
+    manager.register("road", RoadScene)
     manager.register("combat", CombatScene)
     return manager
 

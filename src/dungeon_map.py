@@ -6,6 +6,7 @@ jogador consegue sair do caixao e andar ate o fim do cenario.
 """
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass, field
 
@@ -47,6 +48,10 @@ class Mapa:
     caixao: tuple[int, int] = (0, 0)
     entrada: tuple[int, int] = (0, 0)
     saida: tuple[int, int] = (0, 0)
+    # os retangulos das salas, na ordem em que foram geradas. A ordem
+    # e a ordem do jogo: a sala 1 e onde o jogador acorda no caixao, a
+    # ultima e a que tem a saida.
+    salas: list[tuple[int, int, int, int]] = field(default_factory=list)
 
     def em(self, x: int, y: int) -> str:
         """Conteudo da celula, treating fora do mapa como parede."""
@@ -57,6 +62,27 @@ class Mapa:
     def andavel(self, x: int, y: int) -> bool:
         """True se o jogador pode ocupar a celula."""
         return self.em(x, y) in (CHAO, *ENFEITES)
+
+    def sala_de(self, x: int, y: int) -> int:
+        """Numero da sala (1..N) em que a celula esta, ou 0.
+
+        O numero e a POSICAO na lista de salas, nao a posicao no
+        mapa. Corredor entre duas salas devolve 0, e nao a sala mais
+        proxima: no corredor o jogador esta entre duas aulas, e
+        escolher uma delas por proximidade faria a dica piscar no
+        caminho.
+        """
+        for i, (bx, by, bw, bh) in enumerate(self.salas):
+            if bx <= x <= bx + bw and by <= y <= by + bh:
+                return i + 1
+        return 0
+
+    def centro_da_sala(self, numero: int) -> tuple[int, int] | None:
+        """Centro da sala pedida, ou None se o numero nao existe."""
+        if not 1 <= numero <= len(self.salas):
+            return None
+        x, y, w, h = self.salas[numero - 1]
+        return (x + w // 2, y + h // 2)
 
     def para_pixels(self, x: int, y: int, tile: int) -> tuple[float, float]:
         """Centro da celula em pixels de tela."""
@@ -92,19 +118,52 @@ def gerar_mapa(
                 mapa.celulas[y][x] = CHAO
 
     boxes: list[tuple[int, int, int, int]] = []
-    tentativas = 0
-    while len(boxes) < salas and tentativas < 800:
-        tentativas += 1
-        w = rng.randint(13, 19)
-        h = rng.randint(10, 14)
-        x = rng.randint(1, largura - w - 2)
-        y = rng.randint(1, altura - h - 2)
+    # O numero de salas e uma REGRA do jogo, nao uma sugestao: a
+    # campanha conta com a sala 5, que e a que tem a saida e o chefe.
+    # A versao anterior sorteava posicao e tamanho 800 vezes e aceitava
+    # o resultado: com algumas sementes saiam 4 salas, a saida ia parar
+    # na 4 e a mecanica de fuga nunca aparecia, sem nenhum aviso.
+    #
+    # Agora as salas ocupam slots de uma grade, com jitter dentro de
+    # cada slot. A grade garante que o numero sai; o jitter e o que
+    # impede o mapa de virar um tabuleiro perfeito.
+    colunas = math.ceil(math.sqrt(salas))
+    linhas = math.ceil(salas / colunas)
+    largura_slot = largura // colunas
+    altura_slot = altura // linhas
+
+    slots: list[tuple[int, int, int, int]] = []
+    for i in range(salas):
+        cx = (i % colunas) * largura_slot
+        cy = (i // colunas) * altura_slot
+        w = max(7, min(largura_slot - 3, rng.randint(11, 19)))
+        h = max(5, min(altura_slot - 3, rng.randint(8, 14)))
+        # dentro do slot, com folga para a parede
+        x = cx + rng.randint(0, max(0, largura_slot - w - 1))
+        y = cy + rng.randint(0, max(0, altura_slot - h - 1))
+        x = max(1, min(x, largura - w - 2))
+        y = max(1, min(y, altura - h - 2))
+        slots.append((x, y, w, h))
+
+    for i, (x, y, w, h) in enumerate(slots):
         if any(
             x < bx + bw + 3 and bx - 3 < x + w and
             y < by + bh + 3 and by - 3 < y + h
             for bx, by, bw, bh in boxes
         ):
-            continue
+            # a sala deste slot colidiu com uma anterior: encolhe ate
+            # caber no espaco que sobrou
+            for _ in range(12):
+                w = max(7, w - 1)
+                h = max(5, h - 1)
+                x = max(1, min(x, largura - w - 2))
+                y = max(1, min(y, altura - h - 2))
+                if not any(
+                    x < bx + bw + 3 and bx - 3 < x + w and
+                    y < by + bh + 3 and by - 3 < y + h
+                    for bx, by, bw, bh in boxes
+                ):
+                    break
         boxes.append((x, y, w, h))
 
     for x, y, w, h in boxes:
@@ -132,6 +191,7 @@ def gerar_mapa(
                 mapa.celulas[y][x] = rng.choice(tuple(ENFEITES))
 
     # caixao no centro da primeira sala, saida no centro da ultima
+    mapa.salas = list(boxes)
     if boxes:
         x, y, w, h = boxes[0]
         mapa.caixao = (x + w // 2, y + h // 2)

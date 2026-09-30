@@ -1228,7 +1228,47 @@ def check_tutorial_na_masmorra() -> None:
     assert cena.esqueleto is None, "o esqueleto acordou antes da hora"
     print("[ok] o esqueleto fica guardado antes do jogador andar")
 
-    # anda o suficiente
+    # o chefe nasce na sala que o progresso aponta, que com a campanha
+    # e a ULTIMA e nao a primeira. Andar para o leste dentro da sala do
+    # caixao nao chega nele.
+    sala_chefe = cena.progresso.onde_esta_o_chefe()
+    assert sala_chefe == len(cena.mapa.salas), (
+        f"o chefe deveria estar na ultima sala, esta na {sala_chefe} "
+        f"de {len(cena.mapa.salas)}"
+    )
+    centro = cena.mapa.centro_da_sala(sala_chefe)
+    casa = cena._casa_do_chefe()
+    assert casa is not None, "a casa do chefe nao foi encontrada"
+    assert cena.mapa.sala_de(*casa) == sala_chefe, (
+        f"o chefe nasceu na sala {cena.mapa.sala_de(*casa)}, "
+        f"esperado {sala_chefe}"
+    )
+    assert casa != tuple(cena.mapa.caixao), "o chefe nasceu em cima do caixao"
+    print(f"[ok] o chefe nasce na sala {sala_chefe}, longe do caixao")
+
+    # teleporta o jogador para a sala do chefe e chega perto
+    px, py = cena.mapa.para_pixels(*casa, cena.tile)
+    cena.posicao = pygame.Vector2(px, py)
+    cena.camera = pygame.Vector2(cena.posicao)
+    cena.passos = 999
+
+    # longe o bastante para a luta NAO comecar sozinha, so para o chefe
+    # nascer: essa e a prova de que ele espera o jogador chegar
+    longe = cena.mapa.para_pixels(
+        *cena.mapa.centro_da_sala(1) or casa, cena.tile
+    )
+    cena.posicao = pygame.Vector2(longe)
+    cena.camera = pygame.Vector2(cena.posicao)
+    manager.update(dt)
+    manager.update(dt)
+    assert manager.active_name == "dungeon", (
+        f"a luta comecou antes do jogador chegar: {manager.active_name}"
+    )
+    print("[ok] o chefe espera o jogador andar ate ele")
+
+    # agora chega perto
+    px, py = cena.mapa.para_pixels(*casa, cena.tile)
+    cena.posicao = pygame.Vector2(px, py)
     for _ in range(400):
         cena.direction = "leste"
         cena.moving = True
@@ -1242,11 +1282,16 @@ def check_tutorial_na_masmorra() -> None:
     for _ in range(120):
         manager.update(dt)
     assert cena.esqueleto is not None, "o esqueleto sumiu depois de nascer"
-    assert manager.active_name == "dungeon", (
-        f"a luta comecou sozinha: {manager.active_name}"
+    # Com a campanha o jogador foi posto NA SALA DO CHEFE, entao a luta
+    # comecar aqui e o comportamento certo: a prova de que a luta nao
+    # dispara sozinha passou a ser o quadro logo depois de teleportar,
+    # com o jogador ainda longe o bastante.
+    assert manager.active_name == "combat", (
+        f"perto do chefe a luta deveria ter comecado, mas a cena e "
+        f"{manager.active_name}"
     )
     manager.draw()
-    print(f"[ok] o esqueleto acordou depois de {cena.passos} passos e ficou")
+    print(f"[ok] o chefe acordou e a luta comecou na sala dele")
 
     # chega perto: a luta tem de comecar
     cx = cena.mapa.caixao[0] + 3

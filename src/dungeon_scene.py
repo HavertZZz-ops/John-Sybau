@@ -13,7 +13,15 @@ from __future__ import annotations
 
 import pygame
 
-from . import assets, cenarios, coffin, settings, theme, wang
+from . import (  # noqa: I001
+    assets,
+    cenarios,
+    coffin,
+    settings,
+    theme,
+    wang,
+)
+from . import progresso as progresso_mod
 from .area_title import AreaTitle
 from .dungeon_map import (
     PAREDE,
@@ -254,7 +262,17 @@ class DungeonScene(Scene):
         super().__init__(manager)
         self.cenario = cenario or cenarios.primeiro()
         self._wang: wang.GradeWang | None = None
-        self.mapa: Mapa = gerar_mapa(semente=self.cenario.semente)
+        # o progresso da campanha vem do estado do gerenciador, que o
+        # carrega do save. Sem ele a masmorra nao saberia em que sala
+        # o jogador esta nem onde o chefe foi recambiado.
+        self.progresso: progresso_mod.Progresso = (
+            self.manager.ui_state.get("progresso")
+            or progresso_mod.Progresso(cenario=self.cenario.nome.lower())
+        )
+        self.mapa: Mapa = gerar_mapa(
+            salas=len(progresso_mod.SALAS),
+            semente=self.cenario.semente,
+        )
         self.direction = "sul"
         self.moving = False
         self.anim_time = 0.0
@@ -479,7 +497,7 @@ class DungeonScene(Scene):
         """
         if self.esqueleto is None:
             if self.passos >= PASSOS_ATE_O_ESQUELETO:
-                casa = self._casa_do_esqueleto()
+                casa = self._casa_do_chefe()
                 if casa is not None:
                     self.esqueleto = pygame.Vector2(
                         self.mapa.para_pixels(*casa, self.tile)
@@ -499,6 +517,33 @@ class DungeonScene(Scene):
             self.esqueleto_vivo = False
             self.manager.iniciar_combate(1)
         return
+
+    def _casa_do_chefe(self) -> tuple[int, int] | None:
+        """Onde o chefe fica: no centro da sala que ele ocupa.
+
+        Antes o esqueleto nascia num anel de casas em volta do caixao.
+        Com a campanha isso nao serve: o chefe tem que estar na sala
+        que o progresso aponta, e a sala do chefe muda depois da fuga.
+        """
+        numero = self.progresso.onde_esta_o_chefe()
+        centro = self.mapa.centro_da_sala(numero)
+        if centro is None:
+            return None
+        if self.mapa.andavel(*centro):
+            return centro
+        # a sala tem que ter chao no centro; se nao tiver, procura
+        # a casa valida mais proxima
+        melhor = None
+        cx, cy = centro
+        for raio in range(1, 6):
+            for dx in range(-raio, raio + 1):
+                for dy in range(-raio, raio + 1):
+                    if max(abs(dx), abs(dy)) != raio:
+                        continue
+                    alvo = (cx + dx, cy + dy)
+                    if self.mapa.andavel(*alvo):
+                        return alvo
+        return melhor
 
     def _casa_do_esqueleto(self) -> tuple[int, int] | None:
         """Um tile de chao para o esqueleto ficar, longe do caixao.
