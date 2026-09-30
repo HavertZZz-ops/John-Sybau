@@ -131,16 +131,58 @@ def check_resolution_filter() -> None:
         assert size in RESOLUTION_CHOICES or size == config.size, size
     print(f"[ok] filtro de resolucoes: {list(offered)} (desktop {desktop})")
 
-    # create_window tem que rebaixar qualquer tamanho grande pedido
+    # create_window tem que respeitar a resolucao pedida, sem rebaixar
+    # em silencio: rebaixar fazia o jogo rodar em um tamanho diferente
+    # do que o jogador escolheu
     for size in RESOLUTION_CHOICES:
         probe = Config(width=size[0], height=size[1], fullscreen=False)
         window = create_window(probe)
         got = window.get_size()
-        if desktop:
-            assert got[0] <= desktop[0] and got[1] <= desktop[1], (
-                f"{size} virou janela {got}, maior que o desktop {desktop}"
-            )
-    print(f"[ok] create_window rebaixa resolucoes grandes (testadas {len(RESOLUTION_CHOICES)})")
+        assert got == size, f"pediu {size}, janela ficou {got}"
+        assert (probe.width, probe.height) == size, f"config alterado: {probe.size}"
+    print(f"[ok] create_window respeita a resolucao pedida ({len(RESOLUTION_CHOICES)} testadas)")
+
+
+def check_internal_resolution() -> None:
+    """A resolucao interna precisa acompanhar a da janela.
+
+    Regressao relatada: a janela mudava de tamanho, mas o jogo
+    continuava desenhando como se nada tivesse acontecido.
+    """
+    from src.scene_manager import SceneManager
+
+    for size in [(1280, 720), (1536, 960), (1280, 720)]:
+        config = Config(width=size[0], height=size[1], sprite_scale=3)
+        config.save = lambda *a, **k: None  # type: ignore[method-assign]
+        # o jogo real aplica a escala das opcoes aqui; sem isso o teste
+        # mede a tela errada
+        assets.set_sprite_scale(config.sprite_scale)
+        window = create_window(config)
+        manager = build_scene_manager(SceneManager(window, config, InputMap()))
+        manager.switch("title")
+        manager.update(1.0 / 60)
+        manager.draw()
+
+        assert window.get_size() == size, f"superficie {window.get_size()} != {size}"
+        assert manager.active.size == size, f"cena {manager.active.size} != {size}"
+        assert manager.active.hero_frames, "animacao do heroi nao carregou"
+    assets.set_sprite_scale(3)
+    print("[ok] resolucao interna acompanha a janela em 3 trocas")
+
+
+def check_hud_shows_resolution() -> None:
+    """O HUD tem que mostrar a resolucao atual."""
+    from src.main import draw_fps
+
+    for size in [(1280, 720), (1536, 960)]:
+        config = Config(width=size[0], height=size[1])
+        surface = pygame.Surface(size)
+        surface.fill(settings.COLOR_BACKGROUND)
+        draw_fps(surface, 60.0, 60, 60, config)
+        assert surface.get_size() == size
+        # o canto superior direito precisa ter mudado (HUD desenhado)
+        assert surface.get_at((size[0] - 20, 10))[:3] != settings.COLOR_BACKGROUND
+    print("[ok] HUD mostra FPS e resolucao em 2 tamanhos")
 
 
 def check_bindings_persist() -> None:
@@ -458,6 +500,10 @@ def main() -> int:
     check_config_roundtrip()
     print()
     check_resolution_filter()
+    print()
+    check_internal_resolution()
+    print()
+    check_hud_shows_resolution()
     print()
     check_keybindings()
     print()

@@ -16,7 +16,7 @@ import sys
 import pygame
 
 from . import assets, settings
-from .config import Config, logical_desktop_size, native_refresh_rate
+from .config import Config, native_refresh_rate
 from .game_scene import GameScene
 from .input_map import InputMap
 from .options_screen import OptionsScreen
@@ -32,31 +32,20 @@ def build_scene_manager(manager: SceneManager) -> SceneManager:
 
 
 def create_window(config: Config) -> pygame.Surface:
-    """Cria (ou recria) a janela conforme a configuracao.
+    """Cria (ou recria) a janela exatamente na resolucao escolhida.
 
-    Resolucao maior que a tela logica e rebaixada de imediato: abrir
-    2560x1440 numa tela de 1536x960 cria uma janela que nao cabe, e
-    sobra uma faixa em branco na direita e embaixo. Em tela cheia a
-    resolucao escolhida e o que o monitor deve exibir, entao nao se
-    mexe.
+    Nao rebaixa a resolucao aqui. Quem garante que ela cabe na tela e o
+    filtro do menu de opcoes; rebaixar em silencio faria o jogo rodar
+    em um tamanho diferente do que o jogador escolheu, sem ele pedir.
+    `SCALED` aceita uma janela maior que a tela de proposito, e o
+    jogador que pediu 1920x1080 num desktop de 1536x960 viu que a tela
+    e pequena e escolheu assim mesmo.
 
-    SCALED permite resolucoes maiores que a tela, mas depende de
-    aceleracao. Onde ela nao existe (driver virtual de teste), o pygame
-    reclama e a janela nao abre, entao ha um caminho sem SCALED.
+    SCALED depende de aceleracao. Onde ela nao existe (driver virtual
+    de teste), o pygame reclama e a janela nao abre, entao ha um
+    caminho sem SCALED.
     """
     size = config.size
-    desktop = logical_desktop_size()
-
-    if not config.fullscreen and desktop:
-        if size[0] > desktop[0] or size[1] > desktop[1]:
-            # encolhe mantendo a proporcao, sem passar do desktop
-            factor = min(desktop[0] / size[0], desktop[1] / size[1])
-            size = (
-                max(640, int(size[0] * factor)),
-                max(360, int(size[1] * factor)),
-            )
-            config.width, config.height = size
-            print(f"[video] resolucao maior que a tela; usando {size[0]}x{size[1]}")
 
     # SCALED exige aceleracao. Em driver virtual (teste headless) ela
     # nao existe, e o proprio pygame avisa "no fast renderer available".
@@ -120,7 +109,9 @@ def main(frame_limit: int | None = None) -> int:
         manager.draw()
 
         if config.show_fps:
-            draw_fps(manager.window, clock.get_fps(), refresh, config.fps_limit)
+            draw_fps(
+                manager.window, clock.get_fps(), refresh, config.fps_limit, config
+            )
 
         pygame.display.flip()
         running = manager.running
@@ -139,21 +130,45 @@ def draw_fps(
     fps: float,
     refresh: int | None,
     limit: int,
+    config: Config,
 ) -> None:
-    """Descontra o contador de FPS no canto da tela."""
-    text = f"{fps:5.1f} fps"
+    """Descontra FPS e resolucao no canto da tela.
+
+    Mostrar a resolucao real da superficie responde a duvida mais
+    comum nas opcoes: "mudei a resolucao, mas o jogo continua igual?".
+    A janela e a superficie podem diferir em modo fullscreen, entao
+    o que aparece e o que esta sendo desenhado agora.
+    """
+    width, height = surface.get_size()
+    fps_line = f"{fps:5.1f} fps"
     if refresh:
-        text += f"  ({refresh}Hz)"
+        fps_line += f"  ({refresh}Hz)"
     if limit:
-        text += f"  / {limit}"
+        fps_line += f"  / {limit}"
+
+    res_line = f"{width} x {height}"
+    if config.fullscreen:
+        res_line += " (tela cheia)"
+
+    lines = [fps_line, res_line]
+
+    if config.fullscreen:
+        lines[1] += " (tela cheia)"
 
     font = assets.get_font(18)
-    rendered = font.render(text, True, settings.COLOR_TEXT_DIM)
-    background = rendered.get_rect()
-    background.inflate_ip(8, 4)
-    background.topright = (surface.get_width() - 4, 4)
-    surface.fill(settings.COLOR_PANEL, background)
-    surface.blit(rendered, rendered.get_rect(center=background.center))
+    height_px = len(lines) * 20 + 6
+    box = pygame.Rect(0, 0, 0, 0)
+    rendered = [font.render(line, True, settings.COLOR_TEXT_DIM) for line in lines]
+    width_px = max(r.get_width() for r in rendered) + 16
+
+    box.size = (width_px, height_px)
+    box.topright = (surface.get_width() - 4, 4)
+    surface.fill(settings.COLOR_PANEL, box)
+
+    y = box.top + 3
+    for item in rendered:
+        surface.blit(item, item.get_rect(midleft=(box.left + 8, y + item.get_height() // 2)))
+        y += 20
 
 
 if __name__ == "__main__":

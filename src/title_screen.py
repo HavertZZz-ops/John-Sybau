@@ -255,19 +255,19 @@ class TitleScreen(Scene):
         count = len(CHARACTER_LABELS)
         gap = max(10, int(width * 0.016))
 
-        # O cartao tem tamanho FIXO, independente da escala. A escala
-        # das opcoes e aplicada so ao sprite, dentro do espaco do
-        # cartao; se o cartao tambem crescesse, a escala entraria duas
-        # vezes e os personagens estouravam a tela.
-        slot_w = min(210, (int(width * 0.86) - gap * (count - 1)) // count)
+        # O cartao acompanha a resolucao. Com tamanho fixo, em
+        # 1536x960 os personagens ficavam pequenos no meio de um painel
+        # enorme, o que parecia "o jogo nao acompanhou a resolucao".
+        # A escala das opcoes NAO entra aqui: ela e aplicada so pelo
+        # carregador, senao entraria duas vezes.
+        base_slot = (int(width * 0.86) - gap * (count - 1)) // count
+        slot_w = max(150, min(int(height * 0.42), base_slot))
 
-        top = int(height * 0.27)
-        bottom = int(height * 0.58)
+        top = int(height * 0.26)
+        bottom = int(height * 0.60)
         room = max(80, bottom - top)
 
-        # teto do sprite em 1x, dimensionado para o 3x das opcoes caber
-        # com folga. A escala e aplicada so pelo carregador, nunca aqui.
-        text_h = 64
+        text_h = int(height * 0.09)
         image_h = max(48, room - text_h)
         image_box = _fit_sprite_box(int(slot_w * 0.80), int(image_h * 0.94))
         slot_h = min(room, image_h + text_h)
