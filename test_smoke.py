@@ -760,6 +760,20 @@ def check_fps() -> None:
     )
 
 
+def check_fuga() -> None:
+    """Roda a suite da fuga do chefe: opcao, custo zero e recambio."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_fuga.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] fuga do chefe:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] fuga do chefe")
+
+
 def check_wang() -> None:
     """Roda a suite da autotilagem de Wang e do registro de cenarios.
 
@@ -1423,6 +1437,8 @@ def main() -> int:
     check_dungeon_map()
     print()
     check_wang()
+    print()
+    check_fuga()
     print()
     check_dungeon_intro()
     print()

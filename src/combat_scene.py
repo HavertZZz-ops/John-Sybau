@@ -32,9 +32,18 @@ class CombatScene(Scene):
         super().__init__(manager)
         if inimigos is None:
             inimigos = manager.ui_state.get("inimigos", 1)
+        # a masmorra diz se esta luta e contra o CHEFE da ultima sala.
+        # O chefe nao e um esqueleto mais forte: ele tem barra rapida
+        # e defesa alta, e muda o que o menu precisa oferecer.
+        self.e_chefe = bool(manager.ui_state.get("e_chefe", False))
+        lista = (
+            [combat.novo_chefe()]
+            if self.e_chefe
+            else [combat.novo_esqueleto(i) for i in range(inimigos)]
+        )
         self.batalha = combat.Batalha(
             heroi=combat.novo_heroi(),
-            inimigos=[combat.novo_esqueleto(i) for i in range(inimigos)],
+            inimigos=lista,
         )
         self.index = 0
         self.menu_aberto = False
@@ -105,6 +114,11 @@ class CombatScene(Scene):
 
     def _sair_para_masmorra(self) -> None:
         """Volta para a masmorra depois do fim da luta."""
+        # O resultado vai no estado do gerenciador, e nao na propria
+        # cena. A masmorra e recriada quando a luta acaba, e uma cena
+        # nova nao tem como saber o que aconteceu na anterior.
+        self.manager.ui_state["resultado_combate"] = self.resultado
+        self.manager.ui_state["combate_contra_chefe"] = self.e_chefe
         if self.resultado != "fuga":
             self.manager.salvar_progresso()
         self.manager.switch("dungeon")

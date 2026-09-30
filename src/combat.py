@@ -343,3 +343,23 @@ def novo_esqueleto(indice: int = 0) -> Combatente:
         velocidade_barra=9.0 + indice * 1.5,
         forca=5 + indice * 2, defesa=1 + indice,
     )
+
+
+def novo_chefe() -> Combatente:
+    """O chefe da ultima sala: forte demais para se puzzling.
+
+    A BARRA dele e rapida de proposito. Um chefe com a barra lenta daria
+    ao jogador seis voltas inteiras de quanto ele quiser, e a
+    permanencia viraria uma roleta. Com a barra rapida, cada vez que
+    ele age o dano ja chegou, e a decisao "lutar ou sair" e do
+    jogador, nao do medidor.
+
+    A vida e alta e a defesa e alta de proposito tambem. Ele nao e
+    matavel no encontro: a aula e saber que fugir existe.
+    """
+    return Combatente(
+        nome="O Cobrador",
+        vida=180, vida_max=180,
+        velocidade_barra=17.0,
+        forca=17, defesa=5,
+    )

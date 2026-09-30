@@ -320,6 +320,13 @@ class DungeonScene(Scene):
             self.fase = "acordando"
             self.fase_tempo = 0.0
 
+        self._resultado_pendente = manager.ui_state.pop(
+            "resultado_combate", None
+        )
+        self._pendente_contra_chefe = bool(
+            manager.ui_state.pop("combate_contra_chefe", False)
+        )
+
     # --- save --------------------------------------------------------
     def para_save(self):
         """Estado da cena, no formato que o store sabe gravar."""
@@ -412,6 +419,56 @@ class DungeonScene(Scene):
             # a escala dos sprites mudou: recarrega
             self._quadros_esqueleto = None
 
+    # --- o que a luta deixou para tras --------------------------------
+    def _resolver_resultado(self) -> None:
+        """Reage ao fim da luta: venceu, fugiu, ou perdeu.
+
+        Sem isto a fuga so sobrescrevia um estado: o jogador voltava
+        para a masmorra, no mesmo lugar, com o chefe de novo na sala, e
+        nao entendia o que a mecanica tinha feito. Fugir do chefe e
+        SAIR da masmorra; e o que faz o chefe mudar de sala depois.
+        """
+        resultado = self._resultado_pendente
+        if resultado is None:
+            return
+        self._resultado_pendente = None
+        contra_chefe = self._pendente_contra_chefe
+        self._pendente_contra_chefe = False
+        self.esqueleto = None
+        self.esqueleto_vivo = False
+        self._quadros_esqueleto = None
+
+        if resultado == "fuga":
+            if contra_chefe:
+                self.progresso.fugir_do_chefe()
+                self.progresso.sair_da_masmorra()
+                self.manager.ui_state["progresso"] = self.progresso
+                self.manager.salvar_progresso()
+                self.manager.switch("road")
+                return
+            self._avisar("Voce fugiu. O esqueleto nao te seguiu.")
+            return
+
+        if resultado == "vitoria":
+            sala = self.progresso.onde_esta_o_chefe()
+            self.progresso.vencer(sala)
+            if contra_chefe:
+                # vencer o chefe tambem tira o jogador da masmorra
+                self.progresso.sair_da_masmorra()
+                self.manager.ui_state["progresso"] = self.progresso
+                self.manager.salvar_progresso()
+                self.manager.switch("road")
+                return
+            self._avisar("Voce venceu. A aula de combate passou.")
+            return
+
+        if resultado == "derrota":
+            self._avisar("Voce acordou no caixao de novo.", 3.0)
+            self.fase = "acordando"
+            self.fase_tempo = 0.0
+            self.posicao = pygame.Vector2(self._centro_caixao())
+            self.camera = pygame.Vector2(self.posicao)
+
     # entrada -------------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
         # soltar a direcao e tratado antes do filtro de KEYDOWN: senao o
@@ -456,6 +513,9 @@ class DungeonScene(Scene):
 
     # atualizacao ---------------------------------------------------
     def update(self, dt: float) -> None:
+        self._resolver_resultado()
+        if self._resultado_pendente is not None:
+            return
         self.time += dt
         self.tempo_jogado += dt
         # a acao so vale por um quadro; o tutorial le e esquece
@@ -515,6 +575,10 @@ class DungeonScene(Scene):
         # apos o nascimento.
         if self.esqueleto.distance_to(self.posicao) < ALCANCE_LUTA:
             self.esqueleto_vivo = False
+            # a masmorra diz que e o chefe, e nao um esqueleto qualquer:
+            # a cena de combate monta o inimigo e a masmorra trata o
+            # resultado
+            self.manager.ui_state["e_chefe"] = self.progresso.e_sala_do_chefe()
             self.manager.iniciar_combate(1)
         return
 
