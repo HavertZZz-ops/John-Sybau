@@ -760,6 +760,20 @@ def check_fps() -> None:
     )
 
 
+def check_itens() -> None:
+    """Roda a suite do item na luta e das aulas por sala."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_itens.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] itens e aulas:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] itens e aulas por sala")
+
+
 def check_fuga() -> None:
     """Roda a suite da fuga do chefe: opcao, custo zero e recambio."""
     result = subprocess.run(
@@ -1439,6 +1453,8 @@ def main() -> int:
     check_wang()
     print()
     check_fuga()
+    print()
+    check_itens()
     print()
     check_dungeon_intro()
     print()

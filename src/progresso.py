@@ -47,6 +47,18 @@ class Sala:
     dica: str = ""
 
 
+# As acoes de combate que cada sala ensina, pelo NOME do enum (o que
+# `Acao` tem), e nao pelo rotulo que aparece na tela. Misturar os dois
+# foi um erro real aqui: "Atacar" e o rotulo, `Acao.ATACAR` e o nome, e
+# um item deste dicionario serve para `hasattr(Acao, ...)`.
+ENSINA_COMBATE: dict[int, str] = {
+    1: "ATACAR",
+    2: "DEFENDER",
+    3: "HABILIDADE",
+    4: "ITEM",
+    5: "FUGIR",
+}
+
 SALAS: tuple[Sala, ...] = (
     Sala(
         1, "Sala do Um", ATAQUE,

@@ -302,6 +302,13 @@ class DungeonScene(Scene):
         # o esqueleto fica guardado dormindo ate a hora certa
         self.esqueleto: pygame.Vector2 | None = None
         self.esqueleto_vivo = False
+        # a pocao da sala da pocao, largada no chao. Vira None quando
+        # o jogador pega, e o progresso e que guarda se ja foi pega:
+        # recarregar a cena nao pode devolver a pocao no chao.
+        self.item_no_chao: pygame.Vector2 | None = None
+        # a aula da sala da pocao: a luta aponta a opcao de item
+        self.ensinar_item = False
+        self._colocar_item()
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
         self.passos = 0
@@ -434,6 +441,12 @@ class DungeonScene(Scene):
         self._resultado_pendente = None
         contra_chefe = self._pendente_contra_chefe
         self._pendente_contra_chefe = False
+        # a pocao da sala da pocao, largada no chao. Fica None depois
+        # que o jogador pega, e o progresso e que guarda se ela ja foi
+        # pega: recarregar a cena nao pode devolver a pocao.
+        self.item_no_chao = None
+        self.ensinar_item = False
+
         self.esqueleto = None
         self.esqueleto_vivo = False
         self._quadros_esqueleto = None
@@ -503,6 +516,9 @@ class DungeonScene(Scene):
             return
 
         if self.fase != "livre":
+            return
+        if self.key(event, "interagir"):
+            self._pegar_item()
             return
         for direcao, acao in DIRECTION_ACTIONS.items():
             if self.key(event, acao):
@@ -579,8 +595,62 @@ class DungeonScene(Scene):
             # a cena de combate monta o inimigo e a masmorra trata o
             # resultado
             self.manager.ui_state["e_chefe"] = self.progresso.e_sala_do_chefe()
+            self.manager.ui_state["ensinar_item"] = self.ensinar_item
             self.manager.iniciar_combate(1)
         return
+
+    def _colocar_item(self) -> None:
+        """Larga a pocao no chao da sala 4, uma vez so.
+
+        A sala da pocao e a 4, e a pocao fica no chao dela. Se o
+        jogador ja pegou, nao volta: recarregar a cena (a cada entrada
+        na masmorra) recolocaria a pocao e o jogador poderia
+        acumular poções infinitas.
+        """
+        sala_item = 4
+        if self.progresso.concluida(sala_item):
+            self.ensinar_item = False
+            return
+        centro = self.mapa.centro_da_sala(sala_item)
+        if centro is None:
+            return
+        # um pouco para o lado do centro, para a poçao nao ficar
+        # exatamente em cima do ponto de nascimento do inimigo
+        for dx, dy in ((2, 0), (-2, 0), (0, 2), (0, -2), (1, 1), (0, 0)):
+            alvo = (centro[0] + dx, centro[1] + dy)
+            if self.mapa.andavel(*alvo):
+                self.item_no_chao = pygame.Vector2(
+                    self.mapa.para_pixels(*alvo, self.tile)
+                )
+                return
+
+    def _pegar_item(self) -> None:
+        """Jogador perto da pocao: pega, e um inimigo aparece.
+
+        A luta comeca junto com a coleta de proposito: o jogador aprende
+        a usar o item dentro da luta, e nao num menu fora dela. A
+        pocao precisa estar na mao ANTES de a luta comecar, senao a
+        aula mostraria um item que o jogador ainda nao tem.
+        """
+        if self.item_no_chao is None:
+            return
+        if self.item_no_chao.distance_to(self.posicao) > self.tile * 1.2:
+            return
+
+        self.item_no_chao = None
+        self.progresso.itens["pocao"] = self.progresso.itens.get("pocao", 0) + 1
+        self.ensinar_item = True
+        self.manager.ui_state["progresso"] = self.progresso
+        self._avisar("Pocao de cura. Use na luta.", 3.0)
+
+        # o inimigo da aula da pocao, no centro da sala
+        centro = self.mapa.centro_da_sala(4)
+        if centro is not None:
+            self.esqueleto = pygame.Vector2(
+                self.mapa.para_pixels(*centro, self.tile)
+            )
+            self.esqueleto_vivo = True
+            self.tutorial.mostrar("Um esqueleto se levanta")
 
     def _casa_do_chefe(self) -> tuple[int, int] | None:
         """Onde o chefe fica: no centro da sala que ele ocupa.
@@ -728,6 +798,7 @@ class DungeonScene(Scene):
         self._limitar_camera()
         self._desenhar_mapa(surface)
         self._desenhar_saida(surface)
+        self._desenhar_item(surface)
 
         escala = assets.get_sprite_scale()
         cx, cy = self._centro_caixao()
@@ -897,6 +968,42 @@ class DungeonScene(Scene):
             sombra.get_rect(centerx=rect.centerx, bottom=rect.bottom - 2),
         )
         surface.blit(sprite, rect)
+
+    def _desenhar_item(self, surface: pygame.Surface) -> None:
+        """A pocao no chao, com um brilho para o jogador achar.
+
+        O desenho e um frasco pequeno de Purpose: e menos informacao que
+        um sprite, mas nao depende de nenhum arquivo de arte e aparece
+        em qualquer cenario. Um item invisivel nao ensina nada.
+        """
+        if self.item_no_chao is None:
+            return
+        w, h = self.size
+        px = int(self.item_no_chao.x - self.camera.x + w // 2)
+        py = int(self.item_no_chao.y - self.camera.y + h // 2)
+        pulso = theme.pulse(self.time)
+
+        # halo pulsando no chao
+        raio = int(self.tile * 0.42 + pulso * 3)
+        halo = pygame.Surface((raio * 2, raio * 2), pygame.SRCALPHA)
+        pygame.draw.circle(halo, (198, 168, 102, 40 + int(40 * pulso)),
+                           (raio, raio), raio)
+        surface.blit(halo, (px - raio, py - raio))
+
+        # frasco
+        altura = max(6, self.tile // 3)
+        largura = max(4, altura // 2)
+        corpo = pygame.Rect(px - largura // 2, py - altura // 2, largura, altura)
+        pygame.draw.rect(surface, (176, 60, 58), corpo)
+        pygame.draw.rect(surface, (24, 20, 18), corpo, 1)
+        gargalo = pygame.Rect(px - largura // 4, corpo.top - 3,
+                              max(2, largura // 2), 4)
+        pygame.draw.rect(surface, (196, 188, 172), gargalo)
+        pygame.draw.rect(surface, (24, 20, 18), gargalo, 1)
+
+        theme.text_tracked_at(
+            surface, "E para pegar", 13, (px - 34, corpo.bottom + 4),
+            theme.GOLD)
 
     def _desenhar_saida(self, surface: pygame.Surface) -> None:
         """Marca da saida, no fim do cenario."""

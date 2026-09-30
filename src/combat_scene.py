@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import assets, combat, theme
+from . import assets, combat, itens, theme
 from .scene import Scene
 
 DT_FIXO = 1 / 60
@@ -47,6 +47,13 @@ class CombatScene(Scene):
         )
         self.index = 0
         self.menu_aberto = False
+        # "acao" para as acoes, "item" para o inventario aberto
+        self.modo = "acao"
+        self.index_item = 0
+        # a aula da sala da pocao: enquanto o jogador nao usou um item
+        # nesta luta, o jogo aponta a opcao no menu
+        self.ensinar_item = bool(manager.ui_state.get("ensinar_item", False))
+        self.ja_usou_item = False
         self.anim_tempo = 0.0
         self.anim_acao = ""          # "heroi" ou "inimigo"
         self.anim_quadro = 0
@@ -95,6 +102,27 @@ class CombatScene(Scene):
             self._sair_para_masmorra()
             return
 
+        # Com o inventario aberto as teclas sao do inventario, e o Esc
+        # FECHA o inventario em vez de fugir. Este bloco vem ANTES do
+        # tratamento de `voltar`: uma linha abaixo, o Esc com o
+        # inventario aberto terminava a luta. Fechar um menu nao pode
+        # custar a partida.
+        if self.modo == "item" and self.menu_aberto:
+            linhas = itens.rotulos(self._inventario())
+            if self.key(event, "voltar"):
+                self.modo = "acao"
+                return
+            if not linhas:
+                self.modo = "acao"
+                return
+            if self.key(event, "mover_cima"):
+                self.index_item = (self.index_item - 1) % len(linhas)
+            elif self.key(event, "mover_baixo"):
+                self.index_item = (self.index_item + 1) % len(linhas)
+            elif self.key(event, "confirmar"):
+                self._gastar_item(linhas[self.index_item][0])
+            return
+
         if self.key(event, "voltar"):
             # fugir sai da luta com a vida que tinha
             self.resultado = "fuga"
@@ -123,7 +151,42 @@ class CombatScene(Scene):
             self.manager.salvar_progresso()
         self.manager.switch("dungeon")
 
+    def _inventario(self) -> dict[str, int]:
+        """O que o jogador carrega agora.
+
+        O progresso vive no estado do gerenciador. A cena nao guarda
+        copia: uma copia aqui desatualizaria na hora em que o jogador
+        usasse o item, e o item volveria a aparecer no menu.
+        """
+        p = self.manager.ui_state.get("progresso")
+        return dict(p.itens) if p is not None else {}
+
+    def _gastar_item(self, item_id: str) -> None:
+        p = self.manager.ui_state.get("progresso")
+        if p is not None:
+            p.usar_pocao() if item_id == "pocao" else None
+        self.modo = "acao"
+        self.batalha.item_escolhido = item_id
+        eventos = self.batalha.acao_do_heroi(combat.Acao.ITEM)
+        self.log = [e.texto for e in eventos]
+        self.ja_usou_item = True
+        self.ensinar_item = False
+        self.menu_aberto = False
+        self.anim_acao = ""
+        self.anim_quadro = 0
+
     def _escolher(self, acao: combat.Acao) -> None:
+        if acao is combat.Acao.ITEM:
+            # "Usar item" nao executa nada sozinho: ele ABRE o
+            # inventario. A cena e quem tem a lista na tela e quem
+            # sabe qual item esta sob o cursor.
+            if not itens.tem_usaveis(self._inventario()):
+                self.log = ["Voce nao tem item"]
+                return
+            self.modo = "item"
+            self.index_item = 0
+            return
+
         eventos = self.batalha.acao_do_heroi(acao)
         self.log = [e.texto for e in eventos]
         self._flutuar(eventos)
@@ -209,9 +272,61 @@ class CombatScene(Scene):
         self._desenhar_log(surface, w, h)
 
         if self.menu_aberto and not self.batalha.concluida:
-            self._desenhar_menu(surface, w, h)
+            if self.modo == "item":
+                self._desenhar_inventario(surface, w, h)
+            else:
+                self._desenhar_menu(surface, w, h)
         elif self.batalha.concluida:
             self._desenhar_resultado(surface, w, h)
+
+    def _desenhar_inventario(self, surface, w, h) -> None:
+        """O inventario aberto durante a luta.
+
+        Fica por cima do menu de acoes, e nao em outra tela: o jogador
+        precisa ver a barra de vida mudar no mesmo instante em que
+        confirma, senao a pociao parece nao ter funcionado.
+        """
+        linhas = itens.rotulos(self._inventario())
+        caixa = pygame.Rect(0, 0, min(360, w - 40), 74 + 30 * max(1, len(linhas)))
+        caixa.center = (w // 2, h // 2)
+        pygame.draw.rect(surface, theme.BACKGROUND, caixa.inflate(12, 12))
+        pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(12, 12), 1)
+
+        theme.text_tracked_at(
+            surface, "ITENS", 17,
+            (caixa.x, caixa.y - 26), theme.GOLD)
+
+        if not linhas:
+            theme.text_tracked_at(
+                surface, "Voce nao tem item", 16,
+                (caixa.x, caixa.y), theme.TEXT_DIM)
+            theme.text_tracked_at(
+                surface, "esc para voltar", 13,
+                (caixa.x, caixa.bottom + 8), theme.TEXT_DIM)
+            return
+
+        for i, (item_id, item, qtd) in enumerate(linhas):
+            y = caixa.y + i * 30
+            marcado = i == self.index_item
+            cor = theme.GOLD if marcado else theme.TEXT
+            pygame.draw.rect(
+                surface, theme.BACKGROUND_SOFT,
+                pygame.Rect(caixa.x - 4, y - 4, caixa.width + 8, 28),
+            )
+            if marcado:
+                pygame.draw.rect(
+                    surface, theme.GOLD,
+                    pygame.Rect(caixa.x - 4, y - 4, 3, 28),
+                )
+            theme.text_tracked_at(
+                surface, f"{item.nome} x{qtd}", 16, (caixa.x + 4, y), cor)
+            theme.text_tracked_at(
+                surface, item.descricao, 12,
+                (caixa.x + 4, y + 16), theme.TEXT_DIM)
+
+        theme.text_tracked_at(
+            surface, "enter usa   esc volta", 13,
+            (caixa.x, caixa.bottom + 10), theme.TEXT_DIM)
 
     def _desenhar_heroi(self, surface, w, h) -> None:
         estado = "idle"
@@ -364,6 +479,25 @@ class CombatScene(Scene):
                     surface, cor,
                     [(x - 18, y), (x - 12, y - 5), (x - 18, y - 10)],
                 )
+            # a aula da sala da pocao aponta a opcao, e some assim que
+            # o jogador usa o item pela primeira vez
+            if (self.ensinar_item and acao is combat.Acao.ITEM
+                    and not self.ja_usou_item):
+                cor_pulso = theme.lerp(
+                    theme.GOLD, theme.TEXT, theme.pulse(self.anim_tempo)
+                )
+                pygame.draw.rect(
+                    surface, cor_pulso,
+                    pygame.Rect(x - 22, y - 5, 6 + 9 * len(acao.value), 22), 1,
+                )
+                theme.text_tracked_at(
+                    surface, "aqui", 13, (x + 10 + 9 * len(acao.value), y), cor_pulso)
+
+        if self.ensinar_item and not self.ja_usou_item:
+            theme.text_tracked_at(
+                surface,
+                "Escolha USAR ITEM com as setas e enter. O inventario abre.",
+                15, (int(w * 0.30), base_y - 26), theme.GOLD)
 
     def _desenhar_resultado(self, surface, w, h) -> None:
         texto = "VITORIA" if self.batalha.vencida else "VOCE CAIU"

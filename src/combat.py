@@ -38,6 +38,7 @@ class Acao(Enum):
     ATACAR = "Atacar"
     DEFENDER = "Defender"
     HABILIDADE = "Habilidade"
+    ITEM = "Usar item"
     FUGIR = "Fugir"
 
 
@@ -107,6 +108,11 @@ class Combatente:
     custo_ataque: float = 25.0
     custo_defesa: float = 15.0
     custo_habilidade: float = 40.0
+    # Curar e caro de proposito. Se a pocao nao gastasse tempo, o
+    # jogador curava todo turno e a luta virava uma espera: o item
+    # Some do jogo. Com 20 de custo, da para curar duas vezes e ainda
+    # sobra um golpe.
+    custo_item: float = 20.0
 
     def __post_init__(self) -> None:
         self.barra = Barra(velocidade=self.velocidade_barra)
@@ -165,6 +171,9 @@ class Batalha:
     vencida: bool = False
     # o jogador escolheu sair da luta em vez de ganhar
     fugiu: bool = False
+    # item que a cena escolheu no inventario, para a acao ITEM saber o
+    # que aplicar. A cena e quem mostra a lista; a batalha e quem aplica.
+    item_escolhido: str | None = None
     sorteio: random.Random = field(default_factory=random.Random)
 
     # --- estado ------------------------------------------------------
@@ -217,6 +226,27 @@ class Batalha:
             # defender (barato) e o golpe forte (caro, mas machuca mais)
             ditos.extend(self._golpe(self.heroi, self.alvo_aleatorio(), forte=True))
             self.heroi.barra.gastar(self.heroi.custo_habilidade)
+            self._encerrar_turno_heroi()
+            return ditos
+
+        if acao is Acao.ITEM:
+            # A cena abre o inventario antes de chamar isto. Aqui so
+            # chega o item ja escolhido, com o id no `acao`. Devolver
+            # a lista vazia quando nao ha item impede o turno de passar
+            # com o jogador sem ter feito nada.
+            item_id = getattr(acao, "item_id", None) or self.item_escolhido
+            if not item_id:
+                return ditos
+            from . import itens as itens_mod
+
+            curado = itens_mod.usar(item_id, self.heroi)
+            nome = (itens_mod.obter(item_id) or itens_mod.Item("", "item", "")).nome
+            if curado <= 0:
+                ditos.append(Evento(f"{self.heroi.nome} ja esta com a vida cheia", "info"))
+                return ditos
+            self.heroi.barra.gastar(self.heroi.custo_item)
+            self.item_escolhido = None
+            ditos.append(Evento(f"{self.heroi.nome} usou {nome} e curou {curado}", "cura"))
             self._encerrar_turno_heroi()
             return ditos
 
