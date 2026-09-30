@@ -174,7 +174,16 @@ class DjangoSaveStore:
             return None
 
     def existe(self) -> bool:
-        return self._pedir("GET") is not None
+        """True se o servidor respondeu e ha save guardado.
+
+        O GET responde `{"existe": bool, "save": {...}}`. Olhar so se a
+        resposta veio nao serve: depois de um DELETE a resposta e
+        `{"existe": false}` e o jogo acharia que ainda tem save.
+        """
+        dados = self._pedir("GET")
+        if not isinstance(dados, dict):
+            return False
+        return bool(dados.get("existe"))
 
     def salvar(self, save: Save) -> bool:
         return self._pedir("PUT", save.para_dict()) is not None
@@ -183,10 +192,22 @@ class DjangoSaveStore:
         dados = self._pedir("GET")
         if not isinstance(dados, dict):
             return None
-        return Save.de_dict(dados)
+        if not dados.get("existe"):
+            return None
+        # o save vem dentro de "save", nao no nivel de cima. Passando a
+        # resposta inteira para o Save, os campos "existe" e "save"
+        # seriam descartados como desconhecidos e viraria um save com
+        # posicao 0,0: o jogo voltava ao comeco sem reclamar de nada.
+        interno = dados.get("save")
+        if not isinstance(interno, dict):
+            return None
+        return Save.de_dict(interno)
 
     def apagar(self) -> bool:
-        return self._pedir("DELETE") is not None
+        dados = self._pedir("DELETE")
+        if isinstance(dados, dict):
+            return not dados.get("existe", False)
+        return False
 
 
 def escolher_store(procurar_servidor: bool = True) -> SaveStore:

@@ -52,9 +52,15 @@ class TitleScreen(Scene):
         self.notice_timer = 0.0
         # fade ao entrar: comeca escuro e clareia
         self.fade = 1.0
-        # o lugar de save e escolhido uma vez, no primeiro menu que
-        # aparece: Postgres se responder, arquivo senao
-        self.store = saves.escolher_store()
+        # o lugar de save e escolhido uma vez e guardado no manager, para
+        # o menu e a masmorra usarem o MESMO. Se cada um escolhesse por
+        # conta propria, o menu poderia oferecer Continuar olhando um
+        # lugar enquanto a masmorra salva em outro
+        store = manager.ui_state.get("store")
+        if store is None:
+            store = saves.escolher_store()
+            manager.ui_state["store"] = store
+        self.store = store
         self.save = self.store.carregar()
         self._visiveis = self._filtrar()
         self._layout()
