@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import random
 import subprocess
 import sys
 import tempfile
@@ -998,8 +999,139 @@ def check_dungeon_save_cycle() -> None:
 
 
 
+def check_combat_bases() -> None:
+    """As regras do medidor de tempo, sem pygame."""
+    from src import combat
+
+    # a barra enche e transborda: quem encheu age e volta ao zero
+    barra = combat.Barra(velocidade=10.0, limite=100.0)
+    for _ in range(100):
+        barra.avancar(0.1)  # 10s * 10/s = 100 -> transborda
+    assert barra.valor < 1.0, f"a barra deveria ter virado, esta em {barra.valor}"
+    print("[ok] a barra enche, transborda e volta ao zero")
+
+    # gastar nunca deixa a barra negativa
+    barra.gastar(500.0)
+    assert barra.valor == 0.0, barra.valor
+    print("[ok] o custo da acao nunca deixa a barra negativa")
+
+    # o heroi e mais rapido que o esqueleto: e o que faz a batalha
+    # avancar em direcao a ele em vez de virar uma fila
+    heroi = combat.novo_heroi()
+    esq = combat.novo_esqueleto(0)
+    assert heroi.velocidade_barra > esq.velocidade_barra, "heroi devia ser mais rapido"
+    print(
+        f"[ok] o heroi e mais rapido que o esqueleto "
+        f"({heroi.velocidade_barra:.0f} contra {esq.velocidade_barra:.0f})"
+    )
+
+
+
+def check_combat_batalha() -> None:
+    """Uma batalha inteira: ataque, defender, vitoria e derrota."""
+    from src import combat
+
+    # --- o heroi age primeiro, porque e o mais rapido ---
+    b = combat.Batalha(
+        heroi=combat.novo_heroi(), inimigos=[combat.novo_esqueleto(0)],
+        sorteio=random.Random(1),
+    )
+    dt = 1 / 60
+    while not b.turno_heroi and not b.concluida:
+        b.avancar(dt)
+    assert b.turno_heroi, "a vez do heroi nunca chegou"
+    assert b.heroi.barra.valor < b.heroi.barra.limite, "a barra deveria ter virado"
+    print("[ok] a vez do heroi chega e a barra para, esperando a escolha")
+
+    # --- atacar causa dano e consome barra ---
+    esq = b.inimigos[0]
+    vida_antes = esq.vida
+    b.acao_do_heroi(combat.Acao.ATACAR)
+    assert esq.vida < vida_antes, f"atacar nao tirou vida: {vida_antes} -> {esq.vida}"
+    assert not b.turno_heroi, "a vez do jogador deveria ter acabado"
+    print(f"[ok] atacar tira vida ({vida_antes} -> {esq.vida}) e devolve a vez")
+
+    # --- defender reduz o dano pela metade ---
+    heroi = combat.novo_heroi()
+    alvo = combat.novo_esqueleto(0)
+    sem_defesa = heroi.receber(10)
+    heroi.vida = heroi.vida_max
+    heroi.defendendo = True
+    com_defesa = heroi.receber(10)
+    assert com_defesa < sem_defesa, f"defender nao ajudou: {sem_defesa} vs {com_defesa}"
+    assert alvo.vida == alvo.vida_max, "o alvo nao devia mudar"
+    print(f"[ok] defender reduz o dano ({sem_defesa} -> {com_defesa})")
+
+    # --- vitoria ---
+    invencivel = combat.novo_heroi(10 ** 6, forca=999)
+    b2 = combat.Batalha(
+        heroi=invencivel,
+        inimigos=[combat.novo_esqueleto(0)],
+        sorteio=random.Random(2),
+    )
+    for _ in range(6000):
+        b2.avancar(dt)
+        if b2.turno_heroi:
+            b2.acao_do_heroi(combat.Acao.ATACAR)
+        if b2.concluida:
+            break
+    assert b2.concluida, "a batalha nao terminou"
+    assert b2.vencida, f"o heroi de vida {b2.heroi.vida} perdeu para {esq.nome}"
+    assert not b2.inimigos_vivos(), "sobrou inimigo vivo"
+    print("[ok] a batalha termina em vitoria quando o ultimo cai")
+
+    # --- derrota ---
+    b3 = combat.Batalha(
+        heroi=combat.novo_heroi(vida=5, forca=0),
+        inimigos=[combat.novo_esqueleto(2)],
+        sorteio=random.Random(3),
+    )
+    for _ in range(6000):
+        b3.avancar(dt)
+        if b3.turno_heroi:
+            b3.acao_do_heroi(combat.Acao.DEFENDER)
+        if b3.concluida:
+            break
+    assert b3.concluida, "a batalha nao terminou"
+    assert not b3.vencida, "o heroi fraco deveria ter perdido"
+    print("[ok] a batalha termina em derrota quando o heroi cai")
+
+
+
+def check_combat_cena() -> None:
+    """A cena de combate desenha e responde as teclas."""
+    from src import combat
+
+    manager = _manager()
+    manager.switch("combat")
+    cena = manager.active
+
+    assert cena.batalha.heroi.vivo, "o heroi comeca vivo"
+    assert cena.batalha.inimigos, "a luta precisa de inimigo"
+
+    # desenha alguns quadros
+    for _ in range(30):
+        manager.update(1 / 60)
+        manager.draw()
+
+    # espera a vez do heroi e escolhe atacar
+    for _ in range(600):
+        manager.update(1 / 60)
+        if cena.batalha.turno_heroi:
+            break
+    assert cena.batalha.turno_heroi, "a cena nunca abriu o menu do heroi"
+    assert cena.menu_aberto, "o menu nao abriu na vez do heroi"
+    manager.draw()
+
+    vida = cena.batalha.inimigos[0].vida
+    cena._escolher(combat.Acao.ATACAR)
+    assert cena.batalha.inimigos[0].vida < vida, "atacar pela cena nao tirou vida"
+    print("[ok] a cena de combate abre o menu, ataca e desenha")
+
+
 def main() -> int:
-    # primeiro de tudo: a medicao de FPS, que depende de janela limpa
+    # gerado por tools/fix_test_main.py: a lista abaixo e a unica
+    # fonte de verdade da ordem dos testes
     check_fps()
     print()
     check_scenes()
@@ -1042,8 +1174,13 @@ def main() -> int:
     print()
     check_menu_items()
     print()
-    check_dynamic_resolution_persists()
+    check_combat_bases()
     print()
+    check_combat_batalha()
+    print()
+    check_combat_cena()
+    print()
+    check_dynamic_resolution_persists()
     print()
     check_rebinding_in_options()
     print()

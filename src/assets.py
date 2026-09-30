@@ -235,8 +235,23 @@ def list_expected_sprites() -> Tuple[str, ...]:
 # --- animacoes ----------------------------------------------------
 HERO_DIR = settings.SPRITES_DIR / "hero"
 HERO_DIRECTIONS: Tuple[str, ...] = ("norte", "sul", "leste", "oeste")
-HERO_STATES: Tuple[str, ...] = ("idle", "walk")
+HERO_STATES: Tuple[str, ...] = (
+    "idle", "walk", "pushing", "hit", "attack", "climbing",
+    "shielded", "shielded_hit", "death", "falling",
+)
+# estados com uma tira so, que serve para qualquer direcao: sao as
+# mortes e as quedas, que o personagem cai de lado em qualquerrum sentido
+HERO_ANY_DIR: Tuple[str, ...] = ("death", "falling")
+# a espada do golpe e maior que o corpo (32x32/32x48 contra 16x16), e
+# entra POR CIMA do heroi, entao nao substitui a pose do personagem
+HERO_EFEITO: Tuple[str, ...] = ("attack",)
+
 HERO_FPS = 6
+# FPS por estado: o golpe dura menos que o andar, senao a pausa na
+# animacao de ataque parece travamento
+HERO_FPS_ESTADO = {
+    "idle": 5, "walk": 8, "attack": 14, "hit": 12, "death": 8,
+}
 # tamanho do quadro do heroi como esta no disco (32x32). E a referencia
 # de "1x": as opcoes multiplicam a partir daqui. Quadrado porque o
 # personagem do pacote e 16x16 e a importacao dobra cada quadro.
@@ -245,11 +260,18 @@ HERO_BASE: Tuple[int, int] = (32, 32)
 HERO_ASPECT = HERO_BASE[0] / HERO_BASE[1]
 
 
-def load_animation(
+def fps_do_estado(estado: str) -> int:
+    """Quadros por segundo da animacao `estado`."""
+    return HERO_FPS_ESTADO.get(estado, HERO_FPS)
+
+
+def carregar_animacao(
     direction: str,
     state: str = "walk",
     box: Tuple[int, int] | None = None,
     scale: int | None = None,
+    prefixo: str = "hero",
+    pasta: Path | None = None,
 ) -> list[pygame.Surface]:
     """Carrega os quadros de `direction` no `state` pedido, escalados.
 
@@ -273,11 +295,17 @@ def load_animation(
     if scale is None:
         scale = _sprite_scale
 
-    if not HERO_DIR.is_dir():
+    raiz = HERO_DIR if pasta is None else pasta
+    if not raiz.is_dir():
         return []
 
+    if state in HERO_ANY_DIR:
+        padrao = f"{prefixo}_{state}_*.png"
+    else:
+        padrao = f"{prefixo}_{direction}_{state}_*.png"
+
     frames = []
-    for path in sorted(HERO_DIR.glob(f"hero_{direction}_{state}_*.png")):
+    for path in sorted(raiz.glob(padrao)):
         try:
             image = _load_image(path)
             frames.append(fit_box(image, box, scale=scale))
@@ -286,9 +314,48 @@ def load_animation(
     return frames
 
 
+def load_animation(
+    direction: str,
+    state: str = "walk",
+    box: Tuple[int, int] | None = None,
+    scale: int | None = None,
+) -> list[pygame.Surface]:
+    """Atalho para a animacao do heroi. Ver `carregar_animacao`."""
+    return carregar_animacao(direction, state, box, scale)
+
+
 def has_animation(direction: str = "sul", state: str = "walk") -> bool:
     """True se existe ao menos um quadro da animacao pedida."""
-    if not HERO_DIR.is_dir():
-        return False
-    return any(HERO_DIR.glob(f"hero_{direction}_{state}_*.png"))
+    return bool(carregar_animacao(direction, state, box=(1, 1), scale=1))
+
+
+# --- inimigos ------------------------------------------------------
+# Os esqueletos vem em folha de 16x32 (o corpo e esguio, nao quadrado
+# como o do heroi), com um ciclo de andar e um de ataque por direcao.
+FOE_DIR = settings.SPRITES_DIR / "inimigo"
+FOE_KINDS: Tuple[str, ...] = ("skeleton_5", "skeleton_6", "skeleton_7", "skeleton_8")
+FOE_STATES: Tuple[str, ...] = ("walk", "attack")
+FOE_BASE: Tuple[int, int] = (32, 64)
+
+
+def load_foe(
+    kind: str,
+    direction: str,
+    state: str = "walk",
+    box: Tuple[int, int] | None = None,
+    scale: int | None = None,
+) -> list[pygame.Surface]:
+    """Quadros de um esqueleto. Devolve vazio se o tipo nao existir."""
+    if direction not in HERO_DIRECTIONS:
+        raise ValueError(f"direcao invalida: {direction!r}")
+    if state not in FOE_STATES:
+        raise ValueError(f"estado de inimigo invalido: {state!r}")
+    if box is None:
+        box = (FOE_BASE[0] * 6, FOE_BASE[1] * 6)
+    if scale is None:
+        scale = _sprite_scale
+    return carregar_animacao(
+        direction, "attack" if state == "attack" else "walk",
+        box=box, scale=scale, prefixo=kind, pasta=FOE_DIR,
+    )
 
