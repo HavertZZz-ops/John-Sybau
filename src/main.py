@@ -16,7 +16,7 @@ import sys
 import pygame
 
 from . import assets, settings
-from .config import Config, native_refresh_rate
+from .config import Config, native_refresh_rate, set_window_frame
 from .game_scene import GameScene
 from .input_map import InputMap
 from .options_screen import OptionsScreen
@@ -95,6 +95,97 @@ def create_window(config: Config) -> pygame.Surface:
     return pygame.display.set_mode(size, flags)
 
 
+def measure_window_frame() -> tuple[int, int]:
+    """Quanto a moldura da janela soma em cada dimensao.
+
+    Mede a diferenca entre a janela de fora e a superficie de desenho.
+    Chutar esse valor erra: uma janela de 1504x928 vira 1520x967 de
+    fora, ou seja 16px de lado e 39px de altura (a barra de titulo).
+    Sem descontar isso, a maior resolucao oferecida estourava a tela
+    embaixo.
+    """
+    if os.environ.get("SDL_VIDEODRIVER") == "dummy":
+        return (16, 39)  # valor tipico, so para o layout do teste
+
+    try:
+        import ctypes
+
+        hwnd = pygame.display.get_wm_info().get("window")
+        if not hwnd:
+            return (16, 39)
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("l", ctypes.c_long), ("t", ctypes.c_long),
+                ("r", ctypes.c_long), ("b", ctypes.c_long),
+            ]
+
+        outer = RECT()
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(outer))
+        win_w = outer.r - outer.l
+        win_h = outer.b - outer.t
+        surf_w, surf_h = pygame.display.get_surface().get_size()
+        return (max(0, win_w - surf_w), max(0, win_h - surf_h))
+    except Exception:
+        return (16, 39)
+
+
+def center_window(surface: pygame.Surface) -> None:
+    """Centraliza a janela na area de trabalho.
+
+    O Windows posiciona a janela onde ela estava quando recreate, e o
+    offset vai acumulando a cada troca de tamanho. Sem recentralizar, a
+    janela sai da tela pela direita e por baixo: a segunda troca
+    media endedava em 2090x1360 num desktop de 1920x1200, e parte do
+    menu ficava fora do alcance do mouse.
+    """
+    if os.environ.get("SDL_VIDEODRIVER") == "dummy":
+        return  # teste headless: nao existe janela de verdade
+
+    try:
+        import ctypes
+
+        hwnd = pygame.display.get_wm_info().get("window")
+        if not hwnd:
+            return
+
+        user32 = ctypes.windll.user32
+        # area de trabalho, ja descontando a barra de tarefas
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("l", ctypes.c_long), ("t", ctypes.c_long),
+                ("r", ctypes.c_long), ("b", ctypes.c_long),
+            ]
+
+        work = RECT()
+        if not user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work), 0):
+            work = RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(work))
+
+        work_w = work.r - work.l
+        work_h = work.b - work.t
+
+        # a comparacao e com a janela DE FORA, nao com a superficie:
+        # a moldura soma ~16px de lado e ~39px de altura, entao uma
+        # superficie que cabe na tela pode virar uma janela estourada
+        outer_w = surface.get_width() + measure_window_frame()[0]
+        outer_h = surface.get_height() + measure_window_frame()[1]
+
+        if outer_w >= work_w or outer_h >= work_h:
+            # maior que a area util: cola no canto, sem centralizar
+            x, y = work.l, work.t
+        else:
+            x = work.l + (work_w - outer_w) // 2
+            y = work.t + (work_h - outer_h) // 2
+
+        # 0x0001 = SWP_NOSIZE, 0x0004 = SWP_NOZORDER, 0x0010 = SWP_NOACTIVATE
+        user32.SetWindowPos(
+            hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010
+        )
+    except Exception as exc:  # nunca derruba o jogo por centralizar
+        print(f"[video] nao foi possivel centralizar a janela: {exc}")
+
+
 def main(frame_limit: int | None = None) -> int:
     pygame.init()
 
@@ -106,6 +197,16 @@ def main(frame_limit: int | None = None) -> int:
 
     window = create_window(config)
     pygame.display.set_caption(settings.GAME_TITLE)
+    center_window(window)
+    # medir a moldura depois da janela existir, e o que permite ao
+    # filtro de resolucao oferecer o maior tamanho que cabe de verdade
+    set_window_frame(measure_window_frame())
+    # a resolucao pode ter vindo de um config salvo antes da moldura
+    # ser conhecida; agora que ela e, revalida e recria se preciso
+    if config.clamp().size != (window.get_width(), window.get_height()):
+        window = create_window(config)
+        center_window(window)
+        set_window_frame(measure_window_frame())
 
     clock = pygame.time.Clock()
     refresh = native_refresh_rate()

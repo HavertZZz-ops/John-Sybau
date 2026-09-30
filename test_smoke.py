@@ -230,27 +230,46 @@ def check_bindings_persist() -> None:
 
 
 def check_native_resolution() -> None:
-    """A resolucao nativa da tela precisa estar disponivel nas opcoes."""
-    from src.config import logical_desktop_size
+    """A maior resolucao que cabe na tela precisa estar disponivel.
 
-    desktop = logical_desktop_size()
+    O limite e o desktop MENOS a moldura da janela. Uma resolucao do
+    tamanho do desktop cria uma janela maior que a tela, porque a borda
+    e a barra de titulo somam alguns pixels.
+    """
+    from src.config import usable_window_size
+
+    limit = usable_window_size()
     config = Config()
     offered = config.available_resolutions()
 
-    for size in offered:
-        assert size[0] <= 640 and size[1] >= 360 or True
-    if desktop:
-        assert (desktop[0], desktop[1]) in offered, (
-            f"nativa {desktop} ausente de {list(offered)}"
+    if limit:
+        # a maior que cabe tem que estar disponivel, seja ela uma das
+        # resolucoes fixas ou a nativa acrescentada
+        maior = max(offered)
+        assert maior[0] <= limit[0] and maior[1] <= limit[1], (
+            f"maior oferecida {maior} passa do limite {limit}"
         )
-        print(f"[ok] resolucao nativa {desktop[0]}x{desktop[1]} disponivel")
+        assert maior[0] >= limit[0] - 40 and maior[1] >= limit[1] - 40, (
+            f"maior oferecida {maior} esta longe do limite {limit}"
+        )
+        print(f"[ok] maior resolucao que cabe {maior[0]}x{maior[1]} (limite {limit[0]}x{limit[1]})")
     else:
-        print(f"[aviso] desktop logico desconhecido; oferecer {list(offered)}")
+        print(f"[aviso] tela desconhecida; oferecer {list(offered)}")
 
-    # a resolucao em uso sempre esta na lista (senao nao da para sair dela)
+    # toda resolucao oferecida tem que caber no limite
+    for size in offered:
+        assert size[0] <= limit[0] and size[1] <= limit[1], (
+            f"{size} passa do limite {limit}"
+        )
+    print("[ok] nenhuma resolucao oferecida passa do limite da tela")
+
+    # uma resolucao que nao cabe nao pode ser oferecida: offering
+    # estourava a janela e tirava parte do menu da tela
     config.width, config.height = 2560, 1440
-    assert (2560, 1440) in config.available_resolutions()
-    print("[ok] resolucao fora da tela continua acessivel para poder sair dela")
+    assert (2560, 1440) not in config.available_resolutions(), (
+        "resolucao maior que a tela nao deve ser oferecida"
+    )
+    print("[ok] resolucao maior que a tela nao e oferecida")
 
 
 def check_options_not_lockable() -> None:

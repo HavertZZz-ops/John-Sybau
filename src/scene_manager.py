@@ -35,7 +35,7 @@ class SceneManager:
             return
 
         from . import assets
-        from .main import create_window
+        from .main import center_window, create_window
 
         assets.set_sprite_scale(self.config.sprite_scale)
 
@@ -46,6 +46,9 @@ class SceneManager:
         import pygame
 
         pygame.display.set_caption("John Sybau")
+        # centralizar toda vez: sem isso o offset da posicao antiga
+        # acumula a cada troca e a janela sai da tela
+        center_window(self.window)
 
         if self._active_name is not None:
             name = self._active_name

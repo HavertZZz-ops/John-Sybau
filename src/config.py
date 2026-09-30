@@ -59,6 +59,15 @@ class Config:
         # cheia ela e valida, e filtrar aqui quebraria o fullscreen
         if self.height > self.width:
             self.width, self.height = self.height, self.width
+
+        # a resolucao salva precisa caber na tela; senao o jogo abre com
+        # a janela estourando a lateral e o menu fica inacessivel
+        limit = usable_window_size()
+        if limit and not self.fullscreen:
+            if self.width > limit[0] or self.height > limit[1]:
+                self.width = min(self.width, limit[0])
+                self.height = min(self.height, limit[1])
+
         if self.sprite_scale not in SCALE_CHOICES:
             self.sprite_scale = 3
         if self.fps_limit not in FPS_CHOICES:
@@ -80,27 +89,34 @@ class Config:
         sempre entra, senao um config antigo com 2560x1440 ficaria
         travado sem como sair.
         """
-        from .config import logical_desktop_size
+        from .config import usable_window_size
 
-        desktop = logical_desktop_size()
-        if not desktop:
+        # o limite e o desktop MENOS a moldura: uma janela do tamanho
+        # exato do desktop ultrapassa a tela, porque a borda e a barra
+        # de titulo somam alguns pixels de cada lado
+        limit = usable_window_size()
+        if not limit:
             return RESOLUTION_CHOICES
 
         usable = [
             r
             for r in RESOLUTION_CHOICES
-            if r[0] <= desktop[0] and r[1] <= desktop[1]
+            if r[0] <= limit[0] and r[1] <= limit[1]
         ]
 
-        # a resolucao nativa da tela entra sempre: e a que preenche a
-        # janela sem sobra, e sem ela o jogador fica sem opcao ideal
-        native = (desktop[0], desktop[1])
-        if native not in usable:
-            usable.append(native)
+        # a maior resolucao que cabe entra como opcao: e a que
+        # preenche a tela sem sobrar pedaco
+        nativa = limit
+        if nativa not in usable and nativa[0] >= 640 and nativa[1] >= 360:
+            usable.append(nativa)
 
-        # a resolucao em uso tambem entra, senao um config antigo com
-        # algo maior que a tela ficaria travado sem como sair
-        if self.size not in usable:
+        # a resolucao em uso entra, MAS so se ela realmente couber.
+        # Sem isso, um config salvo com 1536x960 voltaria a ser
+        # oferecida e o jogador escolheria de novo uma janela que
+        # ultrapassa a tela.
+        if self.size not in usable and (
+            self.size[0] <= limit[0] and self.size[1] <= limit[1]
+        ):
             usable.append(self.size)
 
         usable.sort()
@@ -237,6 +253,40 @@ def native_refresh_rate() -> int | None:
         return best[2] if best else None
     except Exception:
         return None
+
+
+def usable_window_size() -> tuple[int, int] | None:
+    """Maior resolucao de janela que cabe na tela, descontando a moldura.
+
+    O desktop logico e a area da tela, mas a janela tem borda e barra de
+    titulo: pedir 1536x960 (o desktop inteiro) cria uma janela de
+    1552x999, que passa da tela. Por isso a moldura e descontada.
+
+    A moldura e medida no jogo com a janela ja aberta e guardada num
+    cache. Medir e abrir sao coisas que nao podem depender uma da outra:
+    o filtro roda antes da janela existir. Sem medicao, cai num valor
+    tipico de Windows.
+    """
+    desktop = logical_desktop_size()
+    if not desktop:
+        return None
+
+    frame = _FRAME_CACHE or (16, 39)
+    return (
+        max(640, desktop[0] - frame[0]),
+        max(360, desktop[1] - frame[1]),
+    )
+
+
+# moldura real da janela, medida no startup
+_FRAME_CACHE: tuple[int, int] | None = None
+
+
+def set_window_frame(frame: tuple[int, int]) -> None:
+    """Guarda a moldura medida, para o filtro de resolucao usar."""
+    global _FRAME_CACHE
+    if frame[0] >= 0 and frame[1] >= 0:
+        _FRAME_CACHE = (int(frame[0]), int(frame[1]))
 
 
 def logical_desktop_size() -> tuple[int, int] | None:

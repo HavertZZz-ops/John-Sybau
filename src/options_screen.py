@@ -22,7 +22,7 @@ from typing import Callable, List, Optional, Tuple
 import pygame
 
 from . import assets, input_map, settings
-from .config import RESOLUTION_CHOICES, Config, logical_desktop_size, native_refresh_rate
+from .config import RESOLUTION_CHOICES, Config, native_refresh_rate, usable_window_size
 from .input_map import InputMap
 from .scene import Scene
 from .ui import draw_panel, draw_text
@@ -93,16 +93,13 @@ class OptionsScreen(Scene):
 
     # --- construcao das linhas -------------------------------------
     def _resolution_hint(self) -> str:
-        desktop = logical_desktop_size()
-        if not desktop:
+        limit = usable_window_size()
+        if not limit:
             return "esquerda/direita"
         offered = len(self.config.available_resolutions())
         if offered >= len(RESOLUTION_CHOICES):
             return "esquerda/direita"
-        return (
-            f"sua tela e {desktop[0]}x{desktop[1]}; "
-            f"resolucoes maiores ficariam cortadas"
-        )
+        return f"cabe ate {limit[0]}x{limit[1]} (tela menos a moldura)"
 
     def _build_video(self) -> List[Option]:
         config = self.config
