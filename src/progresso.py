@@ -110,8 +110,9 @@ class Progresso:
     vezes_saida: int = 0
     # itens no bolso: {"pocao": 1}
     itens: dict[str, int] = field(default_factory=dict)
-    # o que esta nas maos
-    arma: str = "espada"
+    # o que esta nas maos. Comeca SEM NADA: o heroi e um brigador e a
+    # arma se compra na aldeia.
+    arma: str | None = None
     escudo: str | None = None
     # para onde o mundo exterior esta liberado: "masmorra", "estrada", "cidade"
     mundo: str = "masmorra"

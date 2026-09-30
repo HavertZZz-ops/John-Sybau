@@ -221,11 +221,12 @@ class Batalha:
             return ditos
 
         if acao is Acao.HABILIDADE:
-            # por enquanto a habilidade e um golpe mais forte, que custa
-            # mais tempo de barra. Defender e barato; o forte e caro
-            # defender (barato) e o golpe forte (caro, mas machuca mais)
+            # O SUPER SOCO. E a habilidade do heroi brigador, e ele
+            # continua socando mesmo depois de achar uma espada: e o
+            # golpe dele, nao um poder da arma.
             ditos.extend(self._golpe(self.heroi, self.alvo_aleatorio(), forte=True))
             self.heroi.barra.gastar(self.heroi.custo_habilidade)
+            ditos.append(Evento(f"{self.heroi.nome} solta um SUPER SOCO", "dano"))
             self._encerrar_turno_heroi()
             return ditos
 

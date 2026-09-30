@@ -1,16 +1,17 @@
 """O que o jogador leva nas maos.
 
-Uma arma e um escudo, nunca os dois sem uma delas. Sao cinco
-conjuntos, e cada um tem o desenho do heroi ja pronto, gerado no
-PixelLab:
+O jogo COMECA com as maos enroladas em panos e ninguem na mao: o
+heroi e um brigador, e a primeira coisa que ele aprende a fazer e
+socar. A arma vem depois, comprada do Estranho na aldeia.
 
-    nenhuma   so o escudo   espada   maça   espada+escudo   maça+escudo
+Sao seis conjuntos:
 
-O conjunto muda o desenho do heroi no mapa. NO COMBATE ele nao muda:
-as animacoes de ataque e caminhada vem do espadachim do pacote de
-mercado, e elas nao tem variante por arma. Fingir que a maça golpeia
-com o arco de corte da espada seria pior do que deixar a animacao
-como esta.
+    punho   so escudo   espada   maça   espada+escudo   maça+escudo
+
+O conjunto muda o desenho do heroi no mapa e, a partir das animacoes
+do PixelLab, tambem o soco e a caminhada. A habilidade especial e um
+SUPER SOCO em qualquer conjunto: e o golpe do(personagem desarmado, e
+continua sendo o que ele faz mesmo depois de achar uma espada.
 """
 from __future__ import annotations
 
@@ -41,20 +42,29 @@ class Conjunto:
             return self.arma
         if self.escudo:
             return self.escudo
-        return "espada"
+        return SEM_NADA
 
     @property
     def rotulo(self) -> str:
-        arma = {"espada": "Espada", "maca": "Maca"}.get(self.arma, "Desarmado")
+        if not self.arma and not self.escudo:
+            return "Punhos / Sem escudo"
+        arma = {"espada": "Espada", "maca": "Maca"}.get(self.arma, "Punhos")
         escudo = "Escudo" if self.escudo else "Sem escudo"
         return f"{arma} / {escudo}"
 
+    @property
+    def e_desarmado(self) -> bool:
+        return self.arma is None
 
-PADRAO = Conjunto(arma="espada", escudo=None)
 
-# os conjuntos que tem desenho pronto. Um conjunto novo sem arquivo
-# cai no desenho PADRAO, e nunca em um retangulo vazio.
+PADRAO = Conjunto(arma=None, escudo=None)
+
+# o nome do arquivo e do PixelLab, entao o conjunto sem nada e `punho`,
+# e nao uma chave montada no codigo
+SEM_NADA = "punho"
+
 DESENHOS = {
+    SEM_NADA,
     "espada",
     "maca",
     "escudo",
@@ -81,8 +91,12 @@ def chave_com_desenho(arma: str | None, escudo: str | None) -> str:
 
 
 def todos_os_conjuntos() -> list[Conjunto]:
-    """Os cinco conjuntos, na ordem em que o menu oferece."""
+    """Os seis conjuntos, na ordem em que o menu oferece.
+
+    O punho vem primeiro porque e o comeco do jogo.
+    """
     return [
+        Conjunto(None, None),
         Conjunto("espada", None),
         Conjunto("maca", None),
         Conjunto(None, "escudo"),

@@ -44,26 +44,30 @@ for arma in ("espada", "maca", "escudo"):
 
 # --- os cinco conjuntos ----------------------------------------------
 conjuntos = eq.todos_os_conjuntos()
-checa(len(conjuntos) == 5, f"sao cinco conjuntos: {len(conjuntos)}")
+checa(len(conjuntos) == 6, f"sao seis conjuntos: {len(conjuntos)}")
 
 chaves = [c.chave for c in conjuntos]
 checa(len(chaves) == len(set(chaves)), f"as chaves sao unicas: {chaves}")
 
-# nenhum conjunto tem os dois estados de escudo
-for c in conjuntos:
-    tem_arma = c.arma is not None
-    tem_escudo = c.escudo is not None
-    checa(not (tem_escudo and not tem_arma) or c.arma is None,
-          f"{c.chave}: escudo so vem com algo na mao")
-    checa(c.rotulo and c.rotulo != "", f"{c.chave}: tem rotulo: {c.rotulo}")
+# o jogo comeca desarmado
+checa(conjuntos[0].e_desarmado,
+      f"o primeiro conjunto do menu e desarmado: {chaves[0]}")
+checa(conjuntos[0].chave == eq.SEM_NADA,
+      f"o conjunto desarmado se chama {eq.SEM_NADA}: {chaves[0]}")
 
-# so_escudo e o conjunto sem arma, e ele PRECISA ter desenho
-so_escudo = [c for c in conjuntos if c.arma is None]
-checa(len(so_escudo) == 1, "existe um conjunto so com escudo")
-if so_escudo:
-    c = so_escudo[0]
-    checa(eq.tem_desenho(c.arma, c.escudo),
-          f"o conjunto {c.chave} tem desenho")
+p0 = Progresso()
+checa(p0.arma is None and p0.escudo is None,
+      f"a partida comeca sem arma: {p0.arma}/{p0.escudo}")
+checa(eq.tem_desenho(p0.arma, p0.escudo),
+      "o heroi desarmado tem desenho")
+
+for c in conjuntos:
+    tem_escudo = c.escudo is not None
+    if tem_escudo and c.arma is None:
+        # escudo sem arma: existe e e o unico assim
+        checa(c.chave == "escudo",
+              f"escudo sem arma tem o nome certo: {c.chave}")
+    checa(c.rotulo and c.rotulo != "", f"{c.chave}: tem rotulo: {c.rotulo}")
 
 # --- cobertura: todo conjunto tem arquivo no disco -------------------
 faltando = []
@@ -88,8 +92,8 @@ checa(assets.carregar_equipado("inexistente_xyz", escala=1) is None,
 
 # --- a troca sobrevive ao save ---------------------------------------
 p = Progresso()
-checa(p.arma == "espada" and p.escudo is None,
-      f"o comeco e espada sem escudo: {p.arma}/{p.escudo}")
+checa(p.arma is None and p.escudo is None,
+      f"o comeco e desarmado: {p.arma}/{p.escudo}")
 
 p.arma = "maca"
 p.escudo = "escudo"
@@ -99,10 +103,12 @@ checa(voltou.arma == "maca" and voltou.escudo == "escudo",
 
 # save editado a mao com arma que o jogo nao conhece
 sujo = Progresso.de_extra({"arma": "varinha", "escudo": "escudo_quebrado"})
-checa(sujo.arma == "espada",
-      f"arma desconhecida no save cai na espada: {sujo.arma}")
+checa(sujo.arma is None,
+      f"arma desconhecida no save vira desarmado, nao inventa: {sujo.arma}")
 checa(sujo.escudo is None,
       f"escudo desconhecido no save vira nenhum: {sujo.escudo}")
+checa(eq.tem_desenho(sujo.arma, suo_escudo := sujo.escudo),
+      "o heroi do save sujo ainda tem desenho")
 
 # --- a tecla de trocar ----------------------------------------------
 checa("trocar_equipamento" in input_map.ACTION_LABELS,
