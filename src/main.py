@@ -20,7 +20,13 @@ def build_scene_manager(window: pygame.Surface) -> SceneManager:
     return manager
 
 
-def main() -> int:
+def main(frame_limit: int | None = None) -> int:
+    """Roda o loop principal.
+
+    `frame_limit` encerra depois de N quadros. Serve para o teste
+    automatizado exercitar o executavel de verdade, sem abrir janela
+    de forma indefinida.
+    """
     pygame.init()
     pygame.display.set_caption(settings.GAME_TITLE)
 
@@ -33,6 +39,7 @@ def main() -> int:
     manager.switch("title")
 
     running = True
+    frames = 0
     while running:
         dt = clock.tick(settings.FPS) / 1000.0
 
@@ -47,6 +54,10 @@ def main() -> int:
 
         pygame.display.flip()
         running = manager.running
+
+        frames += 1
+        if frame_limit is not None and frames >= frame_limit:
+            running = False
 
     pygame.quit()
     return 0
