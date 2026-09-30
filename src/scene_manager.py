@@ -104,6 +104,37 @@ class SceneManager:
         self._active_name = name
         self._active.on_enter()
 
+    def iniciar_novo_jogo(self, save=None) -> None:
+        """Comeca (ou continua) uma partida na masmorra.
+
+        `save` None e um jogo novo: a abertura pelo caixao roda inteira.
+        Com um save, a cena entra direto com o jogador onde ele parou,
+        sem repetir a introducao. `save` e pego pela assinatura de um
+        `saves.Save`, importado aqui para nao criar ciclo no topo.
+        """
+        self.ui_state["save_carregado"] = save
+        self.switch("dungeon")
+
+    def salvar_progresso(self) -> bool:
+        """Grava o estado da cena ativa, se ela souber se descrever.
+
+        Quem decide o que entra no save e a propria cena: o gerenciador
+        nao sabe o que e "posicao" em cada uma delas.
+        """
+        from . import saves
+
+        if self._active is None:
+            return False
+        montar = getattr(self._active, "para_save", None)
+        if montar is None:
+            return False
+        dados = montar()
+        if dados is None:
+            return False
+        store = self.ui_state.get("store") or saves.escolher_store()
+        self.ui_state["store"] = store
+        return store.salvar(dados)
+
     def update(self, dt: float) -> None:
         if self._active is not None:
             self._active.update(dt)

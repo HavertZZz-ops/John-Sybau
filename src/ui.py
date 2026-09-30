@@ -25,6 +25,21 @@ def draw_text(
     return rect
 
 
+def formatar_tempo(segundos: float) -> str:
+    """Tempo em segundos como '1h 23m' (ou so '4m' na primeira hora).
+
+    Vive aqui, e nao em uma cena, porque o menu e o HUD do jogo mostram
+    o mesmo numero: deixar a funcao na tela do menu obrigaria a masmorra
+    a importar o menu so por causa de um formato de texto.
+    """
+    total = max(0, int(segundos))
+    horas, resto = divmod(total, 3600)
+    minutos = resto // 60
+    if horas:
+        return f"{horas}h {minutos:02d}m"
+    return f"{minutos}m"
+
+
 def draw_panel(
     surface: pygame.Surface,
     rect: pygame.Rect,

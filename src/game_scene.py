@@ -40,11 +40,21 @@ class GameScene(Scene):
         self.direction = "sul"
         self.moving = False
         self.anim_time = 0.0
-        self.frames = assets.load_animation(self.direction)
+        self.walk_frames = assets.load_animation(self.direction, "walk")
+        self.idle_frames = assets.load_animation(self.direction, "idle")
         width, height = self.size
         self.position = pygame.Vector2(width // 2, height // 2)
         self.notice: str | None = None
         self.notice_timer = 0.0
+
+    @property
+    def frames(self) -> list[pygame.Surface]:
+        """Quadros da pose atual: andando quando mexe, parado quando nao.
+
+        Antes era so a animacao de caminhada, e o heroi andava com a
+        pose de passo mesmo parado em pe.
+        """
+        return self.walk_frames if self.moving else self.idle_frames
 
     # ciclo de vida -------------------------------------------------
     def on_enter(self) -> None:
@@ -55,7 +65,8 @@ class GameScene(Scene):
         self._reload_frames()
 
     def _reload_frames(self) -> None:
-        self.frames = assets.load_animation(self.direction)
+        self.walk_frames = assets.load_animation(self.direction, "walk")
+        self.idle_frames = assets.load_animation(self.direction, "idle")
 
     def _clamp(self) -> None:
         width, height = self.size

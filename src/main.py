@@ -17,6 +17,7 @@ import pygame
 
 from . import assets, settings
 from .config import Config, native_refresh_rate, set_window_frame
+from .dungeon_scene import DungeonScene
 from .game_scene import GameScene
 from .input_map import InputMap
 from .options_screen import OptionsScreen
@@ -72,6 +73,7 @@ def build_scene_manager(manager: SceneManager) -> SceneManager:
     manager.register("title", TitleScreen)
     manager.register("options", OptionsScreen)
     manager.register("game", GameScene)
+    manager.register("dungeon", DungeonScene)
     return manager
 
 

@@ -29,6 +29,7 @@ ACTION_LIST: Tuple[Tuple[str, str, str, Tuple[str, ...]], ...] = (
     ("confirmar", "Confirmar", GROUP_TECLAS, ("return", "space")),
     ("voltar", "Voltar / sair", GROUP_TECLAS, ("escape",)),
     ("restaurar", "Restaurar padroes", GROUP_TECLAS, ("r",)),
+    ("salvar", "Salvar jogo", GROUP_TECLAS, ("f5",)),
 )
 
 ACTION_LABELS: Dict[str, str] = {a: label for a, label, _, _ in ACTION_LIST}

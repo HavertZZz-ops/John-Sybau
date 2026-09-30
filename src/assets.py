@@ -235,20 +235,27 @@ def list_expected_sprites() -> Tuple[str, ...]:
 # --- animacoes ----------------------------------------------------
 HERO_DIR = settings.SPRITES_DIR / "hero"
 HERO_DIRECTIONS: Tuple[str, ...] = ("norte", "sul", "leste", "oeste")
+HERO_STATES: Tuple[str, ...] = ("idle", "walk")
 HERO_FPS = 6
-# tamanho do quadro do heroi como esta no disco (32x38). E a referencia
-# de "1x": as opcoes multiplicam a partir daqui.
-HERO_BASE: Tuple[int, int] = (32, 38)
+# tamanho do quadro do heroi como esta no disco (32x32). E a referencia
+# de "1x": as opcoes multiplicam a partir daqui. Quadrado porque o
+# personagem do pacote e 16x16 e a importacao dobra cada quadro.
+HERO_BASE: Tuple[int, int] = (32, 32)
 # proporcao do quadro (largura / altura), usada para caber na tela
 HERO_ASPECT = HERO_BASE[0] / HERO_BASE[1]
 
 
 def load_animation(
     direction: str,
+    state: str = "walk",
     box: Tuple[int, int] | None = None,
     scale: int | None = None,
 ) -> list[pygame.Surface]:
-    """Carrega os quadros de `direction` do heroi, ja escalados.
+    """Carrega os quadros de `direction` no `state` pedido, escalados.
+
+    `state` distingue parado ("idle") de andando ("walk"): sem isso o
+    heroi anda com a pose de caminhada mesmo parado, que e o jeito mais
+    obvio de o sprite parecer errado.
 
     `box` e a area em tamanho 1x (o quanto o heroi ocupa na tela);
     `scale` e o enlarge das opcoes. Devolve lista vazia se a pasta de
@@ -257,6 +264,8 @@ def load_animation(
     """
     if direction not in HERO_DIRECTIONS:
         raise ValueError(f"direcao invalida: {direction!r}")
+    if state not in HERO_STATES:
+        raise ValueError(f"estado invalido: {state!r}")
     if box is None:
         # teto generoso: quem decide o tamanho final e a escala. A
         # cena que chama pode passar um teto menor se quiser limitar.
@@ -268,7 +277,7 @@ def load_animation(
         return []
 
     frames = []
-    for path in sorted(HERO_DIR.glob(f"hero_{direction}_*.png")):
+    for path in sorted(HERO_DIR.glob(f"hero_{direction}_{state}_*.png")):
         try:
             image = _load_image(path)
             frames.append(fit_box(image, box, scale=scale))
@@ -277,9 +286,9 @@ def load_animation(
     return frames
 
 
-def has_animation(direction: str = "sul") -> bool:
+def has_animation(direction: str = "sul", state: str = "walk") -> bool:
     """True se existe ao menos um quadro da animacao pedida."""
     if not HERO_DIR.is_dir():
         return False
-    return any(HERO_DIR.glob(f"hero_{direction}_*.png"))
+    return any(HERO_DIR.glob(f"hero_{direction}_{state}_*.png"))
 

@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -44,7 +46,19 @@ from src.input_map import InputMap  # noqa: E402
 from src.main import build_scene_manager, create_window  # noqa: E402
 
 FRAMES = 5
-SCENES = ("title", "options", "game")
+SCENES = ("title", "options", "game", "dungeon")
+
+
+def _manager():
+    """SceneManager pronto para os testes, com a janela ja criada."""
+    from src.scene_manager import SceneManager
+
+    pygame.init()
+    config = Config()
+    window = create_window(config)
+    manager = build_scene_manager(SceneManager(window, config))
+    manager.ui_state.clear()
+    return manager
 KEYS = (
     pygame.K_DOWN, pygame.K_RETURN, pygame.K_a, pygame.K_d,
     pygame.K_UP, pygame.K_RIGHT, pygame.K_LEFT, pygame.K_SPACE, pygame.K_r,
@@ -684,8 +698,11 @@ def check_all_scales() -> None:
 
         if scene.frames:
             got = scene.frames[0].get_size()
-            # a escala e sempre multiplo inteiro do quadro original
-            base_w, base_h = 32, 38
+            # a escala e sempre multiplo inteiro do quadro original.
+            # O tamanho base vem de assets.HERO_BASE, e nao escrito
+            # aqui: com o valor duplicado, trocar o sprite do heroi
+            # quebrou este teste em vez de so trocar o sprite.
+            base_w, base_h = assets.HERO_BASE
             assert got[0] == base_w * scale, f"escala {scale}x: {got} esperado {base_w * scale}"
             assert got[1] == base_h * scale, f"escala {scale}x: {got} esperado {base_h * scale}"
             print(f"[ok] escala {scale}x: heroi {got[0]}x{got[1]}")
@@ -759,6 +776,228 @@ def check_entrypoint() -> None:
     print("[ok] run.py executou e saiu com codigo 0")
 
 
+def check_dungeon_map() -> None:
+    """O mapa gerado tem de ser jogavel: o caixao alcanca a saida."""
+    from src.dungeon_map import (
+        CHAO,
+        PAREDE,
+        alcancavel,
+        gerar_mapa,
+        validar,
+    )
+
+    mapa = gerar_mapa()
+    problemas = validar(mapa)
+    assert not problemas, f"mapa com problemas: {problemas}"
+
+    alc = alcancavel(mapa, mapa.caixao)
+    assert mapa.saida in alc, "a saida nao e alcancavel a partir do caixao"
+    assert len(alc) > (mapa.largura * mapa.altura) // 10, (
+        f"so {len(alc)} celulas alcancaveis de {mapa.largura * mapa.altura}"
+    )
+    # as bordas do mapa sao parede, senao o jogador ve o vazio
+    for x in range(mapa.largura):
+        assert mapa.em(x, 0) == PAREDE, "borda de cima furada"
+        assert mapa.em(x, mapa.altura - 1) == PAREDE, "borda de baixo furada"
+    for y in range(mapa.altura):
+        assert mapa.em(0, y) == PAREDE, "borda da esquerda furada"
+        assert mapa.em(mapa.largura - 1, y) == PAREDE, "borda da direita furada"
+    print(
+        f"[ok] mapa jogavel: {len(alc)} celulas, saida em {mapa.saida}"
+    )
+
+
+def check_dungeon_intro() -> None:
+    """A abertura roda: acorda, abre a tampa e solta o jogador."""
+    manager = _manager()
+    manager.switch("dungeon")
+    cena = manager.active
+    assert cena.fase == "acordando", cena.fase
+
+    # A tampa tem de chegar a 1 e a fase a "livre"
+    dt = 1 / 30
+    for _ in range(int(7.0 / dt)):
+        manager.update(dt)
+
+    assert cena.tampa >= 0.99, f"tampa parou em {cena.tampa}"
+    assert cena.fase == "livre", f"parou na fase {cena.fase}"
+
+    # o titulo da area foi mostrado e ja terminou
+    assert cena._titulo_mostrado, "o titulo da area nunca apareceu"
+    assert not cena.titulo.active, "o titulo deveria ter sumido"
+
+    # o jogador saiu do caixao: abaixo do centro dele
+    assert cena.posicao.y > cena._centro_caixao()[1], "o heroi nao saiu"
+    print(
+        f"[ok] abertura das catacumbas: acordou, abriu e saiu "
+        f"(fase={cena.fase}, tempo={cena.tempo_jogado:.1f}s)"
+    )
+
+
+def check_dungeon_collision() -> None:
+    """A parede segura o jogador, e ele nao atravessa em diagonal."""
+    manager = _manager()
+    manager.switch("dungeon")
+    cena = manager.active
+    dt = 1 / 60
+
+    # a abertura tem de acabar antes: durante ela o heroi e movido por
+    # script para o sul, e medir a colisao ali testaria a outra coisa
+    for _ in range(int(7.0 / dt)):
+        manager.update(dt)
+    assert cena.fase == "livre", cena.fase
+
+    # anda para cima por muito tempo: tem de parar na parede de cima
+    for _ in range(400):
+        cena.direction = "norte"
+        cena.moving = True
+        manager.update(dt)
+    assert cena.mapa.em(*cena._celula()) != "#", "dentro da parede"
+    y_topo = cena.posicao.y
+    # mais um pouco nao pode atravessar
+    for _ in range(200):
+        manager.update(dt)
+    assert cena.posicao.y >= y_topo - 1.0, (
+        f"atravessou a parede: {y_topo} -> {cena.posicao.y}"
+    )
+    print(f"[ok] colisao segura na parede (y={cena.posicao.y:.0f})")
+
+    # e o jogador consegue andar de volta: sem isso, preso na parede,
+    # o jogo vira um beco sem saida
+    for _ in range(200):
+        cena.direction = "sul"
+        manager.update(dt)
+    assert cena.posicao.y > y_topo + 10, "nao saiu andando para o sul"
+    print(f"[ok] anda de volta (y={cena.posicao.y:.0f})")
+
+
+def check_save_roundtrip() -> None:
+    """Grava e le um save em arquivo, sem depender de servidor."""
+    import tempfile
+
+    from src import saves
+
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = pathlib.Path(pasta) / "save1.json"
+        store = saves.ArquivoSaveStore(caminho)
+
+        assert not store.existe(), "save novo nao deveria existir"
+        assert store.carregar() is None, "carregar vazio devolve None"
+
+        original = saves.Save(
+            area="catacumbas", x=123.5, y=456.25, direcao="leste",
+            tempo_jogado=3725.0,
+        )
+        assert store.salvar(original), "falhou ao salvar"
+        assert store.existe(), "save nao apareceu no disco"
+
+        lido = store.carregar()
+        assert lido is not None, "save sumiu"
+        assert lido.area == "catacumbas", lido.area
+        assert abs(lido.x - 123.5) < 0.01, lido.x
+        assert abs(lido.y - 456.25) < 0.01, lido.y
+        assert lido.direcao == "leste", lido.direcao
+        assert abs(lido.tempo_jogado - 3725.0) < 0.01, lido.tempo_jogado
+        print("[ok] save em arquivo grava e le de volta")
+
+        # um arquivo nao tem que derrubar o jogo: precisa ser ignorado
+        caminho.write_text("{ isso nao e json", encoding="utf-8")
+        assert store.carregar() is None, "json quebrado deveria dar None"
+        caminho.write_text('{"x": "lado", "area": null}', encoding="utf-8")
+        tolerante = store.carregar()
+        assert tolerante is not None, "campo invalido nao deveria sumir"
+        assert tolerante.x == 0.0, tolerante.x
+        assert tolerante.area == "catacumbas", tolerante.area
+        print("[ok] save corrompido nao derruba o jogo")
+
+        assert store.apagar(), "falhou ao apagar"
+        assert not store.existe(), "save nao sumiu do disco"
+        print("[ok] save apagado")
+
+
+def check_store_fallback() -> None:
+    """Servidor fora do ar precisa cair no arquivo, nao travar."""
+    from src import saves
+
+    # URL que nao responde, com timeout curtissimo
+    remoto = saves.DjangoSaveStore("http://127.0.0.1:9/api/saves", timeout=0.2)
+    assert not remoto.existe(), "servidor inexistente respondeu"
+    assert remoto.salvar(saves.Save(x=1.0)) is False, "salvar remoto nao devia"
+    assert remoto.carregar() is None, "carregar remoto nao devia devolver"
+    assert remoto.apagar() is False, "apagar remoto nao devia"
+    print("[ok] servidor fora do ar falha sem derrubar o jogo")
+
+    store = saves.escolher_store(procurar_servidor=False)
+    assert isinstance(store, saves.ArquivoSaveStore), type(store)
+    assert "save1.json" in store.descricao, store.descricao
+    print(f"[ok] sem servidor, o save vai para {store.descricao}")
+
+
+def check_menu_items() -> None:
+    """O menu esconde 'Continuar' quando nao ha save."""
+    manager = _manager()
+    manager.switch("title")
+    titulo = manager.active
+
+    from src.title_screen import ITEM_CONTINUAR, ITEM_NOVO
+
+    assert ITEM_NOVO in titulo._visiveis, "Novo jogo sempre visivel"
+    if titulo.tem_save:
+        assert ITEM_CONTINUAR in titulo._visiveis, (
+            "tem save mas Continuar sumiu"
+        )
+    else:
+        assert ITEM_CONTINUAR not in titulo._visiveis, (
+            "sem save, Continuar nao devia aparecer"
+        )
+    assert len(titulo._visiveis) >= 3, titulo._visiveis
+    print(f"[ok] menu: {titulo._visiveis}")
+
+
+def check_dungeon_save_cycle() -> None:
+    """Continuar devolve o jogador para onde ele parou."""
+    from src import saves
+
+    manager = _manager()
+    manager.switch("dungeon")
+    cena = manager.active
+    for _ in range(int(7.0 * 30)):
+        manager.update(1 / 30)
+
+    # anda um pouco e grava
+    cena.direction = "leste"
+    cena.moving = True
+    for _ in range(40):
+        manager.update(1 / 60)
+    cena.moving = False
+    onde = cena.posicao.copy()
+    tempo = cena.tempo_jogado
+
+    with tempfile.TemporaryDirectory() as pasta:
+        manager.ui_state["store"] = saves.ArquivoSaveStore(
+            pathlib.Path(pasta) / "save1.json"
+        )
+        assert manager.salvar_progresso(), "nao salvou"
+
+        # um jogo novo, com o save carregado
+        manager2 = _manager()
+        manager2.iniciar_novo_jogo(saves.Save(
+            x=onde.x, y=onde.y, direcao="leste", tempo_jogado=tempo
+        ))
+        cena2 = manager2.active
+        assert cena2.fase == "livre", "continuar nao pode repetir a abertura"
+        assert abs(cena2.posicao.x - onde.x) < 2.0, (
+            f"x nao voltou: {cena2.posicao.x} != {onde.x}"
+        )
+        assert abs(cena2.posicao.y - onde.y) < 2.0, (
+            f"y nao voltou: {cena2.posicao.y} != {onde.y}"
+        )
+        assert cena2.direction == "leste", cena2.direction
+        print(f"[ok] continuar devolve a posicao ({onde.x:.0f}, {onde.y:.0f})")
+
+
+
+
 def main() -> int:
     # primeiro de tudo: a medicao de FPS, que depende de janela limpa
     check_fps()
@@ -788,6 +1027,20 @@ def main() -> int:
     check_native_resolution()
     print()
     check_fullscreen_cycle()
+    print()
+    check_dungeon_map()
+    print()
+    check_dungeon_intro()
+    print()
+    check_dungeon_collision()
+    print()
+    check_dungeon_save_cycle()
+    print()
+    check_save_roundtrip()
+    print()
+    check_store_fallback()
+    print()
+    check_menu_items()
     print()
     check_dynamic_resolution_persists()
     print()

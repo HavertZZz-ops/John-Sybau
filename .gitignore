@@ -29,8 +29,22 @@ Thumbs.db
 
 # configuracao local (preferencias do jogador) e artefatos de teste
 config.json
-_test_config.json
+_test_config*.json
 _s*.png
 _preview*.png
+save*.json
+assets/tiles/_*.png
+server/teste.sqlite3
+requirements-dev.txt.bak
+
+# arte original dos pacotes, extraida por tools/import_sprites.py.
+# fica fora do repositorio de proposito: sao os arquivos do autor, com
+# licenca propria, e o script refaz a extracao a partir do zip.
+assets/raw/
+
+# django
+server/db.sqlite3
+server/staticfiles/
+__pycache__/
 
 jogo.log

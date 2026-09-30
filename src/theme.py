@@ -112,6 +112,37 @@ def text_tracked(
     return box
 
 
+def _render_glyphs(
+    text: str,
+    size: int,
+    color: tuple[int, int, int],
+    alpha: int,
+) -> list[pygame.Surface]:
+    """Cada caractere como uma imagem propria, para o tracking.
+
+    `alpha` abaixo de 255 devolve uma copia do glifo com a cobertura
+    pedida, do tamanho DELE. O tamanho precisa ser o do glifo: o
+   tracking avanca pelo `get_width()` de cada imagem, e um surface
+   quadrado aqui espacaria as letras errado.
+
+    O cache do pygame.font e compartilhado por tamanho, entao desenhar
+    o mesmo texto com alphas diferentes nao pode sujar o cache com a
+    versao esmaecida.
+    """
+    font = Fonts.get(size)
+    glyphs = []
+    for ch in text:
+        glyph = font.render(ch, True, color)
+        if alpha >= 255:
+            glyphs.append(glyph)
+            continue
+        camada = pygame.Surface(glyph.get_size(), pygame.SRCALPHA)
+        camada.blit(glyph, (0, 0))
+        camada.set_alpha(max(0, min(255, alpha)))
+        glyphs.append(camada)
+    return glyphs
+
+
 def text_tracked_at(
     surface: pygame.Surface,
     text: str,
@@ -119,10 +150,10 @@ def text_tracked_at(
     pos: tuple[int, int],
     color: tuple[int, int, int],
     tracking: int = 2,
+    alpha: int = 255,
 ) -> pygame.Rect:
     """Igual a `text_tracked`, mas com o canto superior esquerdo em pos."""
-    font = Fonts.get(size)
-    glyphs = [font.render(ch, True, color) for ch in text]
+    glyphs = _render_glyphs(text, size, color, alpha)
     if not glyphs:
         return pygame.Rect(0, 0, 0, 0)
     width = sum(g.get_width() for g in glyphs) + tracking * (len(glyphs) - 1)
@@ -144,14 +175,14 @@ def text_tracked_right(
     center_y: int,
     color: tuple[int, int, int],
     tracking: int = 2,
+    alpha: int = 255,
 ) -> pygame.Rect:
     """Texto alinhado pela direita, com a linha central em center_y.
 
     `text_tracked_at` alinha pela esquerda, entao alinhar pela direita
     exige medir a largura antes de desenhar.
     """
-    font = Fonts.get(size)
-    glyphs = [font.render(ch, True, color) for ch in text]
+    glyphs = _render_glyphs(text, size, color, alpha)
     if not glyphs:
         return pygame.Rect(0, 0, 0, 0)
     width = sum(g.get_width() for g in glyphs) + tracking * (len(glyphs) - 1)
