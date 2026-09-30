@@ -1129,6 +1129,105 @@ def check_combat_cena() -> None:
     print("[ok] a cena de combate abre o menu, ataca e desenha")
 
 
+def check_tutorial() -> None:
+    """As aulas avancam, e so fecham no gatilho certo."""
+    from src.tutorial import TUTORIAL_CATACUMBAS
+
+    t = TUTORIAL_CATACUMBAS
+    t.resetar()
+    t.comecar()
+
+    assert t.ativo, "o tutorial nao comecou"
+    primeira = t.atual.texto
+    print(f"[ok] primeira aula: {primeira!r}")
+
+    # uma aula so informativa expira sozinha
+    for _ in range(int(6.0 * 60)):
+        t.update(1 / 60)
+    assert t.atual is not None and t.atual.texto != primeira, (
+        "a aula informativa nao expirou"
+    )
+    print(f"[ok] a aula informativa expirou: {t.atual.texto!r}")
+
+    # a aula de andar NAO fecha so com o tempo: espera o comando
+    aula = t.atual
+    assert aula.gatilho == "mover_direita", aula.gatilho
+    for _ in range(int(20.0 * 60)):
+        t.update(1 / 60)
+    assert t.atual.texto == aula.texto, (
+        "a aula fechou sozinha, sem o jogador andar"
+    )
+    print("[ok] a aula nao fecha so com o tempo")
+
+    # agora com a tecla certa
+    for _ in range(60):
+        t.update(1 / 60, acao_cumprida="mover_direita")
+    assert t.atual.texto != aula.texto, "a aula nao fechou com o comando"
+    print(f"[ok] fechou com o comando: {t.atual.texto!r}")
+
+    # a acao errada nao fecha
+    antes = t.atual.texto
+    for _ in range(60):
+        t.update(1 / 60, acao_cumprida="confirmar")
+    assert t.atual.texto == antes, "a aula fechou com a tecla errada"
+    print("[ok] a tecla errada nao fecha a aula")
+
+    # o roteiro tem todas as etapas que o comeco precisa ensinar
+    textos = [a.texto for a in TUTORIAL_CATACUMBAS.aulas]
+    for esperado in (
+        "Voce acordou dentro de um caixao",
+        "Use as setas para andar",
+        "F5 salva o jogo",
+        "Esc volta para o menu",
+        "O esqueleto acordou",
+        "O medidor enche com o tempo",
+        "Escolha Atacar quando a sua vez chegar",
+    ):
+        assert esperado in textos, f"falta a aula: {esperado!r}"
+    print(f"[ok] o roteiro tem as {len(textos)} aulas do comeco")
+    t.resetar()
+
+
+def check_tutorial_na_masmorra() -> None:
+    """A masmorra mostra a aula e acorda o esqueleto depois de andar."""
+    manager = _manager()
+    manager.switch("dungeon")
+    cena = manager.active
+
+    # a abertura roda inteira
+    dt = 1 / 60
+    for _ in range(int(7.0 / dt)):
+        manager.update(dt)
+    assert cena.fase == "livre", cena.fase
+    manager.draw()
+
+    # ainda nao ha esqueleto: o jogador precisa andar primeiro
+    assert cena.esqueleto is None, "o esqueleto acordou antes da hora"
+    print("[ok] o esqueleto fica guardado antes do jogador andar")
+
+    # anda o suficiente
+    for _ in range(400):
+        cena.direction = "leste"
+        cena.moving = True
+        manager.update(dt)
+    assert cena.esqueleto is not None, (
+        f"o esqueleto nao acordou depois de {cena.passos} passos"
+    )
+    manager.draw()
+    print(f"[ok] o esqueleto acordou depois de {cena.passos} passos")
+
+    # chega perto: a luta tem de comecar
+    cx = cena.mapa.caixao[0] + 3
+    cy = cena.mapa.caixao[1]
+    cena.posicao = pygame.Vector2(cena.mapa.para_pixels(cx, cy, cena.tile))
+    cena.esqueleto = pygame.Vector2(cena.posicao) + pygame.Vector2(10, 0)
+    manager.update(dt)
+    assert manager.active_name == "combat", (
+        f"a luta nao comecou, continua em {manager.active_name}"
+    )
+    print("[ok] encostar no esqueleto abre o combate")
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -1179,6 +1278,10 @@ def main() -> int:
     check_combat_batalha()
     print()
     check_combat_cena()
+    print()
+    check_tutorial()
+    print()
+    check_tutorial_na_masmorra()
     print()
     check_dynamic_resolution_persists()
     print()

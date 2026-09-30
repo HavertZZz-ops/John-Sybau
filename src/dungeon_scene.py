@@ -24,6 +24,7 @@ from .dungeon_map import (
     gerar_mapa,
 )
 from .scene import Scene
+from .tutorial import TUTORIAL_CATACUMBAS
 from .ui import formatar_tempo
 
 # direcao -> acao do mapa de teclas
@@ -33,10 +34,16 @@ DIRECTION_ACTIONS = {
     "leste": "mover_direita",
     "oeste": "mover_esquerda",
 }
+ACoes = {v: k for k, v in DIRECTION_ACTIONS.items()}
 
 # tamanho do tile no tileset original; a tela usa tile * escala de sprite
 TILE_BASE = 16
 MOVE_SPEED = 190.0
+
+# a que distancia o esqueleto acorda e a luta comeca
+ALCANCE_LUTA = 46
+# quantas vezes o jogador tem de andar para o esqueleto aparecer
+PASSOS_ATE_O_ESQUELETO = 14
 
 # fases da abertura, em segundos
 FASE_DURADA = {
@@ -124,6 +131,22 @@ class DungeonScene(Scene):
         self.tempo_jogado = 0.0
         self.aviso = ""
         self._aviso_tempo = 0.0
+
+        # as aulas do comeco. `resetar` e obrigatorio: TUTORIAL_CATACUMBAS
+        # e um objeto de modulo, e sem isso o estado da aula anterior
+        # vazaria para esta partida
+        self.tutorial = TUTORIAL_CATACUMBAS
+        self.tutorial.resetar()
+
+        # o esqueleto fica guardado dormindo ate a hora certa
+        self.esqueleto: pygame.Vector2 | None = None
+        self.esqueleto_vivo = False
+        self.passos = 0
+        self.acabou_aula_de_mover = False
+        # qual acao o jogador apertou neste quadro. E o que fecha as
+        # aulas: o tutorial precisa saber que o jogador DEU o comando,
+        # nao so que a tecla exists
+        self._acao_deste_quadro: str | None = None
 
         # um save vindo do menu pula a abertura: o jogador ja acordou
         # uma vez e nao faz sentido ver o caixao toda vez que continua
@@ -225,6 +248,7 @@ class DungeonScene(Scene):
             return
 
         if self.key(event, "salvar"):
+            self._acao_deste_quadro = "salvar"
             if self.fase != "livre":
                 return
             if self.manager.salvar_progresso():
@@ -234,6 +258,7 @@ class DungeonScene(Scene):
             return
 
         if self.key(event, "voltar"):
+            self._acao_deste_quadro = "voltar"
             if self.fase == "livre":
                 # volta ja salvando: o botao de voltar e o caminho mais
                 # comum para sair, e nao salvar ali perde o progresso
@@ -245,6 +270,7 @@ class DungeonScene(Scene):
             return
         for direcao, acao in DIRECTION_ACTIONS.items():
             if self.key(event, acao):
+                self._acao_deste_quadro = acao
                 if direcao != self.direction:
                     self._recarregar(direcao)
                 self.moving = True
@@ -253,6 +279,9 @@ class DungeonScene(Scene):
     def update(self, dt: float) -> None:
         self.time += dt
         self.tempo_jogado += dt
+        # a acao so vale por um quadro; o tutorial le e esquece
+        self._acao_do_quadro = self._acao_deste_quadro
+        self._acao_deste_quadro = None
 
         # o titulo da area corre sempre, e nao so durante a abertura: a
         # abertura acaba em 5s e o titulo so termina em 6.6s, entao
@@ -267,12 +296,48 @@ class DungeonScene(Scene):
 
         if self.fase != "livre":
             self._atualizar_abertura(dt)
+            self.tutorial.update(dt)
             return
 
+        self._acao_do_quadro = self._acao_deste_quadro
         if self.moving:
             self.posicao = self._sem_bater(self.posicao, self._passo(dt))
             self.anim_time += dt
+            self.passos += 1
         self.camera += (self.posicao - self.camera) * min(1.0, dt * 8.0)
+
+        self._atualizar_esqueleto(dt)
+        self.tutorial.update(dt, self._acao_do_quadro)
+
+    def _atualizar_esqueleto(self, dt: float) -> None:
+        """Acorda o esqueleto depois de alguns passos e chama a luta.
+
+        O esqueleto fica guardado parado ate a hora: acorda-lo junto com
+        a abertura transformaria a primeira luta numa emboscada, e o
+        jogador nem teriaandedado ainda.
+        """
+        if self.esqueleto is None:
+            if self.passos >= PASSOS_ATE_O_ESQUELETO:
+                # duas casas a leste do caixao, se tiver chao
+                cx = self.mapa.caixao[0] + 3
+                cy = self.mapa.caixao[1]
+                if self.mapa.andavel(cx, cy):
+                    self.esqueleto = pygame.Vector2(
+                        self.mapa.para_pixels(cx, cy, self.tile)
+                    )
+                    self.esqueleto_vivo = True
+                    self.tutorial.mostrar("O esqueleto acordou")
+            return
+
+        if not self.esqueleto_vivo:
+            return
+        if self.esqueleto.distance_to(self.posicao) < ALCANCE_LUTA:
+            self.esqueleto_vivo = False
+            self.manager.iniciar_combate(1)
+            return
+        # some da tela assim que a luta comeca
+        self.esqueleto = None
+        self.esqueleto_vivo = False
 
     def _passo(self, dt: float) -> pygame.Vector2:
         passo = MOVE_SPEED * dt
@@ -386,7 +451,10 @@ class DungeonScene(Scene):
             self._desenhar_caixao(surface, (cx, cy), escala)
 
         self._desenhar_hud(surface)
+        if self.esqueleto is not None:
+            self._desenhar_esqueleto(surface)
         self.titulo.draw(surface)
+        self._desenhar_aula(surface)
         if self.aviso:
             theme.text_tracked(
                 surface, self.aviso, int(self.size[1] * 0.030),
@@ -508,6 +576,52 @@ class DungeonScene(Scene):
                         self.tile // 3, self.tile // 3),
             2,
         )
+
+    def _desenhar_esqueleto(self, surface: pygame.Surface) -> None:
+        """O esqueleto parado, antes da luta."""
+        quadros = assets.load_foe(assets.FOE_KINDS[0], "oeste", "walk")
+        if not quadros:
+            return
+        idx = int(self.time * assets.fps_do_estado("walk")) % len(quadros)
+        sprite = quadros[idx]
+        w, h = self.size
+        px = self.esqueleto.x - self.camera.x + w // 2
+        py = self.esqueleto.y - self.camera.y + h // 2
+        rect = sprite.get_rect(center=(int(px), int(py)))
+        sombra = pygame.Surface(
+            (sprite.get_width() * 3 // 4, max(5, sprite.get_height() // 9)),
+            pygame.SRCALPHA,
+        )
+        pygame.draw.ellipse(sombra, (0, 0, 0, 70), sombra.get_rect())
+        surface.blit(sombra, sombra.get_rect(centerx=rect.centerx,
+                                             bottom=rect.bottom - 2))
+        surface.blit(sprite, rect)
+
+    def _desenhar_aula(self, surface: pygame.Surface) -> None:
+        """A dica da vez, no alto, sem cobrir a acao.
+
+        A aula some sozinha quando o jogador faz o que ela ensina. Ela
+        nunca bloqueia o controle: e um aviso, nao um painel.
+        """
+        aula = self.tutorial.atual
+        if aula is None:
+            return
+        w, h = self.size
+        # entra esmaecendo, para nao aparecer de uma vez
+        alpha = min(255, int(self.tutorial.tempo * 420))
+        if alpha <= 0:
+            return
+        y = int(h * 0.62)
+        cor = theme.lerp(theme.BACKGROUND, theme.TEXT_BRIGHT, alpha / 255)
+        theme.text_tracked_at(
+            surface, aula.texto, 19, (int(w * 0.06), y), cor, alpha=alpha
+        )
+        if aula.detalhe:
+            detalhe = theme.lerp(theme.BACKGROUND, theme.TEXT_DIM, alpha / 255)
+            theme.text_tracked_at(
+                surface, aula.detalhe, 14, (int(w * 0.06), y + 24),
+                detalhe, alpha=alpha,
+            )
 
     def _desenhar_hud(self, surface: pygame.Surface) -> None:
         if self.fase != "livre":

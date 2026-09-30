@@ -115,6 +115,11 @@ class SceneManager:
         self.ui_state["save_carregado"] = save
         self.switch("dungeon")
 
+    def iniciar_combate(self, inimigos: int = 1) -> None:
+        """Abre a luta com `inimigos` esqueletos."""
+        self.ui_state["inimigos"] = max(1, int(inimigos))
+        self.switch("combat")
+
     def salvar_progresso(self) -> bool:
         """Grava o estado da cena ativa, se ela souber se descrever.
 

@@ -38,6 +38,8 @@ ORDEM = [
     "check_combat_bases",
     "check_combat_batalha",
     "check_combat_cena",
+    "check_tutorial",
+    "check_tutorial_na_masmorra",
     "check_dynamic_resolution_persists",
     "check_rebinding_in_options",
     "check_all_scales",

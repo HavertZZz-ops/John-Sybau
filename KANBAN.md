@@ -19,8 +19,9 @@ As issues #N sao as do repositorio. Um item por commit entregue.
 
 ## Em progreso
 
-- [ ] combate por turnos no estilo Chrono Trigger, com o medidor de tempo
-- [ ] abertura que ensina as mecanicas depois do caixao
+- [ ] mais areas: o jogo tem 1 de 4
+- [ ] dinheiro e loot (o pacote de UI tem icones de moeda e inventario,
+      ainda sem uso porque a paleta dele briga com o visual do jogo)
 
 ## Feito
 
@@ -52,3 +53,17 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       e o espaco da ESCALA, e ela entrava no filtro de resolucao.
       O primeiro `set_mode` ao sair do fullscreen tambem nao aplicava o
       tamanho novo.
+- [x] #19  Combate por turnos com medidor de tempo       (`af45657`)
+      A regra e o ATB do Chrono Trigger: todo mundo tem uma barra que
+      enche sozinha e age quando chega no fim. O jogador escolhe O QUE
+      fazer, nao a ordem. Defender corta o dano pela metade e custa
+      menos tempo do que o golpe forte.
+- [x] #20  Alinhar o sprite do esqueleto                 (`af45657`)
+      A folha nao segue a grade de 16px: o desenho fica num canto da
+      celula e anda de lado entre quadros. Cada quadro agora e recortado
+      pela propria arte e centralizado, apoiado pela base.
+- [x] #21  Abertura que ensina as mecanicas              (`este commit`)
+      7 aulas que entram jogando, somem quando o jogador faz a coisa e
+      nunca bloqueiam o controle. Nao e painel nem manual.
+      O esqueleto dorme na masmorra e so acorda depois de alguns
+      passos, para a primeira luta nao ser uma emboscada.

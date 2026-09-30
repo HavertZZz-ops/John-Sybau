@@ -28,8 +28,10 @@ INIMIGO_X = (0.58, 0.72, 0.86)
 class CombatScene(Scene):
     """Batalha contra um grupo de esqueletos."""
 
-    def __init__(self, manager, inimigos: int = 1) -> None:
+    def __init__(self, manager, inimigos: int | None = None) -> None:
         super().__init__(manager)
+        if inimigos is None:
+            inimigos = manager.ui_state.get("inimigos", 1)
         self.batalha = combat.Batalha(
             heroi=combat.novo_heroi(),
             inimigos=[combat.novo_esqueleto(i) for i in range(inimigos)],

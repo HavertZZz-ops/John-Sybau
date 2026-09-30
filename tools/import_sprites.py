@@ -245,29 +245,6 @@ def importar_armas(alvo: Path) -> int:
     return total
 
 
-def _caixa_da_arte(quadros: list) -> tuple[int, int, int, int]:
-    """Caixa que contem a arte de todos os quadros, em conjunto.
-
-    A folha do esqueleto nao segue a grade de 16px: o desenho fica no
-    canto DIREITO de cada celula, e recortar pela grade dava uma tira
-    estreita encostada na borda. Unir a arte de todos os quadros e
-    recortar por essa caixa alinha a animacao e tira o espaco vazio.
-    """
-    x0 = y0 = 10 ** 6
-    x1 = y1 = -1
-    for img in quadros:
-        r = img.get_bounding_rect()
-        if r is None or r.width == 0 or r.height == 0:
-            continue
-        x0 = min(x0, r.x)
-        y0 = min(y0, r.y)
-        x1 = max(x1, r.right)
-        y1 = max(y1, r.bottom)
-    if x1 < 0:
-        return (0, 0, 1, 1)
-    return (x0, y0, x1, y1)
-
-
 def _recortar_e_centralizar(quadros: list) -> list:
     """Centraliza cada quadro numa tela do tamanho da arte maior.
 
