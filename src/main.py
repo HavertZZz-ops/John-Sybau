@@ -23,6 +23,30 @@ from .options_screen import OptionsScreen
 from .scene_manager import SceneManager
 from .title_screen import TitleScreen
 
+# Diagnostico de entrada: com TRACE=1, cada tecla recebida e impressa
+# junto da cena ativa. Sem isso nao da para saber se o problema e a tecla
+# nao chegando, ou a cena ignorando.
+_TRACE = os.environ.get("TRACE") == "1"
+
+
+def _log_event(manager: SceneManager, event: pygame.event.Event) -> None:
+    """Imprime o evento e a cena que deveria tratar."""
+    if event.type == pygame.KEYDOWN:
+        nome = pygame.key.name(event.key)
+        acoes = manager.controls.actions_for(event.key)
+        where = manager.active_name
+        grupo = getattr(manager.active, "group", "-")
+        idx = getattr(manager.active, "index", "-")
+        print(
+            f"[trace] KEYDOWN {nome!r:14} key={event.key:11} unicode={event.unicode!r:6} "
+            f"cena={where} aba={grupo} linha={idx} acoes={acoes}",
+            flush=True,
+        )
+    elif event.type == pygame.KEYUP:
+        print(f"[trace] KEYUP   {pygame.key.name(event.key)!r}", flush=True)
+    elif event.type == pygame.MOUSEBUTTONDOWN:
+        print(f"[trace] MOUSE {event.pos} botao={event.button}", flush=True)
+
 
 def build_scene_manager(manager: SceneManager) -> SceneManager:
     manager.register("title", TitleScreen)
@@ -102,7 +126,11 @@ def main(frame_limit: int | None = None) -> int:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                if _TRACE:
+                    print("[trace] QUIT")
             elif manager.active is not None:
+                if _TRACE:
+                    _log_event(manager, event)
                 manager.active.handle_event(event)
 
         manager.update(dt)

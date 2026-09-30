@@ -54,6 +54,28 @@ PRETTY: Dict[str, str] = {
 }
 
 
+# Teclas que o pygame trata como diferentes, mas que o jogador
+# considera a mesma. O caso real: o enter principal (K_RETURN, 13) e o
+# enter do teclado numerico (K_KP_ENTER, 1073741912) sao teclas distintas
+# no pygame, e o Windows pode entregar qualquer uma das duas. Sem esta
+# normalizacao, "confirmar" falha em um dos dois teclados.
+EQUIVALENT_GROUPS: Tuple[Tuple[int, ...], ...] = (
+    (pygame.K_RETURN, pygame.K_KP_ENTER),
+)
+
+
+def normalize_key(key: int) -> int:
+    """Reduz uma tecla a um representante do seu grupo de equivalencia.
+
+    Todas as teclas equivalentes caem no mesmo valor, entao o mapa
+    responde igual para o enter principal e o do numérico.
+    """
+    for group in EQUIVALENT_GROUPS:
+        if key in group:
+            return group[0]
+    return key
+
+
 def key_name(key: int) -> str:
     """Nome legivel de uma tecla, para exibir na tela."""
     name = pygame.key.name(key)
@@ -137,13 +159,13 @@ class InputMap:
                 for name in names:
                     code = key_code(name)
                     if code is not None:
-                        index.setdefault(code, []).append(action)
+                        index.setdefault(normalize_key(code), []).append(action)
             self._code_index = index
         return self._code_index
 
     def actions_for(self, key: int) -> List[str]:
-        """Acoes disparadas por uma tecla."""
-        return self.index().get(key, [])
+        """Acoes disparadas por uma tecla, ja normalizada."""
+        return self.index().get(normalize_key(key), [])
 
     def pressed(self, key: int, action: str) -> bool:
         """True se a teclarecem pressionada pertence a acao."""

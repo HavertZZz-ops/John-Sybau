@@ -28,7 +28,8 @@ from .scene import Scene
 from .ui import draw_panel, draw_text
 
 # teclas fixas desta tela: nao vem do mapa do jogador, para nunca ficar
-# sem como navegar
+# sem como navegar. Inclui o enter do teclado numerico, que o Windows
+# pode entregar no lugar do enter principal.
 NAV_UP = (pygame.K_UP, pygame.K_w)
 NAV_DOWN = (pygame.K_DOWN, pygame.K_s)
 NAV_LEFT = (pygame.K_LEFT, pygame.K_a)

@@ -392,6 +392,25 @@ def check_options_layout() -> None:
     print(f"[ok] layout cabe em {len(RESOLUTION_CHOICES)} resolucoes, nas 2 abas")
 
 
+def check_equivalent_keys() -> None:
+    """Enter principal e enter do teclado numerico sao a mesma tecla.
+
+    Bug real: o pygame trata K_RETURN (13) e K_KP_ENTER (1073741912)
+    como teclas distintas, e o Windows pode entregar qualquer uma das
+    duas. Sem normalizar, "confirmar" falhava em parte dos teclados e o
+    menu seemingly nao respondia.
+    """
+    from src.input_map import InputMap, normalize_key
+
+    assert normalize_key(pygame.K_RETURN) == normalize_key(pygame.K_KP_ENTER)
+    controls = InputMap()
+    assert controls.pressed(pygame.K_KP_ENTER, "confirmar"), (
+        "enter do teclado numerico nao confirma"
+    )
+    assert controls.pressed(pygame.K_RETURN, "confirmar")
+    print("[ok] enter principal e do teclado numerico confirmam igual")
+
+
 def check_keybindings() -> None:
     """Testa o remapeamento de teclas: gravar, remover, conflitos e persistencia."""
     from src import input_map
@@ -648,6 +667,8 @@ def main() -> int:
     check_options_layout()
     print()
     check_options_not_lockable()
+    print()
+    check_equivalent_keys()
     print()
     check_keybindings()
     print()
