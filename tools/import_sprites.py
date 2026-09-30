@@ -293,26 +293,27 @@ def _normalizar_esqueleto(quadros: list, alvo_altura: int) -> list:
     referencia 1x, entao o esqueleto saia com 6 de largura contra 32 do
     jogador e virava um palito na tela.
 
-    Aqui a arte e ampliada ate a altura do heroi, mantendo a
-    proporcao. Fica 10x32, que e estreito como o desenho original, mas
-    do tamanho certo: na escala 3x sai 30x96, a mesma altura do heroi.
+    O alvo e DIVIDIDO pelo UPSCALE de proposito. A importacao ja
+    multiplica tudo por 2 antes de gravar, e o jogo multiplica de novo
+    pela escala das opcoes. Normalizar para 32 aqui produzia 64 no disco
+    e 192 na tela, o dobro do heroi: o esqueleto ficava maior que o
+    jogador. O certo e que o arquivo no disco tenha a MESMA altura do
+    heroi, 32.
     """
     import pygame
 
     if not quadros:
         return quadros
     altura = max(q.get_height() for q in quadros)
-    if altura <= 0:
-        return quadros
-    if altura == alvo_altura:
+    if altura <= 0 or altura == alvo_altura:
         return quadros
 
     fator = alvo_altura / altura
     saida = []
     for q in quadros:
-        w = max(1, int(round(q.get_width() * fator)))
-        h = max(1, int(round(q.get_height() * fator)))
-        saida.append(pygame.transform.scale(q, (w, h)))
+        largura = max(1, int(round(q.get_width() * fator)))
+        alt = max(1, int(round(q.get_height() * fator)))
+        saida.append(pygame.transform.scale(q, (largura, alt)))
     return saida
 
 
@@ -404,7 +405,7 @@ def importar_squeletos() -> int:
                     # a arte deste pacote e um esqueleto esguio de 6x21;
                     # sem isso ele sai menor que a propria cabeca do
                     # jogador e vira um palito na tela
-                    quadros = _normalizar_esqueleto(quadros, 32)
+                    quadros = _normalizar_esqueleto(quadros, 32 // UPSCALE)
                     for i, quadro in enumerate(quadros):
                         grande = pygame.transform.scale(
                             quadro,

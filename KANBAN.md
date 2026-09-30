@@ -19,8 +19,6 @@ As issues #N sao as do repositorio. Um item por commit entregue.
 
 ## Em progreso
 
-- [ ] tamanho do esqueleto: a normalizacao ignora o UPSCALE da
-      importacao e ele sai com o dobro da altura do heroi
 - [ ] mais areas: o jogo tem 1 de 4
 - [ ] dinheiro e loot (o pacote de UI tem icones de moeda e inventario,
       ainda sem uso porque a paleta dele briga com o visual do jogo)
@@ -36,9 +34,17 @@ As issues #N sao as do repositorio. Um item por commit entregue.
         um glob na pasta, 8 PNGs abertos do disco e 8 escalas,
         sessenta vezes por segundo, so com o esqueleto na tela.
       Medido com `tools/medir_fps_dungeon.py` (superficie real):
-      139 -> 332 fps sem esqueleto, e 317 fps com ele.
+      139 -> 332 fps sem esqueleto, e 324 fps com ele.
       `tools/medir_fps_dungeon.py` foi criado aqui: SDL dummy nao
       cobra blit, entao nenhum teste headless via lentidao real.
+- [x] #23  Esqueleto com o dobro da altura do heroi    (`este commit`)
+      A normalizacao mirror a do heroi, mas a importacao JA multiplica
+      por 2 antes de gravar. Normalizar para 32 produzia 64 no disco e
+      192 na tela, o dobro do heroi. O alvo e dividido pelo `UPSCALE`:
+      agora o arquivo tem 32 de altura, igual ao heroi, e na escala 3x
+      os dois saem com 96.
+      A arte do pacote e um esqueleto de 6px por 21, medido no alpha:
+      ele continua estreito de proposito, mas do tamanho do jogador.
 
 - [x] #1  criar repositorio
 - [x] #2  criar ambiente pro pygame
