@@ -326,6 +326,9 @@ class DungeonScene(Scene):
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
         self.passos = 0
+        # de onde comecou a caminhada de saida do caixao. None
+        # quando nao esta na fase 'saindo'.
+        self._saida_inicio: float | None = None
         self.acabou_aula_de_mover = False
         # qual acao o jogador apertou neste quadro. E o que fecha as
         # aulas: o tutorial precisa saber que o jogador DEU o comando,
@@ -333,8 +336,29 @@ class DungeonScene(Scene):
         self._acao_deste_quadro: str | None = None
 
         # um save vindo do menu pula a abertura: o jogador ja acordou
-        # uma vez e nao faz sentido ver o caixao toda vez que continua
-        carregado = manager.ui_state.get("save_carregado")
+        # uma vez e nao faz sentido ver o caixao toda vez que continua.
+        #
+        # E `pop`, e nao `get`: a masmorra e recriada ao voltar de uma
+        # luta, e com `get` o save continuava no estado e era aplicado
+        # DE NOVO — a vida, o ouro e as salas vencidas que a luta tinha
+        # dado eram apagados e o jogador voltava ao caixao. Era o
+        # "quando eu mato o esqueleto o jogo comeca de novo".
+        # o resultado da luta e lido ANTES do save: e ele que diz se
+        # esta e a volta de uma luta (a cena nao abre o caixao de novo)
+        # ou a primeira entrada da partida (abre).
+        self._resultado_pendente = manager.ui_state.pop(
+            "resultado_combate", None
+        )
+        self._pendente_contra_chefe = bool(
+            manager.ui_state.pop("combate_contra_chefe", False)
+        )
+        voltando_de_luta = self._resultado_pendente is not None
+        # onde o jogador estava quando a luta comecou. A masmorra e
+        # recriada ao voltar, e sem isto a cena nova so comecaria na
+        # posicao do save — ou, sem save, dentro do caixao.
+        volta_em = manager.ui_state.pop("posicao_antes_da_luta", None)
+
+        carregado = manager.ui_state.pop("save_carregado", None)
         if carregado is not None:
             self._aplicar_save(carregado)
             # o progresso da campanha vem do `extra` do save. Sem isto
@@ -352,16 +376,19 @@ class DungeonScene(Scene):
             )
             manager.ui_state["progresso"] = self.progresso
             manager.ui_state["estado"] = self.estado
+        elif voltando_de_luta and volta_em is not None:
+            # volta de luta: o jogador ja estava acordado, entao nao
+            # ha o que abrir. Ele volta EXATAMENTE onde a luta comecou.
+            self.fase = "livre"
+            self.fase_tempo = 0.0
+            self.tampa = 0.0
+            self.posicao = pygame.Vector2(volta_em)
+            self.posicao = self._sem_bater(self.posicao, pygame.Vector2())
+            self.camera = pygame.Vector2(self.posicao)
+            self._recarregar(self.direction)
         else:
             self.fase = "acordando"
             self.fase_tempo = 0.0
-
-        self._resultado_pendente = manager.ui_state.pop(
-            "resultado_combate", None
-        )
-        self._pendente_contra_chefe = bool(
-            manager.ui_state.pop("combate_contra_chefe", False)
-        )
 
     # --- save --------------------------------------------------------
     def para_save(self):
@@ -496,7 +523,16 @@ class DungeonScene(Scene):
             return
 
         if resultado == "vitoria":
-            sala = self.progresso.onde_esta_o_chefe()
+            # A sala e ONDE O JOGADOR LUTOU, e nao onde esta o chefe.
+            # Usar `onde_esta_o_chefe()` aqui marcava a quinta sala
+            # como vencida ao matar o esqueleto da primeira, e pagava a
+            # recompensa do chefe em vez da da sala.
+            sala = self.sala_atual
+            if sala in (0, None):
+                # corredor: nao ha sala para marcar. Acontece se o
+                # jogador fugir ou ser jogado para fora durante a luta.
+                self._avisar("Voce venceu.")
+                return
             primeira = not self.progresso.concluida(sala)
             self.progresso.vencer(sala)
             if primeira:
@@ -633,6 +669,12 @@ class DungeonScene(Scene):
             return
         primeira_visita = numero != 0 and not self.progresso.concluida(numero)
         self.sala_atual = numero
+        # o progresso tambem muda de sala. Sem isto `progresso.sala`
+        # ficava na 1 para sempre, e `sala_atual()` devolvia sempre a
+        # primeira: a dica da tela era a da sala 1 em qualquer lugar, e
+        # o esqueleto nascia fraco em TODAS as salas.
+        if numero != 0:
+            self.progresso.sala = numero
         if not primeira_visita:
             return
 
@@ -651,12 +693,12 @@ class DungeonScene(Scene):
             numero = self.sala_atual
             if numero in (0, 4):
                 return
-            # a espera vale para TODA sala, e nao so para as que nao
-            # sejam a primeira. Sem esse passo aqui, o esqueleto da
-            # sala 1 nascia no instante em que a abertura acabava, e a
-            # aula de "ande um pouco" ficava sem tempo de acontecer
-            if self.passos < PASSOS_ATE_O_ESQUELETO:
-                return
+            # NAO ha espera por passos. A espera existia para a aula
+            # de "ande um pouco" caber antes do primeiro esqueleto, mas a
+            # abertura ja segura o jogador por seis segundos e ele so
+            # acorda quando a fase vira "livre" — os 14 passos eram uma
+            # segunda espera sem motivo, e era ela que escondia o
+            # esqueleto no corredor onde o jogador sai do caixao.
             if numero == self.progresso.onde_esta_o_chefe():
                 casa = self._casa_do_chefe()
             else:
@@ -695,6 +737,12 @@ class DungeonScene(Scene):
             # ninguem lia: a primeira luta era dura como as outras.
             self.manager.ui_state["fracos"] = bool(
                 self.progresso.sala_atual().fracos
+            )
+            # a masmorra e destruida e recriada quando a luta acaba.
+            # Sem esta posicao a cena nova comecaria no caixao, e o
+            # jogador voltaria da luta "para o comeco do jogo".
+            self.manager.ui_state["posicao_antes_da_luta"] = (
+                self.posicao.x, self.posicao.y
             )
             self.manager.ui_state["ensinar_item"] = self.ensinar_item
             self.manager.iniciar_combate(1)
@@ -854,6 +902,8 @@ class DungeonScene(Scene):
             # a parede da sala, acordando de pe DENTRO dela
             self.tampa = 1.0
             self._recarregar("sul")
+            if self._saida_inicio is None:
+                self._saida_inicio = self.posicao.y
             self.posicao = self._sem_bater(
                 self.posicao,
                 pygame.Vector2(0, MOVE_SPEED * 0.55 * dt),
@@ -861,10 +911,18 @@ class DungeonScene(Scene):
             self.anim_time += dt
             self.moving = True
             self.camera += (self.posicao - self.camera) * min(1.0, dt * 6.0)
-            if self.fase_tempo >= duracao:
+            andou = self.posicao.y - (self._saida_inicio or 0.0)
+            travou = abs(self.posicao.y - self._saida_inicio - andou) > 0.01
+            # sai do caixao, e nao atravessa a sala: antes esta fase
+            # durava ate o jogador bater na parede, o que o deixava onze
+            # tiles longe, num corredor onde nao nasce esqueleto
+            if (andou >= 2.4 * self.tile
+                    or self.fase_tempo >= duracao
+                    or (travou and self.fase_tempo > 0.8)):
                 self.fase = "livre"
                 self.fase_tempo = 0.0
                 self.moving = False
+                self._saida_inicio = None
 
     def _sem_bater(self, pos: pygame.Vector2, delta: pygame.Vector2) -> pygame.Vector2:
         """Aplica o movimento um eixo por vez, para deslizar na parede.

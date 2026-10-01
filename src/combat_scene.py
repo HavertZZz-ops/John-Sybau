@@ -147,6 +147,19 @@ class CombatScene(Scene):
 
     def _sair_para_masmorra(self) -> None:
         """Volta para a masmorra depois do fim da luta."""
+        # A batalha termina dentro do `update`, e e la que o resultado
+        # ganha o nome. Se a tecla chega ANTES desse `update` — o que
+        # acontece quando o jogador esta martelando enter no fim da
+        # luta — o resultado saia vazio, a masmorra nao reconhecia
+        # nenhum dos tres casos e a vitoria nao pagava nem marcava a
+        # sala. Aqui o resultado e decidido pela batalha, que ja sabe.
+        if not self.resultado:
+            if self.batalha.fugiu:
+                self.resultado = "fuga"
+            elif self.batalha.vencida:
+                self.resultado = "vitoria"
+            else:
+                self.resultado = "derrota"
         # O resultado vai no estado do gerenciador, e nao na propria
         # cena. A masmorra e recriada quando a luta acaba, e uma cena
         # nova nao tem como saber o que aconteceu na anterior.

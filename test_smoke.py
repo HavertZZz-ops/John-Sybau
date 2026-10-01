@@ -1321,7 +1321,7 @@ def check_tutorial() -> None:
 
 
 def check_tutorial_na_masmorra() -> None:
-    """A masmorra mostra a aula e acorda o esqueleto depois de andar."""
+    """A masmorra mostra a aula e acorda o esqueleto ao sair do caixao."""
     manager = _manager()
     manager.switch("dungeon")
     cena = manager.active
@@ -1333,9 +1333,21 @@ def check_tutorial_na_masmorra() -> None:
     assert cena.fase == "livre", cena.fase
     manager.draw()
 
-    # ainda nao ha esqueleto: o jogador precisa andar primeiro
-    assert cena.esqueleto is None, "o esqueleto acordou antes da hora"
-    print("[ok] o esqueleto fica guardado antes do jogador andar")
+    # O esqueleto emerge ASSIM QUE o jogador sai do caixao. Antes
+    # ele ficava guardado esperando o jogador andar 14 passos, e a
+    # fase "saindo" levava o heroi onze tiles para o sul, para um
+    # corredor onde nao nasce esqueleto: o primeiro encontro so
+    # acontecia depois de o jogador andar de volta.
+    caixao = cena._centro_caixao()
+    tiles = abs(cena.posicao.y - caixao[1]) / cena.tile
+    assert tiles < 4.0, f"o jogador saiu {tiles:.1f} tiles do caixao"
+    sala_caiso = cena.mapa.sala_de(*cena._celula())
+    assert sala_caiso == 1, (
+        f"o jogador acordou na sala {sala_caiso}, e nao na sala do "
+        f"caixao"
+    )
+    assert cena.esqueleto is not None, "o esqueleto nao emergiu do chao"
+    print(f"[ok] o esqueleto emerge a {tiles:.1f} tiles do caixao")
 
     # o chefe nasce na sala que o progresso aponta, que com a campanha
     # e a ULTIMA e nao a primeira. Andar para o leste dentro da sala do
@@ -1731,6 +1743,120 @@ def pygame_math_copy(v):
     return _pg.Vector2(v)
 
 
+def check_ciclo_da_masmorra() -> None:
+    """Acorda, encontra o esqueleto, luta, ganha e volta — sem perder nada.
+
+    Este e o teste do defeito que o jogador RELATOU: ao matar o
+    esqueleto a vida, o ouro e as salas vencidas voltavam ao que estavam
+    no arquivo, e o jogador aparecia de novo dentro do caixao.
+
+    As quatro causas, uma por uma:
+
+    - `save_carregado` ficava no estado do gerenciador e era aplicado em
+      toda entrada na masmorra, inclusive ao voltar de uma luta;
+    - a cena nova comecava em "acordando" e jogava o jogador no caixao;
+    - a vitoria marcava a sala onde esta o CHEFE, e nao a onde o
+      jogador lutou, pagando a recompensa do chefe;
+    - a tecla de dispensar a tela de fim de luta podia chegar antes do
+      quadro que da nome ao resultado, e a vitoria se perdia.
+    """
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["progresso"] = Progresso()
+    manager.ui_state["estado"] = Estado(vida=30, ouro=0)
+
+    manager.switch("dungeon")
+    cena = manager.active
+    cena.on_enter()
+    dt = 1 / 60
+    for _ in range(int(7.0 / dt)):
+        manager.update(dt)
+    assert cena.fase == "livre", cena.fase
+
+    for _ in range(30):
+        manager.update(dt)
+        if cena.esqueleto is not None:
+            break
+    assert cena.esqueleto is not None, "o esqueleto nao emergiu do chao"
+
+    lugar = cena.esqueleto.copy()
+    for _ in range(400):
+        if manager.active is not cena:
+            break
+        cena.posicao = lugar.copy()
+        manager.update(dt)
+    assert type(manager.active).__name__ == "CombatScene", (
+        type(manager.active).__name__
+    )
+    onde_lutou = (cena.posicao.x, cena.posicao.y)
+
+    combate = manager.active
+    for _ in range(9000):
+        if manager.active is not combate:
+            break
+        if combate.batalha.concluida or (
+                combate.menu_aberto and combate.modo == "acao"):
+            combate.handle_event(keydown(pygame.K_RETURN))
+            combate.handle_event(keyup(pygame.K_RETURN))
+        manager.update(dt)
+
+    assert manager.active is not combate, "a luta nao terminou"
+    cena = manager.active
+    assert type(cena).__name__ == "DungeonScene", type(cena).__name__
+    manager.update(dt)
+
+    caixao = cena._centro_caixao()
+    voltou = max(abs(cena.posicao.x - onde_lutou[0]),
+                 abs(cena.posicao.y - onde_lutou[1]))
+    assert cena.fase == "livre", (
+        f"a volta da luta abriu a abertura de novo: {cena.fase}")
+    # o contrato e o jogador voltar ONDE A LUTA COMECOU. Comparar com o
+    # caixao nao serve: o esqueleto pode nascer em cima dele, e ai o
+    # caixao e a posicao certa.
+    assert voltou <= cena.tile, (
+        f"o jogador nao voltou onde lutou (dist={voltou:.0f}px)")
+    print(f"[ok] a volta da luta nao abre o caixao e devolve o "
+          f"jogador ao ponto da luta")
+
+    assert cena.progresso.vencidas == [1], (
+        f"a sala vencida e {cena.progresso.vencidas}, e nao a do jogador")
+    ouro = manager.ui_state["estado"].ouro
+    esperado = Progresso().recompensa_por_vencer(1)
+    assert ouro == esperado, f"pagou {ouro}, a sala 1 paga {esperado}"
+    print(f"[ok] a vitoria marca a sala do jogador e paga {ouro} de ouro")
+
+
+def check_save_aplicado_so_na_primeira_entrada() -> None:
+    """O save do menu vale para a primeira entrada, e so para ela.
+
+    O `save_carregado` ficava no estado do gerenciador e a masmorra o
+    lia com `get`, sem remover. Como a masmorra e recriada ao voltar de
+    uma luta, o arquivo era lido de novo e apagava tudo o que a luta
+    tinha dado.
+    """
+    from src.saves import Save
+
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["save_carregado"] = Save(
+        area="catacumbas", x=100.0, y=200.0, direcao="norte",
+        tempo_jogado=42.0,
+    )
+
+    manager.switch("dungeon")
+    primeira = manager.active
+    assert primeira.fase == "livre", (
+        "a primeira entrada depois do Continuar devia pular a abertura")
+    assert "save_carregado" not in manager.ui_state, (
+        "o save carregado ficou no estado e sera aplicado de novo")
+
+    manager.switch("dungeon")
+    segunda = manager.active
+    assert segunda.fase == "acordando", (
+        f"a segunda entrada nao devia reaplicar o save: {segunda.fase}")
+    print("[ok] o save do menu e aplicado uma vez so")
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -1813,6 +1939,10 @@ def main() -> int:
     check_menu_de_combate_da_arte()
     print()
     check_taverna()
+    print()
+    check_ciclo_da_masmorra()
+    print()
+    check_save_aplicado_so_na_primeira_entrada()
     print()
     check_dynamic_resolution_persists()
     print()
