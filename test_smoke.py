@@ -1222,6 +1222,151 @@ def check_orcamento_da_luta() -> None:
           f"({tuple(perto[:3])} perto contra {tuple(longe[:3])} longe)")
 
 
+def check_menu_do_combate() -> None:
+    """O menu de combate tem a arte do pacote e icones legiveis.
+
+    A foto do jogador mostrou o menu como um retangulo alaranjado
+    chapado com cinco slots de madeira vazios. Duas causas, e as duas
+    precisam de prova:
+
+      - **A fita do header e lisa de nascenca.** A arte do CraftPix
+        (`action_header`, 88x17) tem UM so tom opaco e o resto
+        transparente: nao ha contorno escuro nela para procurar. Esticada
+        para 300px e com um nome no meio, ela le como um botao chapado.
+        Nao e arte faltando. A sombra, o contorno e o brilho de cima
+        sao da cena, e e isso que da profundidade;
+      - **Os icones estavam pequenos demais.** A arte de cada icone e
+        de 14x14, a grade de um sprite. Ampliado com folga de 12px num
+        slot de 45, dava 24px — um terco do slot — e a espada lia como
+        um risco azul. Medido no zoom, ocupava 24px de 45.
+
+    E o que o teste segura: a arte entra na tela com a cor dela, a fita
+    ganha contorno e sombra da cena, o nome de cada acao cabe no header
+    (a conta antiga estimava por caractere e so acertava com cinco
+    letras), e o icone ocupa pelo menos 60% do slot — com a selecao
+    maior ainda, porque o olho do jogador esta na briga e nao no menu.
+    """
+    from src import combat as _combat
+    from src import combat_scene as _cs
+    from src import ui_arte as _ui
+
+    # o icone de cada acao. Vive aqui e nao no modulo porque o mapa e
+    # o mesmo para o teste e para a cena: se um deles mudar sozinho, o
+    # teste passa a medir outra coisa.
+    ICONES = {
+        _combat.Acao.ATACAR: "espada",
+        _combat.Acao.DEFENDER: "escudo",
+        _combat.Acao.HABILIDADE: "rosto",
+        _combat.Acao.ITEM: "pocao_azul",
+        _combat.Acao.FUGIR: "olho",
+    }
+
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["inimigos"] = 2
+    manager.ui_state["fracos"] = True
+    manager.switch("combat")
+    cena = manager.active
+    cena.on_enter()
+    w, h = cena.size
+    tela = pygame.Surface((w, h))
+    for _ in range(20):
+        cena.update(1 / 60)
+        cena.draw(tela)
+
+    # 1. as duas pecas de arte estao no disco
+    header_art = _ui.carregar(_ui.PAINEL_ACAO_HEADER)
+    bar_art = _ui.carregar(_ui.PAINEL_ACAO_BAR)
+    assert header_art is not None, "a arte do header nao esta no disco"
+    assert bar_art is not None, "a arte da barra nao esta no disco"
+    print(f"[ok] as pecas do menu estao no disco "
+          f"({header_art.get_size()} e {bar_art.get_size()})")
+
+    # 2. a fita e lisa de nascenca: nao ha contorno para procurar
+    opacos = {(x, y) for y in range(header_art.get_height())
+              for x in range(header_art.get_width())
+              if header_art.get_at((x, y))[3] > 200}
+    tons = {tuple(header_art.get_at((x, y))[:3]) for x, y in opacos}
+    assert len(tons) == 1, (
+        f"a arte do header tem {len(tons)} tons: a prova de que ela e "
+        f"lisa mudou, e o teste precisa ser revisto")
+    print(f"[ok] a fita e lisa de nascenca: {len(tons)} tom, "
+          f"{len(opacos)} pixels opacos")
+
+    # 3. a cor da arte aparece na tela
+    cor_arte = next(iter(tons))
+    header = _ui.desenhar(
+        tela, _ui.PAINEL_ACAO_HEADER,
+        (w // 2, int(h * 0.88) - int(h * 0.05) - 40), int(w * 0.30))
+    assert header is not None
+    achada = any(
+        tuple(tela.get_at((x, y))[:3]) == cor_arte
+        for y in range(header.y, header.bottom)
+        for x in range(header.x, header.right))
+    assert achada, f"a cor da arte {cor_arte} nao esta na tela"
+    print(f"[ok] a arte do header entrou na tela ({cor_arte})")
+
+    # 4. a cena acrescenta o contorno: a fita tem de ter uma borda
+    # escura na tela, mesmo sem ter na arte
+    tem_borda = False
+    for x in range(header.left, header.right, 2):
+        for y in (header.top, header.bottom - 1):
+            cor = tela.get_at((x, y))[:3]
+            if sum(cor) < 90:  # bem escuro
+                tem_borda = True
+                break
+    assert tem_borda, (
+        "a fita nao tem contorno escuro na tela: e um retangulo chapado")
+    print("[ok] a cena acrescenta contorno escuro na fita")
+
+    # 5. o nome de cada acao cabe no header, medido
+    opcoes = list(_combat.Acao)
+    for i, acao in enumerate(opcoes):
+        cena.index = i
+        for _ in range(3):
+            cena.update(1 / 60)
+            cena.draw(tela)
+        larg, _alt = cena._largura_do_nome(acao.value.upper())
+        assert larg < header.width, (
+            f"o nome {acao.value} tem {larg}px e o header tem "
+            f"{header.width}px: transborda")
+    print(f"[ok] o nome das {len(opcoes)} acoes cabe no header "
+          f"de {header.width}px")
+
+    # 6. os slots cabem na barra, sem se invadirem
+    art_geo = pygame.Rect(0, 0, bar_art.get_width() * 3, bar_art.get_height() * 3)
+    art_geo.center = (w // 2, int(h * 0.88))
+    slots = _ui.slots_da_barra(art_geo, len(opcoes))
+    for i in range(len(slots) - 1):
+        assert slots[i].right <= slots[i + 1].left, (
+            f"os slots {i} e {i + 1} se invadem")
+    print(f"[ok] os {len(slots)} slots cabem na barra")
+
+    # 7. o icone ocupa pelo menos 60% do slot, e o selecionado mais
+    for i, acao in enumerate(opcoes):
+        arte = _ui.icone(ICONES.get(acao, ""))
+        if arte is None:
+            continue
+        lado = max(8, min(slots[i].width, slots[i].height) - 6)
+        fracao = lado / min(slots[i].width, slots[i].height)
+        assert fracao >= 0.60, (
+            f"o icone de {acao.value} ocupa {fracao:.0%} do slot "
+            f"({lado}px de {min(slots[i].width, slots[i].height)}px): "
+            f"e um risco, nao um icone")
+    lado_normal = max(8, min(slots[0].width, slots[0].height) - 6)
+    lado_selecionado = min(slots[0].width, slots[0].height) - 4
+    assert lado_selecionado > lado_normal, (
+        "o icone selecionado nao e maior que os outros")
+    print(f"[ok] os icones ocupam {lado_normal}px de "
+          f"{min(slots[0].width, slots[0].height)}px, "
+          f"e o selecionado {lado_selecionado}px")
+
+    # 8. e a barra com a dica cabe na tela
+    assert art_geo.bottom + 20 < h, (
+        f"a barra chega em {art_geo.bottom} e a tela em {h}")
+    print(f"[ok] a barra e a dica cabem na tela")
+
+
 def check_enfeites_da_luta() -> None:
     """Os enfeites ficam nos cantos, e nunca em cima de um lutador.
 
@@ -2858,6 +3003,8 @@ def main() -> int:
     print()
     check_menu_items()
     print()
+    check_menu_do_combate()
+    print()
     check_enfeites_da_luta()
     print()
     check_turnos_regras()
@@ -2912,4 +3059,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
 

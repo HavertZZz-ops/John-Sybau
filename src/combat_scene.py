@@ -925,10 +925,42 @@ class CombatScene(Scene):
         pygame.draw.rect(surface, cor, cheio)
 
     def _largura_do_nome(self, nome: str) -> tuple[int, int]:
-        """`(largura, altura)` que o nome ocupa na fonte da tela."""
+        """`(largura, altura)` que o nome ocupa na fonte da tela.
+
+        A fonte de `theme` e construida a cada chamada de
+        `_render_glyphs`, entao criar uma aqui e o caminho mais curto
+        para a largura real. O `tracking` de 2 por letra entra na conta:
+        sem ele o texto saia deslocado para a esquerda, e o
+        deslocamento cresce com o numero de letras.
+        """
         fonte = pygame.font.Font(None, 13)
-        larg, alt = fonte.size(nome.upper())
-        return larg + len(nome.upper()) * 2, alt
+        texto = nome.upper()
+        larg, alt = fonte.size(texto)
+        return larg + len(texto) * 2, alt
+
+    def _sombrear_painel(self, surface, rect: pygame.Rect,
+                         altura: int) -> None:
+        """A sombra e o contorno de um painel, para ele nao ser chapado.
+
+        A arte do CraftPix para o header do menu e uma fita de madeira
+        LISA: 88x17, um so tom opaco e o resto transparente. Sem borda
+        desenhada, esticada para 300px e com um nome no meio, ela le
+        como um retangulo alaranjado — e era o que o jogador viu.
+
+        A sombra embaixo e o contorno em volta sao da cena, e nao da
+        arte. Sao duas linhas: a sombra, deslocada para baixo, que
+        levanta o painel do chao; e o contorno, que o separa do fundo
+        atras dele.
+        """
+        sombra = pygame.Surface((rect.width, altura), pygame.SRCALPHA)
+        sombra.fill((0, 0, 0, 120))
+        surface.blit(sombra, (rect.x, rect.bottom - altura // 2))
+        pygame.draw.rect(surface, (22, 16, 10), rect, 2)
+        # o brilho de cima: a luz da cena cai de cima, e a aresta
+        # superior do painel e a linha mais clara
+        pygame.draw.line(
+            surface, (176, 134, 74), (rect.left, rect.top),
+            (rect.right, rect.top))
 
     def _desenhar_vez(self, surface, w, h) -> None:
         """De quem e a vez, e a fila inteira, no alto da tela.
@@ -1038,6 +1070,12 @@ class CombatScene(Scene):
             self._desenhar_menu_simples(surface, w, h)
             return
 
+        # A barra de acoes tambem precisa de sombra e contorno. A arte
+        # dela (86x18) tem desenho de madeira, mas nao tem borda fechada,
+        # e os slots dela sao marcados com o contorno escuro da propria
+        # arte. Sem a sombra, a tábua flutua.
+        self._sombrear_painel(surface, barra, int(h * 0.010))
+
         escolhido = opcoes[self.index] if self.index < len(opcoes) else None
 
         header = ui_arte.desenhar(
@@ -1045,11 +1083,17 @@ class CombatScene(Scene):
             (w // 2, barra.y - int(h * 0.05)), int(w * 0.30),
         )
         if header is not None:
+            self._sombrear_painel(surface, header, int(h * 0.012))
             nome = escolhido.value.upper() if escolhido is not None else ""
+            # a largura do texto e MEDIDA, e nao estimada por caractere.
+            # A conta antiga era `centerx - 5 * len(nome)`, que so acerta
+            # com um nome de cinco letras: "FUGIR" saia deslocado e
+            # "HABILIDADE" quase transbordava a fita
+            larg, _alt = self._largura_do_nome(nome)
             theme.text_tracked_at(
                 surface, nome, 17,
-                (header.centerx - 5 * len(nome), header.centery - 8),
-                theme.GOLD)
+                (header.centerx - larg // 2, header.centery), theme.GOLD,
+            )
 
         caixas = ui_arte.slots_da_barra(barra, len(opcoes))
         for i, acao in enumerate(opcoes):
@@ -1058,19 +1102,43 @@ class CombatScene(Scene):
             caixa = caixas[i]
             selecionado = i == self.index
 
+            # a acao escolhida tem o icone MAIOR. So a moldura dourada
+            # nao bastava: numa tela de briga, com o olho na briga e nao
+            # no menu, o unico sinal de onde a seta esta precisa ser
+            # grande, e nao so uma cor
+            # O icone e AMPLIADO, e nao reduzido.
+            #
+            # A arte dos icones e de 14x14 — a grade de um sprite. Num
+            # slot de 45px, ampliar por `min(largura, altura) - 12`
+            # dava 24px, que e um terco do slot, e o desenho ficava
+            # pequeno demais: a espada lia como um risco azul. Medido no
+            # zoom, o icone ocupava 24px de um slot de 45.
+            #
+            # O icone entra com folga de 6px, e o selecionado cresce
+            # mais ainda.
+            lado = max(8, min(caixa.width, caixa.height) - 6)
+            if selecionado:
+                lado = min(caixa.width, caixa.height) - 4
+
+            if selecionado:
+                # o fundo escuro ANTES do icone: o icone precisa se
+                # destacar da madeira, e madeira clara nao da contraste
+                # contra madeira clara
+                pygame.draw.rect(
+                    surface, (18, 14, 11), caixa.inflate(-10, -10))
+
             arte = ui_arte.icone(ICONES.get(acao, ""))
+            # o icone AMPLIA ate o slot: e um sprite de 14px num slot de
+            # 45, deixado no tamanho original ele virava um ponto
+            # minusculo no meio da madeira
             if arte is not None:
-                # o icone AMPLIA ate o slot: e um sprite de 14px num
-                # slot de 70, deixado no tamanho original ele virava um
-                # ponto minusculo no meio da madeira
-                lado = max(8, min(caixa.width, caixa.height) - 12)
                 if arte.get_width() != lado:
                     arte = pygame.transform.scale(arte, (lado, lado))
                 surface.blit(arte, arte.get_rect(center=caixa.center))
 
             if selecionado:
                 pygame.draw.rect(
-                    surface, theme.GOLD, caixa.inflate(-8, -8), 2)
+                    surface, theme.GOLD, caixa.inflate(-6, -6), 2)
 
             # a aula da sala da pocao aponta a opcao, e some assim que
             # o jogador usa o item pela primeira vez

@@ -506,3 +506,39 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       porque o objeto ficava na altura do peito do esqueleto, que e
       onde o sprite dele tambem esta.
       Cada enfeite ganhou sombra, que e o que gruda o objeto no chao.
+- [x] #52  O menu de combate para de ser chapado   (este commit)
+      A foto do jogador mostrou um retangulo alaranjado com "ATACAR" em
+      cima e cinco slots de madeira vazios. Duas coisas diferentes, e a
+      segunda estava escondida pela primeira.
+
+      **A fita do header e lisa de nascenca.** A arte do CraftPix
+      (`action_header`, 88x17) tem UM so tom opaco, (130, 92, 47), e o
+      resto transparente: nao ha contorno escuro nela. Esticada para
+      310px e com um nome no meio, ela le como um botao chapado. Nao e
+      arte faltando, e a arte que o pacote entrega.
+      A profundidade agora vem da cena: sombra embaixo, contorno em
+      volta e brilho na aresta de cima. A barra de acoes tambem.
+
+      O nome da acao estava centrado por `centerx - 5 * len(nome)`, que
+      so acerta com um nome de cinco letras: "FUGIR" saia deslocado e
+      "HABILIDADE" quase transbordava. Agora a largura e medida com a
+      fonte.
+
+      **Os icones estavam pequenos demais.** A arte de cada icone e de
+      14x14, a grade de um sprite. Ampliado com folga de 12px num slot de
+      51px, dava 24px: um terco do slot, e a espada lia como um risco
+      azul. Medido no zoom, o icone ocupava 24px de 45.
+      Dois achados que só apareceram na imagem ampliada:
+        - a medicao de pixels dizia 343 azuis DENTRO dos slots, e mesmo
+          assim nao se via nada. O numero estava certo e a imagem
+          tambem: o desenho era pequeno demais para ler, e "esta na
+          tela" nao e o mesmo que "se ve";
+        - o icone selecionado era 1.22x o tamanho dos outros, o que
+          continua pequeno demais para quem esta olhando a briga.
+      Agora o icone preenche o slot com folga de 6px, e o selecionado
+      ocupa quase tudo, com fundo escuro atras — madeira clara nao da
+      contraste contra madeira clara.
+
+      A moral do teste: ele mediu coisas reais e passou mesmo com o
+      defeito na tela. Um teste conta; a imagem ampliada diz se aquilo
+      que foi contado se VE.
