@@ -1857,6 +1857,206 @@ def check_save_aplicado_so_na_primeira_entrada() -> None:
     print("[ok] o save do menu e aplicado uma vez so")
 
 
+def check_corrida_shift() -> None:
+    """Shift e um segundo passo: mais longe, mais rapido, e com poeira.
+
+    Quatro coisas podem quebrar aqui, e nenhuma delas aparece
+    quebrada, entao o teste pergunta cada uma:
+
+      - `correndo_agora` ler o Shift do teclado e nao do evento. Com o
+        evento, segurar a seta e apertar o Shift depois nao mudaria
+        nada, que e justo o que o jogador faz;
+      - o passo dobrar de verdade, e nao so a animacao parecer mais
+        rapida;
+      - a corrida levantar poeira, senao e so o mesmo boneco com o
+        tempo trocado;
+      - o MEIO do caminho mandar. O passo de corrida vale um tile, e
+        testando so o destino o heroi aparecia do outro lado de uma
+        parede no meio do aperto.
+    """
+    import pygame as _pg
+    from src import animacao
+
+    # o Shift e lido do teclado, e o teclado so existe depois da tela
+    _pg.init()
+    _pg.display.set_mode((80, 80))
+    _pg.key.set_mods(0)
+    assert not animacao.correndo_agora(), "sem Shift nao ha corrida"
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    assert animacao.correndo_agora(), "Shift nao foi lido"
+    _pg.key.set_mods(_pg.KMOD_LSHIFT)
+    assert animacao.correndo_agora(), "so o Shift esquerdo nao conta"
+    _pg.key.set_mods(0)
+    print("[ok] Shift e Shift esquerdo sao corrida, sem nenhum nao e")
+
+    # o passo corre mais rapido que o passo normal. O dt e pequeno de
+    # proposito: a fase da a volta em 1.0, e um dt grande embrulha os
+    # dois lados e a comparacao vira sorte
+    devagar = animacao.Passo()
+    rapido = animacao.Passo()
+    rapido.correndo = True
+    devagar.advance(0.05, True)
+    rapido.advance(0.05, True)
+    assert rapido.fase > devagar.fase, "a corrida nao acelerou o passo"
+    assert abs(rapido.fase - devagar.fase * animacao.FATOR_CORRIDA) < 0.001
+    print(f"[ok] a corrida acelera o passo: {devagar.fase:.2f} -> {rapido.fase:.2f}")
+
+    # a poeira so aparece quando o passo esta correndo
+    passo = animacao.Passo()
+    passo.advance(0.1, True)
+    limpa = _pg.Surface((80, 80), _pg.SRCALPHA)
+    animacao._poeira_de_corrida(limpa, _pg.Rect(30, 40, 20, 40), passo, 32)
+    # um Surface nao tem get_bbox nem tobytes nesta versao, e o
+    # surfarray exigiria numpy que o jogo nao usa. `pygame.image.tostring`
+    # le a tela inteira como bytes, e compara-la com uma tela vazia diz
+    # se algo foi pintado, sem dependencia nenhuma
+    from pygame import image as _img
+    vazia = _pg.Surface((80, 80), _pg.SRCALPHA)
+    assert _img.tostring(limpa, "RGBA") == _img.tostring(vazia, "RGBA"), (
+        "andando tem poeira no ar")
+    passo.correndo = True
+    poeirenta = _pg.Surface((80, 80), _pg.SRCALPHA)
+    animacao._poeira_de_corrida(poeirenta, _pg.Rect(30, 40, 20, 40), passo, 32)
+    assert _img.tostring(poeirenta, "RGBA") != _img.tostring(vazia, "RGBA"), (
+        "correndo nao levantou poeira")
+    print("[ok] a poeira so levanta na corrida")
+
+    manager = _manager()
+    manager.ui_state.clear()
+
+    # a aldeia: meio tile andando, um tile com Shift
+    manager.switch("city")
+    cidade = manager.active
+    cidade.perto = None
+    cidade.avisar_tempo = 0.0
+    cidade._livre = lambda ponto: True
+    _pg.key.set_mods(0)
+    antes = cidade.posicao.copy()
+    press(manager, _pg.K_RIGHT)
+    andando = abs(cidade.posicao.x - antes.x)
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    antes = cidade.posicao.copy()
+    press(manager, _pg.K_RIGHT)
+    correndo = abs(cidade.posicao.x - antes.x)
+    assert abs(andando - cidade.tile * animacao.PASSO_ANDAR) < 0.01, andando
+    assert abs(correndo - cidade.tile * animacao.PASSO_CORRIDA) < 0.01, correndo
+    assert cidade.andamento.correndo, "a cena nao guardou a corrida"
+    print(f"[ok] na aldeia o aperto vale {andando}px andando e {correndo}px correndo")
+
+    # parede no meio do caminho derruba a corrida para o passo normal
+    respostas = []
+
+    def livre_ate_depois(ponto):
+        respostas.append(ponto)
+        return len(respostas) > 1
+
+    cidade._livre = livre_ate_depois
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    antes = cidade.posicao.copy()
+    press(manager, _pg.K_RIGHT)
+    cutado = abs(cidade.posicao.x - antes.x)
+    assert abs(cutado - cidade.tile * animacao.PASSO_ANDAR) < 0.01, (
+        f"passou a parede com o meio ocupado: {cutado}px")
+    print("[ok] parede no meio do caminho corta a corrida para meio tile")
+
+    # a estrada e a taverna usam a mesma regra, com metodo proprio
+    manager.switch("road")
+    estrada = manager.active
+    estrada._livre = lambda ponto: True
+    _pg.key.set_mods(0)
+    antes = estrada.posicao.copy()
+    estrada._andar(1, 0)
+    passo_estrada = abs(estrada.posicao.x - antes.x)
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    antes = estrada.posicao.copy()
+    estrada._andar(1, 0)
+    corrida_estrada = abs(estrada.posicao.x - antes.x)
+    assert corrida_estrada > passo_estrada, (passo_estrada, corrida_estrada)
+    print(f"[ok] na estrada: {passo_estrada}px andando, {corrida_estrada}px correndo")
+
+    # e a estrada tambem recua para meio tile com o meio do caminho
+    # ocupado. A condicao aqui ja foi escrita ao contrario uma vez, e
+    # o teste e o que impede que ela volte
+    respostas = []
+
+    def livre_ate_depois(ponto):
+        respostas.append(ponto)
+        return len(respostas) > 1
+
+    estrada._livre = livre_ate_depois
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    antes = estrada.posicao.copy()
+    estrada._andar(1, 0)
+    cutado = abs(estrada.posicao.x - antes.x)
+    assert abs(cutado - estrada.tile * animacao.PASSO_ANDAR) < 0.01, (
+        f"a estrada passou a parede com o meio ocupado: {cutado}px")
+    print("[ok] a estrada tambem para no meio quando o meio esta ocupado")
+
+    manager.switch("tavern")
+    sala = manager.active
+    # o chao livre e Patchado: o teste mede o tamanho do passo, e nao
+    # a planta da taverna
+    from src import tavern_scene as ts
+    # `amenities` quer dizer "a celula esta livre", entao e True que abre
+    # caminho, e nao False
+    ts.amenities = lambda x, y: True
+    _pg.key.set_mods(0)
+    antes = sala.posicao.copy()
+    sala._andar(1, 0)
+    passo_sala = abs(sala.posicao.x - antes.x)
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    antes = sala.posicao.copy()
+    sala._andar(1, 0)
+    corrida_sala = abs(sala.posicao.x - antes.x)
+    assert abs(passo_sala - ts.TILE * animacao.PASSO_ANDAR) < 0.01, passo_sala
+    assert abs(corrida_sala - ts.TILE * animacao.PASSO_CORRIDA) < 0.01, corrida_sala
+    assert sala.andamento.correndo, "a taverna nao guardou a corrida"
+    print(f"[ok] na taverna: {passo_sala}px andando, {corrida_sala}px correndo")
+
+    # o mesmo meio ocupado, na taverna. `all()` para na primeira celula
+    # fechada, entao so a PRIMEIRA leitura e negada: e o meio do caminho
+    # que fecha, e o destino fica livre
+    leituras = []
+
+    def livre_no_destino_so(x, y):
+        leituras.append((x, y))
+        return len(leituras) > 1
+
+    ts.amenities = livre_no_destino_so
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    antes = sala.posicao.copy()
+    sala._andar(1, 0)
+    cutado = abs(sala.posicao.x - antes.x)
+    assert abs(cutado - ts.TILE * animacao.PASSO_ANDAR) < 0.01, (
+        f"a taverna atravessou o movel com o meio ocupado: {cutado}px")
+    print("[ok] a taverna para no meio quando o caminho do meio esta ocupado")
+
+    # a masmorra e continua: la o que dobra e a velocidade, nao o passo
+    manager.switch("dungeon")
+    masmorra = manager.active
+    masmorra.andamento.correndo = False
+    lento = masmorra._passo(0.1).length()
+    masmorra.andamento.correndo = True
+    rapido = masmorra._passo(0.1).length()
+    assert abs(rapido - lento * animacao.FATOR_PASSO) < 0.01, (lento, rapido)
+    print(f"[ok] na masmorra o passo do heroi vai de {lento:.1f} para {rapido:.1f}")
+
+    # e o Shift e lido a cada quadro, e nao no aperto da seta
+    masmorra.fase = "livre"
+    _pg.key.set_mods(_pg.KMOD_SHIFT)
+    masmorra.andamento.correndo = False
+    masmorra.update(0.016)
+    assert masmorra.andamento.correndo, "a masmorra nao leu o Shift no quadro"
+    _pg.key.set_mods(0)
+    masmorra.andamento.correndo = True
+    masmorra.update(0.016)
+    assert not masmorra.andamento.correndo, "o Shift largado nao parou a corrida"
+    print("[ok] a masmorra le o Shift a cada quadro, e solta quando ele larga")
+
+    _pg.key.set_mods(0)
+    print("[ok] a corrida com Shift funciona nas quatro cenas do mundo")
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -1939,6 +2139,8 @@ def main() -> int:
     check_menu_de_combate_da_arte()
     print()
     check_taverna()
+    print()
+    check_corrida_shift()
     print()
     check_ciclo_da_masmorra()
     print()

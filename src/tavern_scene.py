@@ -209,7 +209,19 @@ class TavernScene(Scene):
             self._andar(dx, dy)
 
     def _andar(self, dx: int, dy: int) -> None:
-        passo = TILE // 2
+        # com Shift o aperto vale um tile inteiro, e nao meio
+        self.andamento.correndo = animacao.correndo_agora()
+        passo = TILE * (
+            animacao.PASSO_CORRIDA if self.andamento.correndo
+            else animacao.PASSO_ANDAR
+        )
+        # o passo de corrida vale o dobro, entao o meio do caminho
+        # tambem tem de estar livre, senao o heroi atravessa um movel
+        # no meio do aperto
+        if passo > TILE / 2 and not self._caminho_livre(
+            self.posicao + pygame.Vector2(dx, dy) * (TILE / 2)
+        ):
+            passo = TILE / 2
         alvo = self.posicao + pygame.Vector2(dx * passo, dy * passo)
         cx = int(alvo.x // TILE)
         cy = int(alvo.y // TILE)
@@ -223,6 +235,12 @@ class TavernScene(Scene):
         self.posicao = alvo
         self.moving = True
         self._recarregar(NOME_DIRECAO[(dx, dy)])
+
+    def _caminho_livre(self, ponto: pygame.Vector2) -> bool:
+        """Se a celula e as duas de baixo aceitam o heroi, como no destino."""
+        cx = int(ponto.x // TILE)
+        cy = int(ponto.y // TILE)
+        return all(amenities(cx, cy + oy) for oy in range(0, 3))
 
     def _dormir(self) -> None:
         """Dorme. Cobra, cura menos que a fogueira, e salva."""

@@ -20,6 +20,9 @@ pygame.display.set_mode((1, 1))
 
 CHAVE = sys.argv[1] if len(sys.argv) > 1 else "punho"
 MOVENDO = "--parado" not in sys.argv
+# com Shift o ciclo corre mais rapido e levanta poeira. O filme e o
+# mesmo: e o jogo que mostra o que mudou, nao um desenho separado
+CORRENDO = "--corrida" in sys.argv
 ESCALA = 2
 
 arte = assets.equipado_na_tela(CHAVE, ESCALA)
@@ -39,6 +42,7 @@ surf.fill((28, 24, 22))
 f = pygame.font.SysFont("consolas", 13)
 
 passo = animacao.Passo()
+passo.correndo = CORRENDO
 n = 0
 for linha in range(linhas):
     for i in range(Q):
@@ -57,6 +61,6 @@ for linha in range(linhas):
             passo.advance(1 / 60, MOVENDO)
 
 pygame.image.save(surf, str(RAIZ / f"preview_passo_{CHAVE}.png"))
+estado = "correndo" if CORRENDO else ("andando" if MOVENDO else "parado")
 print(f"preview_passo_{CHAVE}.png  "
-      f"({Q * linhas} quadros, "
-      f"{'andando' if MOVENDO else 'parado'})")
+      f"({Q * linhas} quadros, {estado})")

@@ -343,10 +343,10 @@ class DungeonScene(Scene):
         self.enfeites = cenario_mod.distribuir(
             self.mapa, quantos=self._quantos_enfeites(),
             semente=self._semente(),
-        )        # o quadro da animacao de morte. A fase "morrendo" roda o
+        )
+        # o quadro da animacao de morte. A fase "morrendo" roda o
         # `death` do pacote e so depois chama a abertura.
         self.morte_quadro = 0
-        self.andamento = animacao.Passo()
         # o relogio do passo do heroi: o corpo sobe duas vezes por
         # ciclo, inclina e achata. Nao e o mesmo que o metodo
         # `_passo()`, que calcula o deslocamento em pixels.
@@ -655,6 +655,9 @@ class DungeonScene(Scene):
             return
         self.time += dt
         self.tempo_jogado += dt
+        # o Shift e lido a cada quadro, e nao no aperto da seta: quem
+        # segura a direcao acelera ou desacelera no meio do passo
+        self.andamento.correndo = animacao.correndo_agora()
         self.andamento.advance(dt, self.moving)
         # a acao so vale por um quadro; o tutorial le e esquece
         self._acao_do_quadro = self._acao_deste_quadro
@@ -961,7 +964,10 @@ class DungeonScene(Scene):
         return melhor
 
     def _passo(self, dt: float) -> pygame.Vector2:
-        passo = MOVE_SPEED * dt
+        # o passo do heroi no mapa e continuo, e nao meio tile por
+        # aperto como nas cenas da superficie. Com Shift a velocidade
+        # sobe: o mesmo desenho, andando mais rapido e levantando poeira.
+        passo = MOVE_SPEED * dt * animacao.fator_passo(self.andamento.correndo)
         return {
             "sul": pygame.Vector2(0, passo),
             "norte": pygame.Vector2(0, -passo),

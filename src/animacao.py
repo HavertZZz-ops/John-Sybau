@@ -41,6 +41,32 @@ FPS_PASSO = 8.0
 # o quanto a corrida acelera o passo
 FATOR_CORRIDA = 1.55
 
+# quantos tiles vale um aperto de direcao. O corredor do mundo e passo a
+# passo, e meio tile por aperto e curto demais para andar ate a taverna.
+# Com Shift o aperto vale um tile inteiro: o olho le como dois passos
+# seguidos, e nao como um teleporte.
+PASSO_ANDAR = 0.5
+PASSO_CORRIDA = 1.0
+
+# o mesmo Shift, para as cenas em que o passo e continuo e nao por
+# aperto: la o que muda e a velocidade, e nao o tamanho do passo
+FATOR_PASSO = FATOR_CORRIDA
+
+
+def fator_passo(correndo: bool) -> float:
+    """O quanto o deslocamento do heroi e multiplicado."""
+    return FATOR_PASSO if correndo else 1.0
+
+
+def correndo_agora() -> bool:
+    """Se o Shift esta apertado neste instante.
+
+    O Shift e lido do teclado e nao do evento: o jogador segura a
+    direcao e o Shift decide o tamanho do passo enquanto ele caminha, e
+    um evento so contaria o que aconteceu no primeiro quadro.
+    """
+    return bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+
 # a altura do desenho a que as fracoes acima se aplicam. As cenas
 # passam a altura real; este e so o valor quando alguem nao passa nada.
 ALTURA_PADRAO = 64
@@ -172,6 +198,42 @@ _LADO_POR_DIRECAO = {
 }
 
 
+def _poeira_de_corrida(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    passo: Passo,
+    tile: int,
+) -> None:
+    """As marcas de poeira atras dos pes de quem corre.
+
+    Sem isso a corrida so existe na velocidade do sprite: um boneco
+    andando mais depressa numa tela parada parece o mesmo boneco
+    andando mais depressa. A poeira diz que o chao esta sendo comido.
+    """
+    if not passo.correndo:
+        return
+    # uma marca por batida de pe, alternando os lados. O tamanho e a
+    # cor sao exagerados de proposito: poeira de verdade neste tamanho
+    # de tela some, e o que precisa aparecer e que o chao foi comido
+    marca = int(passo.fase * 2.0) % 2
+    chao = rect.bottom - int(tile * 0.08)
+    for indice, (lado, tamanho, alpha) in enumerate((
+        (-1.0, 0.26, 105),
+        (1.0, 0.20, 78),
+    )):
+        if indice != marca:
+            continue
+        raio = max(3, int(tile * tamanho))
+        marca_ = pygame.Surface((raio * 2, raio * 2), pygame.SRCALPHA)
+        pygame.draw.circle(
+            marca_, (214, 196, 156, alpha), (raio, raio), raio
+        )
+        surface.blit(marca_, marca_.get_rect(
+            centerx=rect.centerx + int(lado * tile * 0.26),
+            centery=chao - raio // 2,
+        ))
+
+
 def desenhar_heroi(
     surface: pygame.Surface,
     arte: pygame.Surface,
@@ -213,5 +275,7 @@ def desenhar_heroi(
         sombra_ = sombra(largura, altura, passo, movendo)
         surface.blit(sombra_, sombra_.get_rect(
             centerx=rect.centerx, bottom=rect.bottom - int(tile * 0.10)))
+
+    _poeira_de_corrida(surface, rect, passo, tile)
 
     surface.blit(desenho, (rect.x + x, rect.y))

@@ -185,7 +185,19 @@ class RoadScene(Scene):
                 return
 
     def _andar(self, dx: int, dy: int) -> None:
-        passo = self.tile // 2
+        # com Shift o aperto vale um tile inteiro, e nao meio: e o que
+        # faz a estrada deixar de ser uma sequencia de photographs
+        self.andamento.correndo = animacao.correndo_agora()
+        passo = self.tile * (
+            animacao.PASSO_CORRIDA if self.andamento.correndo
+            else animacao.PASSO_ANDAR
+        )
+        # o passo de corrida vale o dobro, entao so vale se o MEIO do
+        # caminho estiver livre. Testando so o destino, o heroi
+        # aparecia do outro lado de uma parede no meio do aperto
+        meio = self.posicao + pygame.Vector2(dx, dy) * (self.tile / 2)
+        if passo > self.tile / 2 and not self._livre(meio):
+            passo = self.tile / 2
         alvo = self.posicao + pygame.Vector2(dx * passo, dy * passo)
         if self._livre(alvo):
             self.posicao = alvo
