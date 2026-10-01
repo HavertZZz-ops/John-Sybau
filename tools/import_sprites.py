@@ -63,7 +63,26 @@ ESPADA_FOLHAS = {
 }
 ESPADA_CELULA = 64
 # a ordem das linhas na folha: frente, esquerda, costas, direita
-ESPADA_ORDEM = ("sul", "oeste", "norte", "leste")
+# A ORDEM DAS LINHAS NAO E A MESMA EM TODAS AS FOLHAS.
+#
+# Conferida olhando as duas folhas lado a lado (tools/preview_direcoes.py):
+#
+#   linha |  idle     |  walk
+#   ------+-----------+----------
+#     0   |  sul      |  sul
+#     1   |  oeste    |  oeste
+#     2   |  norte    |  LESTE     <- as duas trocam aqui
+#     3   |  leste    |  NORTE     <- e aqui
+#
+# Com uma constante unica para as duas, o jogador andando para o norte
+# via o perfil virado para a direita, e andando para a leste via a nuca.
+# Nenhuma das duas estava certa ao mesmo tempo.
+ESPADA_ORDEM_IDLE = ("sul", "oeste", "norte", "leste")
+ESPADA_ORDEM_WALK = ("sul", "oeste", "leste", "norte")
+
+# das duas linhas que sobram, o resto das folhas herda a ordem do idle:
+# attack, run, hurt e death
+ESPADA_ORDEM = ESPADA_ORDEM_IDLE
 
 
 # O pacote de mercado nao tem `pushing`, `climbing`, `shielded`,
@@ -134,7 +153,11 @@ def importar_espadachim() -> int:
                 bruta = pygame.image.load(dados).convert_alpha()
 
                 largura, altura = bruta.get_size()
-                for linha, direcao in enumerate(ESPADA_ORDEM):
+                ordem = (
+                    ESPADA_ORDEM_WALK if estado == "walk"
+                    else ESPADA_ORDEM_IDLE
+                )
+                for linha, direcao in enumerate(ordem):
                     y = linha * ESPADA_CELULA
                     if y + ESPADA_CELULA > altura:
                         break

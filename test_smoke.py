@@ -760,6 +760,20 @@ def check_fps() -> None:
     )
 
 
+def check_heroi_tela() -> None:
+    """O heroi na tela tem de ser o do conjunto, do tamanho certo."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "test_heroi_tela.py")],
+        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        print("[FALHA] heroi na tela:")
+        print(result.stdout[-2500:])
+        print(result.stderr[-1500:])
+        raise SystemExit(result.returncode)
+    print("[ok] heroi na tela")
+
+
 def check_equipamento() -> None:
     """As armas, os cinco conjuntos e a troca de equipamento."""
     result = subprocess.run(
@@ -1538,6 +1552,8 @@ def main() -> int:
     check_refugio()
     print()
     check_equipamento()
+    print()
+    check_heroi_tela()
     print()
     check_persistencia()
     print()

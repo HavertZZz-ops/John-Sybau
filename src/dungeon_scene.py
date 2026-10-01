@@ -1049,32 +1049,15 @@ class DungeonScene(Scene):
         )
 
     def _desenhar_heroi(self, surface: pygame.Surface) -> None:
-        w, h = self.size
-        cx = int(self.posicao.x - self.camera.x + w // 2)
-        cy = int(self.posicao.y - self.camera.y + h // 2)
+        """O heroi no mapa.
 
-        if not self.moving:
-            # parado: mostra o desenho do conjunto equipado
-            self._desenhar_heroi_equipado(surface)
-            return
-
-        quadros = self.frames
-        if not quadros:
-            return
-        indice = int(self.anim_time * assets.HERO_FPS) % len(quadros)
-        sprite = quadros[indice]
-        rect = sprite.get_rect(center=(cx, cy))
-
-        sombra = pygame.Surface(
-            (sprite.get_width() * 3 // 4, max(6, sprite.get_height() // 8)),
-            pygame.SRCALPHA,
-        )
-        pygame.draw.ellipse(sombra, (0, 0, 0, 70), sombra.get_rect())
-        surface.blit(
-            sombra,
-            sombra.get_rect(centerx=rect.centerx, bottom=rect.bottom - 2),
-        )
-        surface.blit(sprite, rect)
+        O desenho do conjunto equipado manda em TODOS os estados, andando
+        ou parado. A animacao de caminhada vem do espadachim do pacote
+        de mercado, que e um personagem DIFERENTE: ele tem espada, e o
+        jogo comeca desarmado. Trocar de desenho a cada passo deixava o
+        heroi com espada andando e sem espada parado.
+        """
+        self._desenhar_heroi_equipado(surface)
 
     def _desenhar_item(self, surface: pygame.Surface) -> None:
         """A pocao no chao, com um brilho para o jogador achar.
@@ -1391,15 +1374,16 @@ class DungeonScene(Scene):
         chave = equip_mod.chave_com_desenho(
             p.arma if p else None, p.escudo if p else None
         )
-        arte = assets.carregar_equipado(chave, escala=assets.get_sprite_scale())
-        if arte is None or self.moving:
-            quadros = self.frames
-            if quadros:
-                sprite = quadros[int(self.anim_time * 8) % len(quadros)]
-                surface.blit(sprite, sprite.get_rect(
-                    center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
-                            int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+        arte = assets.equipado_na_tela(chave, assets.get_sprite_scale())
+        if arte is not None:
+            surface.blit(arte, arte.get_rect(
+                center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                        int(self.posicao.y - self.camera.y + self.size[1] // 2))))
             return
-        surface.blit(arte, arte.get_rect(
-            center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
-                    int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+        # sem o desenho do conjunto, cai na animacao do pacote
+        quadros = self.frames
+        if quadros:
+            sprite = quadros[int(self.anim_time * 8) % len(quadros)]
+            surface.blit(sprite, sprite.get_rect(
+                center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                        int(self.posicao.y - self.camera.y + self.size[1] // 2))))

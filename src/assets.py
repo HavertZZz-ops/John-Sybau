@@ -337,7 +337,64 @@ def carregar_casa(nome: str, escala: int = 2) -> pygame.Surface | None:
     return imagem
 
 
-# onde ficam os desenhos dos moradores da aldeia
+def _cortar_borda(img: pygame.Surface) -> pygame.Surface:
+    """Tira o transparencia vazia em volta do desenho.
+
+    O PixelLab devolve um quadrado de 64x64 com o personagem ocupando
+    uns 40x60 no centro. Escalar esse quadrado pela altura da tela
+    dava um quadrado do mesmo tamanho do heroi animado, mas com o
+    personagem dentro dele bem menor, porque metade da imagem era ar.
+    """
+    largura, altura = img.get_size()
+    if largura < 4 or altura < 4:
+        return img
+    x0, y0 = largura, altura
+    x1 = y1 = -1
+    for y in range(altura):
+        for x in range(largura):
+            if img.get_at((x, y))[3] > 8:
+                if x < x0:
+                    x0 = x
+                if x > x1:
+                    x1 = x
+                if y < y0:
+                    y0 = y
+                if y > y1:
+                    y1 = y
+    if x1 < x0 or y1 < y0:
+        return img
+    return img.subsurface(
+        pygame.Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+    ).copy()
+
+
+def equipado_na_tela(conjunto: str, escala: int) -> pygame.Surface | None:
+    """O desenho do heroi equipado, no tamanho de tela do heroi.
+
+    Sem isto o desenho do PixelLab, que tem 64x64, era ampliado pela
+    escala dos sprites como se fosse um quadro do heroi. Na escala 3
+    ele saia com 192px contra os 120px do heroi animado: o personagem
+    PARADO era duas vezes maior que andando, e trocava de tamanho a
+    cada passo.
+
+    A borda transparente e cortada antes: o quadrado do PixelLab tem
+    quase metade de ar, e sem cortar o personagem fica menor do que o
+    animado, que era o defeito do defeito.
+
+    A ALTURA vem do heroi animado e a largura segue a proporcao do
+    desenho.
+    """
+    original = carregar_equipado(conjunto, escala=1)
+    if original is None:
+        return None
+    arte = _cortar_borda(original)
+    altura = HERO_BASE[1] * escala
+    largura = max(1, int(arte.get_width() * altura / arte.get_height()))
+    if arte.get_size() == (largura, altura):
+        return arte
+    return pygame.transform.scale(arte, (largura, altura))
+
+
 MORADOR_DIR: Path = settings.SPRITES_DIR / "moradores"
 
 _MORADOR_CACHE: dict[tuple[str, int], pygame.Surface] = {}

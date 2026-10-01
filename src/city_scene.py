@@ -781,15 +781,16 @@ class CityScene(Scene):
         chave = equip_mod.chave_com_desenho(
             p.arma if p else None, p.escudo if p else None
         )
-        arte = assets.carregar_equipado(chave, escala=assets.get_sprite_scale())
-        if arte is None or self.moving:
-            quadros = self.frames
-            if quadros:
-                sprite = quadros[int(self.anim_time * 8) % len(quadros)]
-                surface.blit(sprite, sprite.get_rect(
-                    center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
-                            int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+        arte = assets.equipado_na_tela(chave, assets.get_sprite_scale())
+        if arte is not None:
+            surface.blit(arte, arte.get_rect(
+                center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                        int(self.posicao.y - self.camera.y + self.size[1] // 2))))
             return
-        surface.blit(arte, arte.get_rect(
-            center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
-                    int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+        # sem o desenho do conjunto, cai na animacao do pacote
+        quadros = self.frames
+        if quadros:
+            sprite = quadros[int(self.anim_time * 8) % len(quadros)]
+            surface.blit(sprite, sprite.get_rect(
+                center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                        int(self.posicao.y - self.camera.y + self.size[1] // 2))))
