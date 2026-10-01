@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import assets, combat, itens, theme
+from . import assets, combat, itens, theme, ui_arte
 from .scene import Scene
 
 DT_FIXO = 1 / 60
@@ -464,7 +464,91 @@ class CombatScene(Scene):
         )
 
     def _desenhar_menu(self, surface, w, h) -> None:
-        """Menu de acoes, embaixo, como o Chrono Trigger."""
+        """As cinco acoes, nos slots da fileira do Action_panel.
+
+        A arte traz uma barra de madeira com slots vazios. O que falta e
+        o CONTEUDO. Dentro do slot cabe um ICONE e nao o nome:
+        "HABILIDADE" com 13px passa de 70px de largura e o nome invadia
+        o slot vizinho. O nome da acao escolhida fica na faixa de cima,
+        que e larga de verdade para isso.
+        """
+        opcoes = list(combat.Acao)
+        ICONES = {
+            combat.Acao.ATACAR: "espada",
+            combat.Acao.DEFENDER: "escudo",
+            combat.Acao.HABILIDADE: "rosto",
+            combat.Acao.ITEM: "pocao_azul",
+            combat.Acao.FUGIR: "olho",
+        }
+
+        barra = ui_arte.desenhar(
+            surface, ui_arte.PAINEL_ACAO_BAR,
+            (w // 2, int(h * 0.88)), int(w * 0.34),
+        )
+        if barra is None:
+            self._desenhar_menu_simples(surface, w, h)
+            return
+
+        escolhido = opcoes[self.index] if self.index < len(opcoes) else None
+
+        header = ui_arte.desenhar(
+            surface, ui_arte.PAINEL_ACAO_HEADER,
+            (w // 2, barra.y - int(h * 0.05)), int(w * 0.30),
+        )
+        if header is not None:
+            nome = escolhido.value.upper() if escolhido is not None else ""
+            theme.text_tracked_at(
+                surface, nome, 17,
+                (header.centerx - 5 * len(nome), header.centery - 8),
+                theme.GOLD)
+
+        caixas = ui_arte.slots_da_barra(barra, len(opcoes))
+        for i, acao in enumerate(opcoes):
+            if i >= len(caixas):
+                break
+            caixa = caixas[i]
+            selecionado = i == self.index
+
+            arte = ui_arte.icone(ICONES.get(acao, ""))
+            if arte is not None:
+                # o icone AMPLIA ate o slot: e um sprite de 14px num
+                # slot de 70, deixado no tamanho original ele virava um
+                # ponto minusculo no meio da madeira
+                lado = max(8, min(caixa.width, caixa.height) - 12)
+                if arte.get_width() != lado:
+                    arte = pygame.transform.scale(arte, (lado, lado))
+                surface.blit(arte, arte.get_rect(center=caixa.center))
+
+            if selecionado:
+                pygame.draw.rect(
+                    surface, theme.GOLD, caixa.inflate(-8, -8), 2)
+
+            # a aula da sala da pocao aponta a opcao, e some assim que
+            # o jogador usa o item pela primeira vez
+            if (self.ensinar_item and acao is combat.Acao.ITEM
+                    and not self.ja_usou_item):
+                cor_pulso = theme.lerp(
+                    theme.GOLD, theme.TEXT, theme.pulse(self.anim_tempo)
+                )
+                pygame.draw.rect(
+                    surface, cor_pulso, caixa.inflate(-8, -8), 2)
+                theme.text_tracked_at(
+                    surface, "aqui", 13,
+                    (caixa.centerx - 18, caixa.y - 18), cor_pulso)
+
+        theme.text_tracked_at(
+            surface, "setas movem   enter confirma   esc foge",
+            13, (barra.x, barra.bottom + 14), theme.TEXT_DIM)
+
+        if self.ensinar_item and not self.ja_usou_item:
+            theme.text_tracked_at(
+                surface,
+                "Escolha USAR ITEM com as setas e enter. O inventario abre.",
+                15, (int(w * 0.30), header.y - 24 if header is not None
+                     else barra.y - 40), theme.GOLD)
+
+    def _desenhar_menu_simples(self, surface, w, h) -> None:
+        """O menu em texto, so quando a arte dos slots nao veio."""
         opcoes = list(combat.Acao)
         base_y = int(h * 0.86)
         passo = 26
@@ -479,26 +563,38 @@ class CombatScene(Scene):
                     surface, cor,
                     [(x - 18, y), (x - 12, y - 5), (x - 18, y - 10)],
                 )
-            # a aula da sala da pocao aponta a opcao, e some assim que
-            # o jogador usa o item pela primeira vez
-            if (self.ensinar_item and acao is combat.Acao.ITEM
-                    and not self.ja_usou_item):
-                cor_pulso = theme.lerp(
-                    theme.GOLD, theme.TEXT, theme.pulse(self.anim_tempo)
+    def _desenhar_menu_simples(self, surface, w, h) -> None:
+        """O menu em texto, so quando a arte dos slots nao veio."""
+        opcoes = list(combat.Acao)
+        base_y = int(h * 0.86)
+        passo = 26
+        x = int(w * 0.30)
+        for i, acao in enumerate(opcoes):
+            selecionado = i == self.index
+            cor = theme.GOLD if selecionado else theme.TEXT_DIM
+            y = base_y + i * passo
+            theme.text_tracked_at(surface, acao.value.upper(), 18, (x, y), cor)
+            if selecionado:
+                pygame.draw.polygon(
+                    surface, cor,
+                    [(x - 18, y), (x - 12, y - 5), (x - 18, y - 10)],
                 )
-                pygame.draw.rect(
-                    surface, cor_pulso,
-                    pygame.Rect(x - 22, y - 5, 6 + 9 * len(acao.value), 22), 1,
+    def _desenhar_menu_simples(self, surface, w, h) -> None:
+        """O menu em texto, so quando a arte dos slots nao veio."""
+        opcoes = list(combat.Acao)
+        base_y = int(h * 0.86)
+        passo = 26
+        x = int(w * 0.30)
+        for i, acao in enumerate(opcoes):
+            selecionado = i == self.index
+            cor = theme.GOLD if selecionado else theme.TEXT_DIM
+            y = base_y + i * passo
+            theme.text_tracked_at(surface, acao.value.upper(), 18, (x, y), cor)
+            if selecionado:
+                pygame.draw.polygon(
+                    surface, cor,
+                    [(x - 18, y), (x - 12, y - 5), (x - 18, y - 10)],
                 )
-                theme.text_tracked_at(
-                    surface, "aqui", 13, (x + 10 + 9 * len(acao.value), y), cor_pulso)
-
-        if self.ensinar_item and not self.ja_usou_item:
-            theme.text_tracked_at(
-                surface,
-                "Escolha USAR ITEM com as setas e enter. O inventario abre.",
-                15, (int(w * 0.30), base_y - 26), theme.GOLD)
-
     def _desenhar_resultado(self, surface, w, h) -> None:
         texto = "VITORIA" if self.batalha.vencida else "VOCE CAIU"
         theme.text_tracked(

@@ -27,6 +27,10 @@ Thumbs.db
 # screenshots e testes temporarios
 *.log
 
+# fotos de conferencia dos paineis (tools/preview_ui.py,
+# tools/preview_menus.py): saida de trabalho, nao faz parte do jogo
+preview_*.png
+
 # configuracao local (preferencias do jogador) e artefatos de teste
 config.json
 _test_config*.json

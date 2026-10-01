@@ -17,6 +17,7 @@ from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
 from . import estado as estado_mod
 from . import fogueira as fogueira_mod
 from . import equipamento as equip_mod
+from . import ui_arte
 from . import itens as itens_mod
 from .scene import Scene
 
@@ -149,6 +150,8 @@ class CityScene(Scene):
     """A cidadezinha, com os moradores locales."""
 
     inventario_aberto = False
+    modo_equip: int | None = None
+    index_equip = 0
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -321,7 +324,15 @@ class CityScene(Scene):
             self.manager.switch("road")
             return
 
+        # o R entra no submenu de equipamento, mas so com o inventario
+        # aberto: trocar arma sem ver o que esta nas maos seria trocar no
+        # escuro. O teste do R fica FORA do do Q - aninhado dentro dele o
+        # R nunca satisfazia a condicao e o submenu nao abria nunca.
+        if self.inventario_aberto and self.key(event, "trocar_equipamento"):
+            self.modo_equip = 0 if self.modo_equip is None else None
+            return
         if self.key(event, "inventario"):
+            self._fechar_outros_menus()
             self.inventario_aberto = not self.inventario_aberto
             return
 
@@ -344,6 +355,7 @@ class CityScene(Scene):
                     self._pernoitar()
                     return
                 if self.perto.nome == "O Estranho":
+                    self._fechar_outros_menus()
                     self.loja = 0
                     self.loja_aviso = "Escolha o que quer. Esc sai sem gastar."
                     return
@@ -480,23 +492,80 @@ class CityScene(Scene):
             surface, self.avisar, 16, (caixa.x + 8, caixa.y), theme.TEXT)
 
     def _desenhar_inventario_mundo(self, surface: pygame.Surface) -> None:
-        """O inventario andando pelo mapa.
+        # o submenu de equipamento e um submenu, nao uma segunda janela:
+        # desenhado por cima do inventario os dois painéis caiam no mesmo
+        # centro. Aqui ele SUBSTITUI o inventario enquanto estiver aberto.
+        if self.modo_equip is not None:
+            self._desenhar_equipamento(surface)
+            return
 
-        So desenha. Fora da luta nao da para usar nada: uma pocao
-        curada com o jogo pausado nao tem efeito em ninguem, e fingir
-        que tem seria pior do que nao ter. Aqui o Q e o QUE, o E e o
-        QUE, e a luta e onde a pociao vira vida de verdade.
+        """O inventario andando pelo mapa, nos slots do painel.
+
+        Fora da luta o Q e so o QUE: usar pocao com o jogo pausado nao
+        tem efeito em ninguem, e fingir que tem seria pior do que nao
+        ter. A conversao em vida de verdade acontece na luta.
         """
         if not self.inventario_aberto:
             return
         w, h = self.size
         p = self.manager.ui_state.get("progresso")
-        inv = dict(p.itens) if p is not None else {}
-        itens_mod.desenhar_inventario(
-            surface, inv, (w // 2 - 165, h // 2 - 60),
-            rodape="q ou esc fecha",
-        )
+        linhas = itens_mod.rotulos(dict(p.itens) if p is not None else {})
 
+        painel = ui_arte.desenhar(
+            surface, ui_arte.PAINEL_INVENTARIO,
+            (w // 2, h // 2), int(w * 0.42),
+        )
+        if painel is None:
+            itens_mod.desenhar_inventario(
+                surface, dict(p.itens) if p is not None else {},
+                (w // 2 - 165, h // 2 - 60),
+            )
+            return
+
+        if not linhas:
+            theme.text_tracked_at(
+                surface, "Voce nao carrega nada", 16,
+                (painel.centerx - 60, painel.centery - 8), theme.TEXT_DIM)
+        else:
+            # os itens vao DENTRO da grade, que e o que o painel foi
+            # desenhado para. A primeira versao escrevia as linhas por
+            # cima dos quadrados vazios e o painel ficava ilegivel.
+            COLUNAS = 5
+            fileiras = 4
+            cw = painel.width // COLUNAS
+            ch = painel.height // fileiras
+            for i, (_id, item, qtd) in enumerate(linhas[:COLUNAS * fileiras]):
+                cx = painel.x + (i % COLUNAS) * cw
+                cy = painel.y + (i // COLUNAS) * ch
+                caixa = pygame.Rect(cx + 3, cy + 3, cw - 6, ch - 6)
+                pygame.draw.rect(surface, theme.BACKGROUND_SOFT, caixa)
+                pygame.draw.rect(surface, theme.HAIRLINE, caixa, 1)
+                palavras = item.nome.split()
+                theme.text_tracked_at(
+                    surface, palavras[0][:9], 13,
+                    (caixa.x + 4, caixa.y + 8), theme.TEXT)
+                if len(palavras) > 1:
+                    theme.text_tracked_at(
+                        surface, " ".join(palavras[1:])[:14], 11,
+                        (caixa.x + 4, caixa.y + 26), theme.TEXT_DIM)
+                theme.text_tracked_at(
+                    surface, f"x{qtd}", 12,
+                    (caixa.right - 26, caixa.bottom - 16), theme.GOLD)
+
+            conjunto = equip_mod.Conjunto(
+                p.arma if p else None, p.escudo if p else None)
+            arte = assets.carregar_equipado(conjunto.chave, escala=1)
+            if arte is not None:
+                surface.blit(arte, arte.get_rect(
+                    midbottom=(painel.centerx, painel.bottom - 4)))
+            theme.text_tracked_at(
+                surface, conjunto.rotulo, 13,
+                (painel.centerx - 50, painel.bottom - 16), theme.GOLD)
+
+        ui_arte.contador_de_moeda(surface, painel, self.estado.ouro)
+        theme.text_tracked_at(
+            surface, "q ou esc fecha", 13,
+            (painel.x, painel.bottom + 8), theme.TEXT_DIM)
     def _colocar_fogueira(self) -> None:
         """A fogueira da aldeia, perto do grupo de moradores.
 
@@ -590,43 +659,71 @@ class CityScene(Scene):
             self.loja_aviso = aviso
 
     def _desenhar_loja(self, surface, w, h) -> None:
+        """A vitrine do Estranho, nos slots que a propria arte tem.
+
+        A folha SHOP traz seis slots, seis botoes BUY e o contador de
+        moeda, e nada disso muda: o jogo tem duas pocas e uma moeda.
+        O que o codigo coloca e o CONTEUDO de cada slot, e a posicao dos
+        slots nao e adivinhada — `ui_arte.slots_da_loja` devolve os
+        retangulos medidos com `tools/medir_loja.py`.
+
+        A versao anterior desenhava as linhas por cima da arte, e o
+        jogador nao via nem o item nem o botao dele.
+        """
         if self.loja is None:
             return
         lista = itens_mod.a_venda()
         if not lista:
             return
-        caixa = pygame.Rect(0, 0, min(400, w - 60), 74 + 30 * len(lista))
-        caixa.center = (w // 2, h // 2)
-        pygame.draw.rect(surface, theme.BACKGROUND, caixa.inflate(12, 12))
-        pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(12, 12), 1)
-        theme.text_tracked_at(
-            surface, "O ESTRANHO", 17, (caixa.x, caixa.y - 26), theme.GOLD)
-
-        for i, item in enumerate(lista):
-            y = caixa.y + i * 30
-            marcado = i == self.loja
-            cor = theme.GOLD if marcado else theme.TEXT
-            pygame.draw.rect(
-                surface, theme.BACKGROUND_SOFT,
-                pygame.Rect(caixa.x - 4, y - 4, caixa.width + 8, 28))
-            if marcado:
-                pygame.draw.rect(
-                    surface, theme.GOLD,
-                    pygame.Rect(caixa.x - 4, y - 4, 3, 28))
-            theme.text_tracked_at(
-                surface, item.linha_com_preco(), 15, (caixa.x + 4, y), cor)
-            theme.text_tracked_at(
-                surface, item.descricao, 12,
-                (caixa.x + 4, y + 16), theme.TEXT_DIM)
-
-        rodape = self.loja_aviso or (
-            f"enter compra   esc sai   voce tem {self.estado.ouro} de ouro"
+        # topo_rel menor que o do inventario: nesta folha os slots
+        # comecam em 10% da altura, e nao nos 24% da barra de titulo
+        painel = ui_arte.desenhar(
+            surface, ui_arte.PAINEL_LOJA,
+            (w // 2, h // 2), int(w * 0.34),
+            topo_rel=0.10, base_rel=0.94,
         )
-        theme.text_tracked_at(
-            surface, rodape, 13, (caixa.x, caixa.bottom + 10),
-            theme.GOLD if self.loja_aviso else theme.TEXT_DIM)
+        if painel is None:
+            return
 
-    # --- os predios ---------------------------------------------------
+        slots = ui_arte.slots_da_loja(painel, 6)
+        for i, item in enumerate(lista):
+            if i >= len(slots):
+                break
+            slot = slots[i]
+            marcado = i == self.loja
+            pygame.draw.rect(surface, theme.BACKGROUND_SOFT, slot)
+            pygame.draw.rect(
+                surface, theme.GOLD if marcado else theme.HAIRLINE, slot, 1)
+
+            palavras = item.nome.split()
+            cor = theme.GOLD if marcado else theme.TEXT
+            theme.text_tracked_at(
+                surface, palavras[0][:8], 12,
+                (slot.x + 4, slot.y + 4), cor)
+            if len(palavras) > 1:
+                theme.text_tracked_at(
+                    surface, " ".join(palavras[1:])[:12], 10,
+                    (slot.x + 4, slot.y + 18), theme.TEXT_DIM)
+
+            # o preco fica no canto do SLOT, e nao em cima do BUY: o
+            # botao ja tem a palavra BUY desenhada na arte e o numero
+            # por cima dela virava "BU I"
+            pode = self.estado.ouro >= item.preco
+            cor_preco = theme.GOLD if (marcado and pode) else theme.TEXT_DIM
+            theme.text_tracked_at(
+                surface, f"{item.preco}", 12,
+                (slot.right - 30, slot.bottom - 16), cor_preco)
+
+            # o botao so acende junto com o item escolhido
+            botao = ui_arte.botao_da_loja(painel, i)
+            if marcado and botao is not None:
+                pygame.draw.rect(surface, theme.GOLD, botao, 2)
+
+        ui_arte.contador_de_moeda(surface, painel, self.estado.ouro)
+        rodape = self.loja_aviso or "enter compra   esc sai   setas mudam"
+        theme.text_tracked_at(
+            surface, rodape, 12, (painel.x, painel.bottom + 8),
+            theme.GOLD if self.loja_aviso else theme.TEXT_DIM)
     def _colocar_predios(self) -> None:
         """Coloca a taverna longe da fogueira, e nao em cima dela.
 
@@ -735,38 +832,36 @@ class CityScene(Scene):
         return set(self.controls.actions_for(event.key))
 
     def _desenhar_equipamento(self, surface: pygame.Surface) -> None:
-        """A lista de conjuntos, sobre o inventario."""
+        """A escolha do conjunto, no painel EQUIPMENT do CraftPix."""
         if self.modo_equip is None:
             return
         conjuntos = equip_mod.todos_os_conjuntos()
         w, h = self.size
-        caixa = pygame.Rect(0, 0, min(420, w - 60), 70 + 34 * len(conjuntos))
-        caixa.center = (w // 2, h // 2)
-        pygame.draw.rect(surface, theme.BACKGROUND, caixa.inflate(12, 12))
-        pygame.draw.rect(surface, theme.HAIRLINE, caixa.inflate(12, 12), 1)
-        theme.text_tracked_at(
-            surface, "NAS MAOS", 17, (caixa.x, caixa.y - 26), theme.GOLD)
+        miolo = ui_arte.desenhar(
+            surface, ui_arte.PAINEL_EQUIPAMENTO,
+            (w // 2, h // 2), int(w * 0.34),
+        )
+        if miolo is None:
+            return
+        passo = max(16, min(24, miolo.height // len(conjuntos)))
+        y = miolo.y
         for i, c in enumerate(conjuntos):
-            y = caixa.y + i * 34
             marcado = i == self.index_equip
             cor = theme.GOLD if marcado else theme.TEXT
-            pygame.draw.rect(
-                surface, theme.BACKGROUND_SOFT,
-                pygame.Rect(caixa.x - 4, y - 4, caixa.width + 8, 30))
             if marcado:
                 pygame.draw.rect(
                     surface, theme.GOLD,
-                    pygame.Rect(caixa.x - 4, y - 4, 3, 30))
+                    pygame.Rect(miolo.x, y, miolo.width, passo - 2), 1)
             arte = assets.carregar_equipado(c.chave, escala=1)
             if arte is not None:
                 surface.blit(arte, arte.get_rect(
-                    midleft=(caixa.x + 4, y + 11)))
+                    midleft=(miolo.x + 2, y + passo // 2)))
             theme.text_tracked_at(
-                surface, c.rotulo, 15, (caixa.x + 76, y + 8), cor)
+                surface, c.rotulo, 13, (miolo.x + 30, y + 4), cor)
+            y += passo
         theme.text_tracked_at(
-            surface, "enter usa   esc volta", 13,
-            (caixa.x, caixa.bottom + 10), theme.TEXT_DIM)
-
+            surface, "enter usa   esc volta", 12,
+            (miolo.x, miolo.bottom + 6), theme.TEXT_DIM)
     def _desenhar_heroi_equipado(self, surface: pygame.Surface) -> None:
         """O heroi no mapa, com o que esta nas maos.
 
@@ -794,3 +889,15 @@ class CityScene(Scene):
             surface.blit(sprite, sprite.get_rect(
                 center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
                         int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+
+    def _fechar_outros_menus(self) -> None:
+        """So um menu por vez.
+
+        A loja abria POR CIMA do inventario, e os dois paineis
+        ficavam empilhados no meio da tela. Cada menu aqui e a unica
+        coisa que o jogador precisa ver enquanto ele esta aberto.
+        """
+        self.inventario_aberto = False
+        self.modo_equip = None
+        self.loja = None
+        self.loja_aviso = ""
