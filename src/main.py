@@ -23,6 +23,7 @@ from .city_scene import CityScene
 from .dungeon_scene import DungeonScene
 from .game_scene import GameScene
 from .road_scene import RoadScene
+from .tavern_scene import TavernScene
 from .input_map import InputMap
 from .options_screen import OptionsScreen
 from .scene_manager import SceneManager
@@ -81,6 +82,7 @@ def build_scene_manager(manager: SceneManager) -> SceneManager:
     manager.register("road", RoadScene)
     manager.register("city", CityScene)
     manager.register("combat", CombatScene)
+    manager.register("tavern", TavernScene)
     return manager
 
 

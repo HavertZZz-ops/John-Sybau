@@ -354,7 +354,11 @@ class CityScene(Scene):
                 self._avisar(f"{self.perto.nome}: {self.perto.fala}", 4.0)
                 self.falas_ouvidas.add(self.perto.nome)
                 if self.perto.nome == "Tao Anchieta":
-                    self._pernoitar()
+                    # o dono da taverna mora ATRAS do balcao. Antes
+                    # ele dormia o jogador na porta da rua; agora o E
+                    # na porta entra no salao e e la dentro que se
+                    # dorme, que e o que uma taverna e.
+                    self.manager.switch("tavern")
                     return
                 if self.perto.nome == "O Estranho":
                     self._fechar_outros_menus()

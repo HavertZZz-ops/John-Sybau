@@ -1650,6 +1650,87 @@ def check_menu_de_combate_da_arte() -> None:
     print("[ok] os slots ficam dentro do miolo do painel")
 
 
+def check_taverna() -> None:
+    """A taverna e um lugar de verdade: salao, dono, e a porta de volta.
+
+    O teste pega as tres coisas que quebraram nesta cena: a planta com
+    linhas de tamanhos diferentes (o desenho estourava em
+    `PLANTA[y + 1][x]`), o balcao desenhado sete vezes em fila (uma
+    peca grande e desenhada uma vez so, no canto) e o R que nao
+    abria o submenu aqui como nas outras cenas.
+    """
+    import pygame as _pg
+    from src import tavern_scene as ts
+
+    # 1. a planta e retangular, senao o jogador anda para fora
+    larguras = {len(l) for l in ts.PLANTA}
+    assert larguras == {len(ts.PLANTA[0])}, larguras
+    print(f"[ok] a planta e retangular: {len(ts.PLANTA[0])}x{len(ts.PLANTA)}")
+
+    # 2. a planta so usa letras que a tabela conhece, e a tabela so
+    #    aponta para pecas que existem no disco
+    desconhecidas = set("".join(ts.PLANTA)) - set(ts.PECAS)
+    assert not desconhecidas, f"letras sem peca: {sorted(desconhecidas)}"
+    ausentes = sorted(
+        letra for letra, (nome, _a, _c, _l) in ts.PECAS.items()
+        if ts.peca(nome) is None
+    )
+    assert not ausentes, f"pecas sem arquivo: {ausentes}"
+    print(f"[ok] as {len(ts.PECAS)} pecas da planta estao todas no disco")
+
+    # 3. o jogador comeca em chao e a porta e a saida
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["progresso"] = Progresso()
+    manager.ui_state["estado"] = Estado(vida=30, ouro=400)
+    manager.switch("tavern")
+    cena = manager.active
+    assert ts.amenities(int(cena.posicao.x // ts.TILE),
+                         int(cena.posicao.y // ts.TILE)), (
+        cena.posicao, "o jogador comecou dentro da parede")
+    manager.draw()
+    print("[ok] a taverna desenha com o jogador em pe no salao")
+
+    # 4. os menus funcionam aqui como nas outras tres cenas
+    cena.handle_event(keydown(_pg.K_q))
+    assert cena.inventario_aberto, "o Q nao abriu o inventario"
+    cena.handle_event(keydown(_pg.K_r))
+    assert cena.modo_equip is not None, "o R nao abriu o equipamento"
+    cena.handle_event(keydown(_pg.K_r))
+    assert cena.modo_equip is None, "o R nao fechou o equipamento"
+    cena.handle_event(keydown(_pg.K_q))
+    assert not cena.inventario_aberto, "o Q nao fechou o inventario"
+    print("[ok] Q e R funcionam dentro da taverna")
+
+    # 5. dormir e cobrar, e sem moeda nao se dorme
+    cena.posicao = pygame_math_copy(cena.tao)
+    cena.estado.ouro = 0
+    cena.handle_event(keydown(_pg.K_e))
+    assert cena.estado.ouro == 0, ("gastou sem moeda", cena.estado.ouro)
+    assert "dorme" in cena.avisar, cena.avisar
+    cena.estado.ouro = 999
+    vida_antes = cena.estado.vida
+    cena.handle_event(keydown(_pg.K_e))
+    assert cena.estado.ouro < 999, "nao cobrou a taverna"
+    assert cena.estado.vida >= vida_antes, (vida_antes, cena.estado.vida)
+    print(f"[ok] dormir cobra e cura: {vida_antes} -> {cena.estado.vida}")
+
+    # 6. o E na porta devolve o jogador para a aldeia
+    manager.switch("tavern")
+    cena = manager.active
+    cena.posicao = pygame_math_copy(cena.tao)
+    cena.posicao.y = ts.TILE * 9.4
+    cena.posicao.x = ts.TILE * 18.0
+    cena.handle_event(keydown(_pg.K_e))
+    assert manager.active is not cena, "a porta nao led para a aldeia"
+    print("[ok] a porta devolve o jogador para a aldeia")
+
+
+def pygame_math_copy(v):
+    import pygame as _pg
+    return _pg.Vector2(v)
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -1730,6 +1811,8 @@ def main() -> int:
     check_primeiro_inimigo_fraco()
     print()
     check_menu_de_combate_da_arte()
+    print()
+    check_taverna()
     print()
     check_dynamic_resolution_persists()
     print()

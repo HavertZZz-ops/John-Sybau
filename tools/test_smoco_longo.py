@@ -38,7 +38,7 @@ TECLAS_RISCO = [
     pygame.K_q, pygame.K_r, pygame.K_e,
 ]
 
-CENAS = ("dungeon", "road", "city", "combat", "title")
+CENAS = ("dungeon", "road", "city", "tavern", "combat", "title")
 
 
 def keydown(k):

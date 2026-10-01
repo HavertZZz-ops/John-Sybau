@@ -209,3 +209,57 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       posicao que faca sentido no mapa da masmorra e nao descrevem
       cena nenhuma, entao o gerenciador grava o progresso sozinho
       quando a cena ativa nao sabe se descrever.
+
+## Pacotes de arte externos importados
+
+- [x] #33  A arte de UI entra no inventario, loja, equipamento e combate
+      O pacote Craftpix entra em `assets/ui`, recolorido para a paleta
+      de pedra e ouro do jogo. Tres bugs de verdade apareceram:
+        - o R estava com o teste ANINHADO dentro do Q nas tres cenas, e
+          o submenu de equipamento nunca abria em lugar nenhum;
+        - `_desenhar_equipamento` estava definido e nunca chamado;
+        - o `Action_panel` nao tem painel nenhum: e folha solta sem a
+          grade que o detector procura. Foi fatiado na mao.
+      No combate o que cabe no slot e o ICONE, porque "HABILIDADE" com
+      13px passa de 70px e invadia o slot vizinho. O nome da acao
+      escolhida fica na faixa de cima.
+      A posicao dos slots da loja foi MEDIDA com `tools/medir_loja.py`,
+      nao estimada: a folha tem a grade dos slots em 10% da altura, e
+      nos 24% que serve ao inventario eles caem em cima do titulo.
+- [x] #34  O Q fecha o inventario, e o primeiro esqueleto e fraco
+      O Q chamava `_fechar_outros_menus()` e depois `not
+      inventario_aberto`: como o primeiro zera a flag, o not a
+      reabria, e o painel nunca saia de tela. A dica "q ou esc fecha"
+      embaixo dele era mentira. Agora `_fechar_outros_menus` aceita
+      `mantem_inventario`, que e o que o Q usa.
+      E o campo `fracos` do progresso, que existia desde o comeco e
+      ninguem lia: a sala 1 montava o mesmo esqueleto das outras, so
+      que com a placa de "aqui voce aprende". Agora vida 12, forca 3,
+      defesa 0 e barra lenta.
+- [x] #35  A taverna e um lugar de verdade             (este commit)
+      A taverna era um telhado na aldeia e um botao de pernoitar na
+      porta. Agora o E na porta entra no salao: balcao, adega, mesas,
+      estantes, relogio, lareira, poltronas, tapetes e o Tao Anchieta
+      atras do balcao. A planta e um mapa de texto de 23x11, e as
+      pecas sao recortadas por `tools/fatiar_interior.py` na grade de
+      16px em que o pacote foi desenhado.
+      Falar com o Tao na porta da rua e o que faz dormir; e ai que se
+      paga e se cura, igual antes.
+      Quatro coisas quebraram nesta cena e valem registro:
+        - a planta saiu com linhas de 21, 22 e 23 colunas, e o desenho
+          estourava em `PLANTA[y + 1][x]`. O script que escreve a
+          planta agora recusa gravar uma linha torta;
+        - a escala vinha da LARGURA da peca, e o balcao de 112px ficava
+          com um terco do tamanho da area que ocupa. Agora vem da grade
+          de arte;
+        - uma peca grande era desenhada uma vez por celula, e o balcao
+          de sete celulas aparecia sete vezes enfileirado;
+        - o teste de "esta e o canto da peca?" usava a altura anotada a
+          mao, e o tapete (altura 0, e chao) virava cinco tapetes
+          empilhados.
+- [x] #36  O E na estrada nao quebrava mais           (este commit)
+      `road_scene` usava `self._avisar_tempo`, atributo que nao existe
+      na cena: o nome do contador e `avisar_tempo`. O E na estrada
+      quebrava com AttributeError, e como a fuga da masmorra passa por
+      ali, o caminho para a aldeia estava cortado. Achado pelo fumaco
+      longo depois que a taverna entrou na lista de cenas.

@@ -162,7 +162,10 @@ class RoadScene(Scene):
             # a estrada e o caminho para a aldeia. Sem isso a fuga da
             # masmorra levaria a um lugar sem saida, e a aldeia ficaria
             # inalcancavel.
-            if self._avisar_tempo <= 0:
+            # o atributo e `avisar_tempo`, com o nome que a cena usa
+            # para o contador do aviso. `_avisar_tempo` nao existe aqui
+            # e o E na estrada quebrava com AttributeError.
+            if self.avisar_tempo <= 0:
                 self.manager.switch("city")
             return
         for direcao, (dx, dy) in DIRECOES.items():
