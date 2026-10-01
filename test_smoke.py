@@ -1131,6 +1131,215 @@ def check_dungeon_save_cycle() -> None:
 
 
 
+def check_orcamento_da_luta() -> None:
+    """A luta cabe no quadro de 60 FPS.
+
+    O jogador viu a cena de combate a 9 FPS. A causa era o halo da
+    tocha: um laco de pixel em Python, com um `set_at` por pixel, que
+    custava 50ms POR TOCHA — sessenta vezes por segundo, com duas
+    tochas. O quadro inteiro da cena levava 104ms.
+
+    O halo agora e um disco de circulos concentricos, desenhados em C
+    pelo pygame, e esta em cache por tamanho de raio. O quadro caiu
+    para menos de 4ms.
+
+    Este teste segura o numero, e nao a sensacao de "esta rapido": um
+    quadro de 30ms ainda parece bem numa foto, e a tela fica a 30 FPS
+    mesmo assim. E medido no pior caso — tres inimigos e o menu aberto
+    — e na config real do jogador, 1008x720.
+
+    O teste tambem segura que nenhuma parte sozinha domine o quadro: se
+    o cenario ou os lutadores crescerem, ha folga antes do jogo engasgar.
+    """
+    import time as _time
+    from src import arena as _arena
+
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["inimigos"] = 3
+    manager.ui_state["fracos"] = True
+    manager.switch("combat")
+    cena = manager.active
+    cena.on_enter()
+    w, h = cena.size
+    tela = pygame.Surface((w, h))
+
+    # aquece: a primeira chamada paga fonte, tileset e a montagem da arena
+    cena.update(1 / 60)
+    cena.draw(tela)
+    for _ in range(20):
+        cena.update(1 / 60)
+        cena.draw(tela)
+
+    def cronometra(funcao, quadros=90):
+        inicio = _time.perf_counter()
+        for _ in range(quadros):
+            funcao()
+        return (_time.perf_counter() - inicio) / quadros * 1000
+
+    orcamento = 1000.0 / 60.0
+    t_quadro = cronometra(lambda: (cena.update(1 / 60), cena.draw(tela)))
+
+    assert t_quadro < orcamento, (
+        f"o quadro leva {t_quadro:.2f} ms e o orcamento e {orcamento:.2f}: "
+        f"a luta roda a {1000.0 / t_quadro:.0f} FPS")
+    folga = orcamento - t_quadro
+    print(f"[ok] o quadro da luta leva {t_quadro:.2f} ms de {orcamento:.2f} "
+          f"(folga de {folga:.2f} ms, {1000.0 / t_quadro:.0f} FPS)")
+
+    t_cenario = cronometra(lambda: cena._desenhar_cenario(tela))
+    t_gente = cronometra(lambda: (cena._desenhar_inimigos(tela, w, h),
+                                  cena._desenhar_heroi(tela, w, h),
+                                  cena._desenhar_vez(tela, w, h)))
+    for nome, t in (("o cenario", t_cenario), ("os lutadores", t_gente)):
+        assert t < orcamento / 3, (
+            f"{nome} sozinho leva {t:.2f} ms, mais de um terco do quadro: "
+            f"uma parte crescendo ja engasga o jogo")
+    print(f"[ok] nenhuma parte domina: cenario {t_cenario:.2f} ms, "
+          f"lutadores {t_gente:.2f} ms")
+
+    # o halo do cache e muito mais barato que o halo montado
+    _arena.limpar_cache()
+    _arena.arena(w, h, cena.cenario_luta_arena, 0.0)
+    raio = int(h * _arena.ALCANCE_TOCHA * 0.92)
+    t_montar = cronometra(lambda: _arena._halo_cache.pop(raio, None)
+                          and _arena._halo(raio) or _arena._halo(raio), 200)
+    t_cache = cronometra(lambda: _arena._halo(raio), 200)
+    assert t_cache < t_montar / 5, (
+        f"o halo do cache ({t_cache * 1000:.1f}us) nao e mais barato "
+        f"que montado ({t_montar * 1000:.1f}us)")
+    print(f"[ok] o halo do cache e {t_montar / max(t_cache, 1e-9):.0f}x "
+          f"mais barato que montado")
+
+    # e o halo continua sendo uma luz, e nao um disco
+    fundo = _arena.arena(w, h, cena.cenario_luta_arena, 0.0)
+    tx, ty = _arena._tochas(w, h, int(h * _arena.HORIZONTE))[0]
+    perto = fundo.get_at((tx + 30, ty))
+    longe = fundo.get_at((w // 2, ty))
+    assert perto[0] > longe[0], (
+        "o halo nao clareia a parede perto da tocha")
+    print(f"[ok] o halo ainda clareia a parede "
+          f"({tuple(perto[:3])} perto contra {tuple(longe[:3])} longe)")
+
+
+def check_enfeites_da_luta() -> None:
+    """Os enfeites ficam nos cantos, e nunca em cima de um lutador.
+
+    A foto do jogador mostrou os objetos espalhados: um barril grande
+    na altura do quadril do boneco, entalado na perna dele, e outros
+    pelos cantos sem relacao com a parede nem uns com os outros.
+
+    A causa era usar a posicao do enfeite NO MAPA. A posicao vem de uma
+    sala grande vista de cima, com celulas de 48px, e espalhada na tela
+    ela punha um pote no meio do chao e um osso a meia tela. Um canto de
+    sala e objeto contra a parede, em grupo, e nao em qualquer lugar.
+
+    Aqui o teste mede:
+
+      - ninguem no meio: o canto e medido contra a faixa dos lutadores;
+      - todo enfeite encostado numa parede lateral;
+      - nenhum enfeite em cima de outro;
+      - nenhum enfeite maior que o menor lutador;
+      - cada enfeite com sombra, que e o que gruda o objeto no chao;
+      - e, pela posicao FINAL que a cena usou, nenhum enfeite cruzando
+        o retangulo de um lutador. Quando o canto esta ocupado, o
+        objeto recua para tras do horizonte e encolhe.
+    """
+    from src import cenario as _cenario_mod
+    from src import cenarios as _cenarios
+    from src import dungeon_map as _dm
+
+    manager = _manager()
+    manager.ui_state.clear()
+    mapa = _dm.gerar_mapa(largura=24, altura=16, salas=2, semente=31)
+    manager.ui_state["cenario_luta"] = {
+        "tileset": "catacumbas_wang",
+        "sala": 1,
+        "enfeites": _cenario_mod.distribuir(mapa, quantos=12, semente=7),
+    }
+    manager.ui_state["inimigos"] = 3
+    manager.switch("combat")
+    cena = manager.active
+    cena.on_enter()
+    w, h = cena.size
+    tela = pygame.Surface((w, h))
+    for _ in range(20):
+        cena.update(1 / 60)
+        cena.draw(tela)
+
+    hz = cena._horizonte()
+    posto = list(cena._ultimos_enfeites)
+    assert posto, "nenhum enfeite foi posto na tela"
+    print(f"[ok] {len(posto)} enfeite(s) posto(s) na arena")
+
+    # 1. nenhum no meio: a faixa onde os lutadores ficam
+    primeiro = w * 0.28
+    ultimo = w * 0.86
+    for caixa, lado in posto:
+        centro = caixa.centerx
+        assert not (primeiro - 60 <= centro <= ultimo + 60), (
+            f"o enfeite em x={centro} esta na faixa dos lutadores "
+            f"({primeiro:.0f} a {ultimo:.0f})")
+    print(f"[ok] nenhum enfeite na faixa dos lutadores "
+          f"({primeiro:.0f} a {ultimo:.0f})")
+
+    # 2. todo enfeite encostado numa parede lateral
+    for caixa, lado in posto:
+        perto = min(caixa.centerx, w - caixa.centerx)
+        assert perto < w * 0.20, (
+            f"o enfeite em x={caixa.centerx} esta a {perto}px da parede: "
+            f"no meio da sala, nao em um canto")
+    print("[ok] todos os enfeites estao encostados numa parede lateral")
+
+    # 3. nenhum se sobrepoe a outro
+    for i in range(len(posto)):
+        for j in range(i + 1, len(posto)):
+            a, b = posto[i][0], posto[j][0]
+            assert not a.colliderect(b), (
+                f"os enfeites {i} e {j} se cruzam: {tuple(a)} e {tuple(b)}")
+    print("[ok] nenhum enfeite se sobrepoe a outro")
+
+    # 4. nenhum enfeite e maior que o menor lutador
+    alturas = []
+    for i, inimigo in enumerate(cena.batalha.inimigos):
+        quadros = cena._quadros_inimigo.get(id(inimigo), {})
+        lista = quadros.get("walk") or quadros.get("idle")
+        if not lista:
+            continue
+        _tras, encolhe = combat_scene_INIMIGO_ATRAS(i)
+        alturas.append(lista[0].get_height() * encolhe)
+    menor_lutador = min(alturas)
+    maior_enfeite = max(lado for _c, lado in posto)
+    assert maior_enfeite < menor_lutador, (
+        f"o enfeite ({maior_enfeite}px) e maior que o menor lutador "
+        f"({menor_lutador:.0f}px): ia esconder")
+    print(f"[ok] o maior enfeite ({maior_enfeite}px) e menor que o "
+          f"menor lutador ({menor_lutador:.0f}px)")
+
+    # 5. cada enfeite tem sombra: sem ela o objeto gruda na parede
+    for caixa, lado in posto:
+        sob = tela.get_at((caixa.centerx, caixa.bottom - 1))
+        longe = tela.get_at((w // 2, caixa.bottom - 1))
+        assert sob[0] < longe[0], (
+            f"o enfeite em x={caixa.centerx} nao tem sombra: "
+            f"{tuple(sob[:3])} contra {tuple(longe[:3])} do lado")
+    print("[ok] cada enfeite tem sombra: o objeto esta apoiado no chao")
+
+    # 6. e a posicao FINAL nao cruza nenhum lutador
+    magicos = cena._retangulos_dos_lutadores()
+    for caixa, lado in posto:
+        bate = [i for i, m in enumerate(magicos) if caixa.colliderect(m)]
+        assert not bate, (
+            f"o enfeite em {tuple(caixa)} cruza o lutador {bate}")
+    print(f"[ok] nenhum enfeite cruza nenhum dos {len(magicos)} lutadores")
+
+
+def combat_scene_INIMIGO_ATRAS(indice: int) -> tuple[float, float]:
+    """`(quanto sobe, quanto encolhe)` do inimigo na ordem da tela."""
+    from src.combat_scene import INIMIGO_ATRAS
+    return INIMIGO_ATRAS[indice % len(INIMIGO_ATRAS)]
+
+
 def check_turnos_regras() -> None:
     """As regras da luta por turnos: fila, ordem e o jogo parado.
 
@@ -2648,6 +2857,8 @@ def main() -> int:
     check_store_fallback()
     print()
     check_menu_items()
+    print()
+    check_enfeites_da_luta()
     print()
     check_turnos_regras()
     print()

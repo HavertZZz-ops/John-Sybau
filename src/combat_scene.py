@@ -117,6 +117,11 @@ class CombatScene(Scene):
         self._vinhete_cache: dict = {}
         # parede e chao da sala, por tileset e tamanho de tile
         self._parede_cache: dict = {}
+        # onde os enfeites foram posto na ULTIMA chamada. O canto pode
+        # estar ocupado por um lutador e o objeto recuar para tras do
+        # horizonte, entao quem precisa medir e a posicao final, e nao
+        # a do slot
+        self._ultimos_enfeites: list = []
 
     # ciclo de vida -------------------------------------------------
     def on_enter(self) -> None:
@@ -479,41 +484,157 @@ class CombatScene(Scene):
         from . import cenario as cenario_mod
 
         w, h = self.size
-        xs = [p[0] for p in enfeites]
-        ys = [p[1] for p in enfeites]
-        x0, x1 = min(xs), max(xs)
-        y0, y1 = min(ys), max(ys)
-        if x1 == x0 or y1 == y0:
-            return
 
-        # So uma PARTE dos enfeites entra, e so nos cantos. Mapear os
-        # vinte e seis numa faixa dava um palito atravessado na tela;
-        # e o meio e onde os lutadores ficam. Nos cantos, em duas
-        # profundidades, le como um canto de sala.
-        canto_esq, canto_dir = [], []
-        for i, p in enumerate(sorted(enfeites, key=lambda q: q[1])):
-            pos = (p[0] - x0) / (x1 - x0)
-            if pos < 0.42:
-                canto_esq.append(p)
-            elif pos > 0.58:
-                canto_dir.append(p)
-        escolhidos = canto_esq[-4:] + canto_dir[-4:]
+        # Onde cada enfeite pode ficar. E uma distribute, e nao a posicao
+        # dele no mapa.
+        #
+        # A posicao no mapa e a de um SALA grande vista de cima, com
+        # celulas de 48px. Espalhada na tela, ela punha um pote no meio
+        # do chao a tres pixels do boneco do jogador, e um osso no
+        # canto superior esquerdo a meia tela. A foto do jogador
+        # mostrou exatamente isso: objeitos soltos, sem relacao com
+        # ninguem, nenhum deles encostando na parede ou em outro.
+        #
+        # Um canto de sala e objeito CONTRA a parede, em grupo, e nao
+        # em qualquer lugar: e assim que o olho le um canto. Por isso as
+        # posicoes sao fixas e o enfeite vai para o chao delas.
+        self._slots_de_enfeite(cenario_mod, surface, horizonte)
 
-        for i, (cx, cy, nome) in enumerate(escolhidos):
-            pos = (cx - x0) / (x1 - x0)
-            # dentro de cada canto, duas fiadas: a de tras sobe e
-            # encolhe, a da frente fica na linha do chao
-            profundidade = i % 2
-            px = int(w * (0.04 + pos * 0.92))
-            if profundidade:
-                py = horizonte - int(h * 0.012)
-                lado = max(12, int(h * 0.040))
-            else:
-                py = horizonte + int(h * 0.045)
-                lado = max(15, int(h * 0.062))
-            arte = cenario_mod.carregar_enfeite(nome, lado)
-            if arte is not None:
-                surface.blit(arte, arte.get_rect(midbottom=(px, py)))
+    def _slots_de_enfeite(self, cena_mod, surface, horizonte: int) -> None:
+        """Os enfeites em cantos, encostados na parede e em grupo.
+
+        Os cantos sao as duas areas onde uma sala realmente tem coisa:
+        encostadas na parede lateral, e nao no meio, que e onde o jogo
+        acontece. Cada canto tem doisslots, um mais para tras e menor,
+        outro na linha do chao.
+        """
+        w, h = self.size
+        # as posicoes: perto da parede esquerda e da direita, na altura
+        # em que a parede encontra o chao
+        # Os cantos ficam entre a parede e o lutador mais proximo, e
+        # nao na borda da tela: o ultimo inimigo e a 86% da largura, e
+        # um enfeite a 86% ficava em cima dele.
+        # Um objeto por canto, encostado na parede.
+        #
+        # Eram dois por canto, e o da direita nao cabia: o ultimo
+        # inimigo e a 86% da largura, e o objeto de tras ficava a 89%,
+        # em cima do sprite dele. Empilhar dois enfeites no canto
+        # direito nao resolvia, porque o espaco entre a parede e o
+        # inimigo e estreito demais. Um por canto le como canto de sala
+        # e nao briga com ninguem.
+        cantos = (
+            # (x em fracao da largura, y em relacao ao horizonte, lado)
+            (0.075, -0.008, 0.058),
+            (0.955, -0.008, 0.058),
+        )
+        nomes = self._nomes_dos_enfeites()
+        # o enfeite vai para o chao do canto, mas NUNCA para o chao de
+        # um lutador. A posicao do heroi e dos inimigos e conhecida, e um
+        # objeto em cima de um deles e o que a foto do jogador mostrou
+        # do lado esquerdo: um barril grande na altura do quadril do
+        # boneco, entalado na perna dele.
+        #
+        # A checagem e por retangulo, nao por distancia: o objeto e
+        # grande (41px) e o lutador e estreito, e um objeto a 30px de
+        # centro ainda encosta.
+        MAGICOS = self._retangulos_dos_lutadores()
+        # a lista e das POSICOES DESTA CHAMADA. Sem limpar aqui, ela
+        # acumula um par por quadro, e quem le (o teste) ve dez vezes o
+        # mesmo objeto e nao sabe se houve um ou quatro.
+        self._ultimos_enfeites = []
+        for i, (fx, fy, flado) in enumerate(cantos):
+            if i >= len(nomes):
+                break
+            px = int(w * fx)
+            py = int(horizonte + h * fy)
+            lado = max(14, int(h * flado))
+            arte = cena_mod.carregar_enfeite(nomes[i], lado)
+            if arte is None:
+                continue
+            # Se o canto esta ocupado por um lutador, o objeto sobe para
+            # ATRAS da linha do chao: e onde a parede encontra o piso, e
+            # ninguem pisa. Encolhe junto, senao ele ainda invade o
+            # lutador.
+            #
+            # Subir sozinho nao resolvia: o objeto ficava na altura do
+            # peito do esqueleto, que e onde o sprite dele tambem esta.
+            # O que resolve e o objeto inteiro passar para tras da
+            # linha do horizonte.
+            if any(pygame.Rect(px - lado // 2, py - lado,
+                               lado, lado).colliderect(m) for m in MAGICOS):
+                lado = max(10, int(h * 0.034))
+                arte = cena_mod.carregar_enfeite(nomes[i], lado)
+                if arte is None:
+                    continue
+                py = int(horizonte - lado)
+                caixa = pygame.Rect(px - lado // 2, py - lado, lado, lado)
+                if any(caixa.colliderect(m) for m in MAGICOS):
+                    continue
+            # onde o enfeite foi realmente posto. O canto pode estar
+            # ocupado por um lutador e o objeto recuar para tras do
+            # horizonte, entao quem mede e a posicao FINAL, e nao a do
+            # slot
+            caixa = pygame.Rect(px - lado // 2, py - lado, lado, lado)
+            self._ultimos_enfeites.append((caixa, lado))
+
+            # a sombra do enfeite: e ela que gruda o objeto no chao.
+            # Sem ela o barril parece colado na parede
+            sombra = pygame.Surface((lado, max(3, lado // 4)),
+                                    pygame.SRCALPHA)
+            pygame.draw.ellipse(
+                sombra, (0, 0, 0, 80),
+                pygame.Rect(0, 0, lado, max(3, lado // 4)))
+            surface.blit(sombra, sombra.get_rect(
+                center=(px, py + 1)))
+            surface.blit(arte, arte.get_rect(midbottom=(px, py)))
+
+    def _retangulos_dos_lutadores(self) -> list[pygame.Rect]:
+        """Onde esta cada lutador, em retangulo, para nao colidir com ele.
+
+        A largura e a do sprite com uma margem, e nao a do boneco: e o
+        sprite inteiro que cobre o chao, e e o retangulo dele que a
+        arte do inimigo ocupa.
+        """
+        w, h = self.size
+        caixas: list[pygame.Rect] = []
+        arte_heroi = (self._quadros_heroi.get("idle") or [None])[0]
+        if arte_heroi is not None:
+            chao = int(h * (arena_mod.HORIZONTE + HEROI_A_FRENTE))
+            cx = int(w * HEROI_POS)
+            caixas.append(pygame.Rect(
+                cx - arte_heroi.get_width() // 2 - 4,
+                chao - arte_heroi.get_height(),
+                arte_heroi.get_width() + 8,
+                arte_heroi.get_height(),
+            ))
+        for i, inimigo in enumerate(self.batalha.inimigos):
+            quadros = self._quadros_inimigo.get(id(inimigo), {})
+            lista = quadros.get("walk") or quadros.get("idle")
+            if not lista:
+                continue
+            arte = lista[0]
+            tras, encolhe = INIMIGO_ATRAS[i % len(INIMIGO_ATRAS)]
+            larg = int(arte.get_width() * encolhe)
+            alt = int(arte.get_height() * encolhe)
+            cx = int(w * INIMIGO_X[i % len(INIMIGO_X)])
+            chao = int(h * arena_mod.HORIZONTE) + int(h * tras)
+            caixas.append(pygame.Rect(
+                cx - larg // 2 - 4, chao - alt, larg + 8, alt))
+        return caixas
+
+    def _nomes_dos_enfeites(self) -> list[str]:
+        """Os nomes dos enfeites que existem de fato na sala.
+
+        A ordem e a da propria lista de enfeites do mapa, e nao uma
+        escolha: um pote e um barril em qualquer canto le igual a uma
+        sala, e `osso_monte` num canto pequeno le como uma pilha.
+        """
+        enfeites = self.cenario_luta.get("enfeites") or []
+        vistos: list[str] = []
+        for _cx, _cy, nome in enfeites:
+            if nome not in vistos:
+                vistos.append(nome)
+        return vistos
 
     def _desenhar_cenario(self, surface: pygame.Surface) -> None:
         """A sala da luta: parede em fiadas, chao em perspectiva, tochas.
@@ -1034,6 +1155,10 @@ class CombatScene(Scene):
             surface, "qualquer tecla para voltar", 15,
             (w // 2, int(h * 0.36)), theme.HAIRLINE,
         )
+
+
+
+
 
 
 

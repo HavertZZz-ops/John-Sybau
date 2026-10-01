@@ -230,40 +230,50 @@ def _tochas(w: int, h: int, horizonte: int) -> list[tuple[int, int]]:
     ]
 
 
-def _brilho(surf: pygame.Surface, x: int, y: int, h: int, tempo: float) -> None:
-    """O halo quente da tocha, pulsando devagar."""
-    raio = int(h * ALCANCE_TOCHA)
-    # o pulso e o seno do tempo da cena: a chama treme, e e o unico
-    # movimento do fundo
-    pulso = 0.86 + 0.14 * (0.5 + 0.5 * _seno(tempo, 2.1))
-    r = max(8, int(raio * pulso))
-    # A luz e pintada numa superficie OPACA, sem canal alpha.
-    #
-    # `BLEND_RGBA_ADD` ignora o alpha: ele soma os canais RGB como
-    # vierem. Com uma superficie SRCALPHA cheia de (255, 176, 92) e
-    # alpha de 1 a 255, o pygame somava 255 no vermelho em TODO pixel do
-    # disco, e o halo virava branco chapado independente do alpha.
-    # Foi por isso que baixar o alfa nao resolveu nada, e foram tres
-    # tentativas antes de a causa aparecer.
-    #
-    # Aqui a cor E a luz: preto e ausencia de luz, e a cor quente e o
-    # maximo. `BLEND_RGB_ADD` soma exatamente o que esta escrito.
+# quantos tamanhos de halo existem em cache. O pulso da tocha muda o
+# raio a cada quadro, e sem cache cada quadro montava o halo do zero.
+# Sao poucos tamanhos: o raio vai de 0.86 a 1.0 do maximo, e o cache
+# guarda um halo a cada poucos pixels.
+_halo_cache: dict[int, pygame.Surface] = {}
+
+
+def _halo(r: int) -> pygame.Surface:
+    """O halo de uma tocha, com `r` de raio. Montado uma vez por tamanho.
+
+    O halo e um disco de luz radial. Montado com `set_at` pixel a pixel,
+    ele custava 50ms POR TOCHA, e a luta rodava a 9 FPS. Duas tochas, sessenta
+    quadros: era o quadro inteiro da cena.
+
+    O truque e o mesmo que a luz usa: a cor E a luz. Como o halo e
+    concentrico e radial, ele pode ser desenhado com circulos
+    concentricos, e cada circulo e um `draw.circle` em C — nao um laco
+    de pixel em Python. Do maior para o menor, cada circulo pinta por
+    cima do anterior, e o resultado e o perfil radial sem tocar em pixel
+    nenhum.
+
+    O `BLEND_RGB_ADD` soma o que esta escrito: preto e ausencia de luz.
+    (Com `BLEND_RGBA_ADD` o pygame IGNORA o alpha e soma os canais RGB
+    como vierem — foi por isso que o halo virava branco chapado.)
+    """
+    achado = _halo_cache.get(r)
+    if achado is not None:
+        return achado
+
     brilho = pygame.Surface((r * 2, r * 2))
-    for dy in range(-r, r):
-        for dx in range(-r, r):
-            d = (dx * dx + dy * dy) ** 0.5
-            if d > r:
-                brilho.set_at((dx + r, dy + r), (0, 0, 0))
-                continue
-            t = d / r
-            parcela = LUZ_TOCHA * (1.0 - t) ** 1.9 / 255.0
-            brilho.set_at((dx + r, dy + r), (
-                int(255 * parcela),
-                int(176 * parcela),
-                int(92 * parcela),
-            ))
-    # a chama por cima do halo: soma em cima da propria luz, e e ela
-    # que fica branca
+    for i in range(r, 0, -1):
+        t = i / r
+        parcela = LUZ_TOCHA * (1.0 - t) ** 1.9 / 255.0
+        pygame.draw.circle(
+            brilho,
+            (int(255 * parcela), int(176 * parcela), int(92 * parcela)),
+            (r, r), i,
+        )
+    _halo_cache[r] = brilho
+    return brilho
+
+
+def _chama(brilho: pygame.Surface, r: int) -> None:
+    """A chama no centro do halo: pequena e no maximo."""
     pygame.draw.rect(brilho, (226, 150, 60),
                      pygame.Rect(r - RAIO_TOCHA, r - RAIO_TOCHA - 3,
                                  RAIO_TOCHA * 2, RAIO_TOCHA * 2 + 3))
@@ -272,7 +282,27 @@ def _brilho(surf: pygame.Surface, x: int, y: int, h: int, tempo: float) -> None:
                                  RAIO_TOCHA * 2 - 2, RAIO_TOCHA * 2 + 1))
     pygame.draw.rect(brilho, (255, 255, 248),
                      pygame.Rect(r - 1, r - RAIO_TOCHA, 2, RAIO_TOCHA * 2))
+
+
+def _brilho(surf: pygame.Surface, x: int, y: int, h: int, tempo: float) -> None:
+    """O halo quente da tocha, pulsando devagar."""
+    raio = int(h * ALCANCE_TOCHA)
+    # o pulso e o seno do tempo da cena: a chama treme, e e o unico
+    # movimento do fundo
+    pulso = 0.86 + 0.14 * (0.5 + 0.5 * _seno(tempo, 2.1))
+    r = max(8, int(raio * pulso))
+    brilho = _halo(r)
     surf.blit(brilho, (x - r, y - r), special_flags=pygame.BLEND_RGB_ADD)
+    # a chama e desenhada por fora do halo, direto na tela: e pequena e
+    # nao muda de tamanho com o pulso, entao nao precisa estar no cache
+    pygame.draw.rect(surf, (226, 150, 60),
+                     pygame.Rect(x - RAIO_TOCHA, y - RAIO_TOCHA - 3,
+                                 RAIO_TOCHA * 2, RAIO_TOCHA * 2 + 3))
+    pygame.draw.rect(surf, (255, 244, 208),
+                     pygame.Rect(x - RAIO_TOCHA + 1, y - RAIO_TOCHA - 2,
+                                 RAIO_TOCHA * 2 - 2, RAIO_TOCHA * 2 + 1))
+    pygame.draw.rect(surf, (255, 255, 248),
+                     pygame.Rect(x - 1, y - RAIO_TOCHA, 2, RAIO_TOCHA * 2))
 
 
 def _seno(t: float, periodo: float) -> float:
@@ -335,6 +365,7 @@ def sombra_chao(surf: pygame.Surface, x: int, y: int,
 
 def limpar_cache() -> None:
     _cache.clear()
+    _halo_cache.clear()
 
 
 # `surf_cache` e o alvo das funcoes que pintam. Existe para nao passar a

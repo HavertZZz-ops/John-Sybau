@@ -425,3 +425,84 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       ate caber. O teste anda pela propriedade, e nao por lista de casos:
       para qualquer texto e qualquer largura o que volta cabe, e e
       prefixo do original. Cortar nao pode inventar nem reordenar nada.
+
+- [x] #48  A arena da luta                           (`3433beb`, este commit)
+      A luta acontecia sobre um retangulo liso com uma linha no meio:
+      parede chapada em cima, faixa preta embaixo, e um boneco em 22%
+      da altura da janela. Agora o fundo e `src/arena.py`:
+        - parede em fiadas, com a junta da propria arte do tileset. A
+          primeira versao acrescentava uma linha por fiada em cima da
+          peca, e a parede ganhou tarjas pretas atravessando a tela;
+        - chao em perspectiva: cada fiada de ladrilho e maior que a de
+          tras, e o ladrilho anda de fiada em fiada para nao ficar um
+          risco vertical;
+        - duas tochas nas laterais, com a luz somada na pedra.
+      O horizonte vem de `arena.HORIZONTE`, e a cena usa o mesmo numero
+      para ancorar os lutadores. Antes eram duas contas: o fundo cortava
+      em 0.58 e o lutador em 0.62, com o pe 29px dentro do chao.
+      Os inimigos ganharam profundidade: cada um mais atras e menor
+      que o anterior, e todos com sombra.
+
+      **O heroi da luta.** Ele saia com 160px de 720, e pior: era a
+      folha de animacao do pacote, com tres vezes a largura do corpo
+      porque a espada do golpe entra por cima. Recortado no box inteiro,
+      punha o personagem no terco esquerdo de um desenho largo, e o
+      retangulo media 180px para 47px de boneco: ele aparecia parecendo
+      uma caixa, e a sombra e a barra de vida mediam a caixa.
+      Agora o heroi da luta e o DESENHO EQUIPADO, o mesmo que anda no
+      mapa, e o golpe e esse desenho avancando em quatro passos. Erro
+      de proporcao medido: 0.5%.
+
+- [x] #49  A luta para de ser por tempo              (`3433beb`)
+      Era ATB, no estilo Chrono Trigger: todo mundo tinha uma barra que
+      enchia com o tempo e agia sozinho quando transbordava. A foto do
+      jogador mostrou o resultado: as barras como riscos dourados no
+      chao, com a etiqueta "TEMPO", sem dizer a que se referiam.
+      Agora e por turnos:
+        - fila por INICIATIVA, o mais rapido age primeiro;
+        - cada um age uma vez, e o jogo PARA enquanto o jogador escolhe;
+        - a ordem se repete a cada volta, com quem agiu por ultimo
+          depois. Sem isso, com velocidades iguais, o mesmo grupo batia
+          sempre primeiro e a briga ficava travada;
+        - um inimigo age, ha 0.45s de pausa, o proximo age.
+      `combat.Barra` sumiu, e com ela `velocidade_barra`, `custo_*` e o
+      gasto de tempo das acoes. O item continua caro: passar o turno
+      inteiro.
+      Na tela: no alto, "SUA VEZ" e a fila com uma seta em quem age.
+      Quem esta de vez ganha moldura dourada no nome. As barras sobre os
+      lutadores sao de VIDA, e ficam vermelhas quando alguem esta quase
+      caindo.
+
+- [x] #50  A luta deixa de rodar a 9 FPS              (este commit)
+      O jogador viu 9 FPS na cena de combate. Medido: 104ms por quadro,
+      onze vezes o orcamento de 16.67ms.
+      O gargalo era o halo da tocha: um laco de pixel em Python, com um
+      `set_at` por pixel, que custava 50ms POR TOCHA — sessenta vezes por
+      segundo, duas tochas. O quadro inteiro era isso.
+      O halo e concentrico e radial, entao pode ser desenhado com
+      circulos concentricos: `draw.circle` em C, nao um laco de pixel em
+      Python. E esta em cache por tamanho de raio, porque o pulso da
+      chama muda o raio a cada quadro.
+      Quadro agora: 3.9ms, com folga de 12.8ms. 257 FPS no pior caso,
+      tres inimigos e menu aberto.
+      Isso tambem explica por que o halo "estourava em branco" em tres
+      tentativas anteriores: `BLEND_RGBA_ADD` IGNORA o alpha e soma os
+      canais RGB como vierem. Com uma superficie SRCALPHA de
+      (255,176,92) e alpha de 1 a 255, somava 255 no vermelho em todo o
+      disco. Agora a cor E a luz, e o `BLEND_RGB_ADD` soma o que esta
+      escrito.
+
+- [x] #51  Os enfeites param de ficar espalhados     (este commit)
+      A foto do jogador mostrou um barril na altura do quadril do
+      boneco, entalado na perna dele, e outros objetos pelos cantos sem
+      relacao com a parede nem uns com os outros.
+      A causa era usar a posicao do enfeite NO MAPA. Ela vem de uma sala
+      grande vista de cima, com celulas de 48px; espalhada na tela, ela
+      punha um pote no meio do chao e um osso a meia tela. Um canto de
+      sala e objeto CONTRA a parede, em grupo.
+      Agora sao dois slots fixos, um em cada canto lateral. E, quando o
+      canto esta ocupado por um lutador, o objeto recua inteiro para
+      TRAS da linha do horizonte e encolhe: subir sozinho nao resolvia,
+      porque o objeto ficava na altura do peito do esqueleto, que e
+      onde o sprite dele tambem esta.
+      Cada enfeite ganhou sombra, que e o que gruda o objeto no chao.
