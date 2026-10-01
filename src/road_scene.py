@@ -249,7 +249,9 @@ class RoadScene(Scene):
 
     # --- desenho -----------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill(theme.BACKGROUND)
+        # o fundo e o material de fora, e nao o preto do tema: a estrada e
+        # mais estreita que a tela e a borda aparecia como buraco
+        surface.fill(rocha.BASE_DIA)
         tabela = _tabela()
         if tabela is None:
             theme.text_tracked_at(
@@ -277,7 +279,7 @@ class RoadScene(Scene):
                     # a parede e pedra, e nao a cor do fundo: a estrada
                     # ficava desenhada no meio de um buraco negro
                     surface.blit(
-                        rocha.celula(self.tile, x, y),
+                        rocha.celula(self.tile, x, y, rocha.BASE_DIA),
                         (x * self.tile + x_desenho, y * self.tile + y_desenho),
                     )
                     continue
@@ -306,19 +308,11 @@ class RoadScene(Scene):
         # a luz: mascara sobre a cena pronta. O mapa inteiro com a
         # mesma claridade e uma laje lisa; com a luz, o que esta longe
         # some e o que esta perto do heroi aparece.
-        _luz = luz.Luz()
-        _luz.add(
-            int(self.posicao.x - self.camera.x + self.size[0] // 2),
-            int(self.posicao.y - self.camera.y + self.size[1] // 2),
-            int(self.tile * 6.5), luz.LUZ_HEROI,
-        )
+        # DE DIA, como a aldeia: sem mascara de luz. A estrada ao sol
+        # escurecida num circulo em volta do heroi era a cena inteira
+        # apagada, com um anel de luz no meio de nada.
         if getattr(self, "fogueira_pos", None) is not None:
-            _luz.add(
-                int(self.fogueira_pos.x - self.camera.x + self.size[0] // 2),
-                int(self.fogueira_pos.y - self.camera.y + self.size[1] // 2),
-                int(self.tile * 8.5), luz.LUZ_FOGUEIRA,
-            )
-        _luz.aplicar(surface)
+            self._desenhar_fogueira(surface)
         self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E segue para a aldeia", 15,
@@ -488,5 +482,7 @@ class RoadScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
+
 
 

@@ -3140,11 +3140,63 @@ def check_parede_solida() -> None:
     tons_parede = {tuple(rocha.celula(LADO, x, y).get_at((3, 3)))
                    for x in range(20) for y in range(10)}
 
-    assert len(tons_dentro) == 1, f"a pedra ganhou textura: {sorted(tons_dentro)}"
-    assert len(tons_parede) == 1, f"a parede ganhou faixas: {sorted(tons_parede)}"
+    # A parede GANHOU fiada. O que este teste protege nao e a parede
+    # chapada: e a parede sem FAIXA. A falha de antes nao foi ter
+    # textura, foi a textura cair em faixa — e faixa aparece quando a
+    # diferenca de tom entre celulas e grande em RELACAO ao tom base.
+    # Nos tons de dia (104) o relevo de 6 e 5%: textura. Nos tons de
+    # noite (38) o mesmo relevo seria 15%: listra. E por isso que o
+    # teste mede a diferenca relativa, e nao a lista de tons.
+    base = rocha.BASE
+    assert rocha.BASE_DIA[0] > 2 * rocha.BASE[0], (
+        f"o tom de dia {rocha.BASE_DIA} tem de ser bem mais claro que o "
+        f"de noite {rocha.BASE}: e terra ao sol, nao rocha de caverna")
+
+    for nome, tom in (("noite", base), ("dia", rocha.BASE_DIA)):
+        esperado = {
+            tom,
+            tuple(max(0, c - rocha.relevo(tom)) for c in tom),
+            tuple(min(255, c + rocha.relevo(tom)) for c in tom),
+        }
+        alvo = (rocha.tile(LADO, tom) if nome == "noite"
+                else rocha.tile(LADO, tom))
+        vistos = {tuple(alvo.get_at((x, y))[:3])
+                  for x in range(LADO) for y in range(LADO)}
+        assert vistos <= esperado, (
+            f"a pedra de {nome} saiu dos tons previstos: {sorted(vistos)}")
+
+        # a diferenca entre a celula mais clara e a mais escura tem de
+        # ser uma fracao pequena do tom: e isso que separa textura de
+        # listra
+        celulas = [rocha.celula(LADO, x, y, tom).get_at((3, 3))[:3]
+                   for x in range(20) for y in range(10)]
+        # a faixa e a diferenca entre a celula mais clara e a mais
+        # escura. Mede-se UM canal: medir a diferenca entre os canais da
+        # propria cor contaria o contraste do tom, que e outra coisa
+        faixa = max(c[0] for c in celulas) - min(c[0] for c in celulas)
+        assert faixa <= 2 * rocha.relevo(tom), (
+            f"a parede de {nome} abriu faixa de {faixa} canais entre celulas")
+        assert faixa / max(1, tom[0]) < 0.12, (
+            f"a parede de {nome} tem {faixa} canais de faixa num tom de "
+            f"{tom[0]}: isso e listra, nao textura")
+
+    assert len(tons_dentro) == 3, (
+        f"a pedra deveria ter face, junta e topo de fiada: {sorted(tons_dentro)}")
+    # a parede tem fiada: um pixel solto nao prova nada, porque a junta
+    # vertical cai numa coluna que depende do hash da celula. O que
+    # prova e a superficie inteira de varias celulas juntas.
+    juntos = set()
+    for x in range(20):
+        for y in range(10):
+            c = rocha.celula(LADO, x, y, rocha.BASE_DIA)
+            juntos.update(tuple(c.get_at((px, py))[:3])
+                          for px in range(LADO) for py in range(LADO))
+    assert len(juntos) == 3, (
+        f"a parede de dia deveria ter face, junta e topo: {sorted(juntos)}")
     assert rocha.BASE[0] > theme.BACKGROUND[0], (
         f"a pedra {rocha.BASE} nao se distingue do fundo {theme.BACKGROUND}")
-    print(f"[ok] a parede e solida e chapada: {rocha.BASE} contra {theme.BACKGROUND}")
+    print(f"[ok] a parede tem fiada sem listra: {rocha.BASE} e "
+          f"{rocha.BASE_DIA} contra {theme.BACKGROUND}")
 
     # e a cena usa a pedra: um pixel da janela, no meio da parede da
     # aldeia, tem de ser a pedra e nao o fundo. Um teste so da cor nao
@@ -3160,7 +3212,7 @@ def check_parede_solida() -> None:
     encontrada = False
     for y in range(0, tela.get_height(), 4):
         for x in range(0, tela.get_width(), 4):
-            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE[:3]):
+            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE_DIA[:3]):
                 encontrada = True
                 break
         if encontrada:
@@ -3177,7 +3229,7 @@ def check_parede_solida() -> None:
     encontrada = False
     for y in range(0, tela.get_height(), 4):
         for x in range(0, tela.get_width(), 4):
-            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE[:3]):
+            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE_DIA[:3]):
                 encontrada = True
                 break
         if encontrada:
@@ -3307,6 +3359,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
 
 
 

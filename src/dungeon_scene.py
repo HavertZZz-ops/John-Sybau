@@ -33,6 +33,7 @@ from . import fogueira as fogueira_mod
 from . import itens as itens_mod
 from .area_title import AreaTitle
 from .dungeon_map import (
+    CHAO,
     PAREDE,
     Mapa,
     gerar_mapa,
@@ -282,6 +283,10 @@ class DungeonScene(Scene):
         super().__init__(manager)
         self.cenario = cenario or cenarios.primeiro()
         self._wang: wang.GradeWang | None = None
+        # as celulas de parede com tocha. None = ainda nao calculado; a
+        # lista e a mesma para o mapa inteiro, e recalcular a cada quadro
+        # seria varrer o mapa inteiro por quadro
+        self._tochas: list[tuple[int, int]] | None = None
         # o progresso da campanha vem do estado do gerenciador, que o
         # carrega do save. Sem ele a masmorra nao saberia em que sala
         # o jogador esta nem onde o chefe foi recambiado.
@@ -1241,6 +1246,10 @@ class DungeonScene(Scene):
         # uma laje marrom com luz igual em todo canto, e a fogueira era
         # so um desenho.
         self._aplicar_luz(surface)
+        # a chama das tochas vem DEPOIS do veu: desenhada antes, a
+        # mascara escurecia a propria chama e a tocha virava so um
+        # borrão de luz
+        self._desenhar_chamas(surface)
 
         if self.fase == "morrendo":
             # a tela escurece enquanto o corpo cai, e ja chega quase
@@ -1287,13 +1296,17 @@ class DungeonScene(Scene):
         """
         w, h = self.size
         mascara = luz.Luz()
-        # o heroi: uma tocha na mao. O raio cobre uns seis tiles.
-        mascara.add(
-            int(self.posicao.x - self.camera.x + w // 2),
-            int(self.posicao.y - self.camera.y + h // 2),
-            int(self.tile * 6.0),
-            luz.LUZ_HEROI,
-        )
+        # A masmorra e escura, e a luz dela vem das tochas da parede.
+        #
+        # NAO ha luz no heroi: ele caiu no mundo medieval sem nada, sem
+        # tocha na mao e sem lampiao. O escuro ao redor dele e o que o
+        # jogador tem de fato, e e assim que a masmorra tem clima.
+        #
+        # As tochas da parede sao o que torna a masmorra jogavel, e por
+        # isso precisam cobrir a tela: uma a cada 4 celulas de parede
+        # visivel, mais a fogueira, e nao sobra buraco preto.
+        for tx, ty in self._tochas_visiveis(*self._origem_do_desenho(), w, h):
+            mascara.add(tx, ty, int(self.tile * 5.0), luz.LUZ_TOCHA)
         # a fogueira: maior e mais quente, e e a unica luz parada da
         # sala — o jogador precisa poder achar o caminho de volta
         if self.fogueira_pos is not None:
@@ -1305,6 +1318,96 @@ class DungeonScene(Scene):
             )
         mascara.aplicar(surface)
         surface.blit(luz.vinhete(w, h), (0, 0))
+
+    # uma tocha a cada N celulas de parede. Medido no zoom: com 3 os
+    # focos se fundiam num continuo e nao dava para ver onde uma acabava
+    # e a outra comecava; com 4 o foco continua separado.
+    ESPACO_TOCHAS = 4
+
+    def _celulas_de_tocha(self) -> list[tuple[int, int]]:
+        """As celulas de parede que recebem tocha. Fixas por mapa.
+
+        A posicao sai do mapa, e nao da tela: a tocha esta na parede,
+        entao fica onde esta quando a camera se move, e o jogador ve a
+        mesma tocha quando volta. E o que faz a masmorra parecer um
+        lugar, e nao um efeito de luz que persegue o personagem.
+        """
+        if self._tochas is None:
+            saida: list[tuple[int, int]] = []
+            n = 0
+            for y in range(1, self.mapa.altura - 1):
+                for x in range(1, self.mapa.largura - 1):
+                    if self.mapa.em(x, y) != PAREDE:
+                        continue
+                    # so na parede que da para uma sala. Uma tocha
+                    # fechada dentro da rocha nao acende nada e so
+                    # gasta desenho.
+                    if not (
+                        self.mapa.em(x, y - 1) == CHAO
+                        or self.mapa.em(x, y + 1) == CHAO
+                        or self.mapa.em(x - 1, y) == CHAO
+                        or self.mapa.em(x + 1, y) == CHAO
+                    ):
+                        continue
+                    n += 1
+                    if n % self.ESPACO_TOCHAS == 0:
+                        saida.append((x, y))
+            self._tochas = saida
+        return self._tochas
+
+    def _origem_do_desenho(self) -> tuple[int, int]:
+        """O canto (0, 0) da tela em pixel de mapa.
+
+        E o mesmo deslocamento que `_desenhar_mapa` usa. As tochas
+        precisam dele para saber onde esta cada uma na tela, e fazer o
+        calculo em dois lugares e a forma de a tocha ficar um tile fora
+        do lugar quando um dos dois for ajustado.
+        """
+        w, h = self.size
+        return (
+            w // 2 - self.camera.x - self.tile // 2,
+            h // 2 - self.camera.y - self.tile // 2,
+        )
+
+    def _tochas_visiveis(
+        self, x_desenho: int, y_desenho: int, w: int, h: int
+    ) -> list[tuple[int, int]]:
+        """As tochas dentro da tela, em pixel de tela."""
+        visiveis: list[tuple[int, int]] = []
+        for cx, cy in self._celulas_de_tocha():
+            tx = cx * self.tile + x_desenho + self.tile // 2
+            ty = cy * self.tile + y_desenho + self.tile // 2
+            if (-self.tile <= tx < w + self.tile
+                    and -self.tile <= ty < h + self.tile):
+                visiveis.append((tx, ty))
+        return visiveis
+
+    def _desenhar_chamas(self, surface: pygame.Surface) -> None:
+        """A chama de cada tocha, DESENHADA DEPOIS da mascara.
+
+        A mascara de luz cuida do brilho em volta: ela clareia o chao e
+        a parede perto de cada tocha. A chama e o pixel art em si, e
+        precisa sair por cima do veu escuro senao ela tambem escurece e
+        some — e a tocha vira um borrão de luz sem chama nenhuma.
+
+        Por isso a chama nao e desenhada antes da mascara, como todo o
+        resto da cena.
+        """
+        for tx, ty in self._tochas_visiveis(
+            *self._origem_do_desenho(), self.size[0], self.size[1]
+        ):
+            pygame.draw.rect(
+                surface, (168, 96, 34),
+                pygame.Rect(tx - 2, ty - 10, 4, 12))
+            pygame.draw.rect(
+                surface, (226, 150, 60),
+                pygame.Rect(tx - 4, ty - 18, 8, 9))
+            pygame.draw.rect(
+                surface, (255, 244, 208),
+                pygame.Rect(tx - 2, ty - 15, 4, 5))
+            pygame.draw.rect(
+                surface, (255, 255, 248),
+                pygame.Rect(tx - 1, ty - 12, 2, 4))
 
     def _tela_para_mapa(self, ponto: tuple[int, int]) -> tuple[int, int]:
         """Converte coordenada de tela em coordenada de tile."""

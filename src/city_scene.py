@@ -163,6 +163,9 @@ class CityScene(Scene):
             largura=58, altura=34, salas=5, semente=777
         )
         self._wang: wang.GradeWang | None = None
+        # a caixa da aldeia desenhada, em celulas. None = ainda nao
+        # calculada; e um mapa, e nao muda com a camera
+        self._limites: tuple[int, int, int, int] | None = None
         self.progresso = manager.ui_state.get("progresso")
 
         self.direction = "sul"
@@ -467,11 +470,62 @@ class CityScene(Scene):
                     return False
         return True
 
+    def _limites_da_arte(self) -> tuple[int, int, int, int]:
+        """A caixa da aldeia desenhada, em celulas: x0, y0, x1, y1.
+
+        O mapa e maior que a tela, entao a camera solta deixava ver a
+        borda do mapa, e a borda do mapa nao tem arte: o resultado era
+        uma faixa preta em volta da aldeia. A dobra e que a aldeia e
+        cercada pelo proprio parapeito, entao o parapeito e a borda da
+        cena e o limite da camera.
+        """
+        if self._limites is not None:
+            return self._limites
+        x0 = y0 = 10**9
+        x1 = y1 = -1
+        for y in range(self.mapa.altura):
+            linha = self.mapa.celulas[y]
+            for x in range(self.mapa.largura):
+                # a celula vazia do gerador e a unica que nao e chao nem
+                # parede; e ela que fica preta
+                if linha[x] in (CHAO, PAREDE):
+                    if x < x0:
+                        x0 = x
+                    if x > x1:
+                        x1 = x
+                    if y < y0:
+                        y0 = y
+                    if y > y1:
+                        y1 = y
+        if x1 < 0:
+            x0, y0, x1, y1 = 0, 0, self.mapa.largura - 1, self.mapa.altura - 1
+        self._limites = (x0, y0, x1, y1)
+        return self._limites
+
     def _limitar_camera(self) -> None:
-        self.camera.x = max(0.0, min(
-            self.camera.x, self.mapa.largura * self.tile - self.size[0]))
-        self.camera.y = max(0.0, min(
-            self.camera.y, self.mapa.altura * self.tile - self.size[1]))
+        w, h = self.size
+        x0, y0, x1, y1 = self._limites_da_arte()
+
+        # `camera.x`/`camera.y` sao a celula do canto ESQUERDO SUPERIOR
+        # da tela, em pixel de mapa. Entao o limite e direto: a tela nao
+        # pode passar da arte, e nao tem metade de tela nestas contas.
+        esq = x0 * self.tile
+        dir_ = (x1 + 1) * self.tile - w
+        cima = y0 * self.tile
+        baixo = (y1 + 1) * self.tile - h
+
+        if esq > dir_:
+            # a aldeia e mais estreita que a tela: centraliza a arte, em
+            # vez de inverter os limites e deixar a camera pular de um
+            # lado para o outro
+            self.camera.x = (esq + dir_) // 2
+        else:
+            self.camera.x = max(esq, min(self.camera.x, dir_))
+
+        if cima > baixo:
+            self.camera.y = (cima + baixo) // 2
+        else:
+            self.camera.y = max(cima, min(self.camera.y, baixo))
 
     def update(self, dt: float) -> None:
         self.time += dt
@@ -493,7 +547,18 @@ class CityScene(Scene):
 
     # --- desenho -----------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill(theme.BACKGROUND)
+        # a camera e limitada aqui, e nao so quando o heroi anda: o
+        # limite depende so do tamanho da tela e da arte, entao ele e o
+        # mesmo a cada quadro. Se ficasse so no movimento, a aldeia
+        # apareceria com a faixa preta em volta assim que a cena fosse
+        # desenhada sem o jogador ter mexido — e foi assim que ela
+        # apareceu na foto.
+        self._limitar_camera()
+        # O fundo e o MESMO material da parede de fora, e nao o preto do
+        # tema. A aldeia e menor que a tela em configuracoes pequenas,
+        # e a camera centraliza a arte; com o preto, a aldeia ficava
+        # cercada de um retangulo vazio que lia como buraco.
+        surface.fill(rocha.BASE_DIA)
         tabela = _tabela()
         if tabela is None:
             theme.text_tracked_at(
@@ -525,7 +590,7 @@ class CityScene(Scene):
                 # arte faltando que o defeito se lia como bug.
                 if self.mapa.em(x, y) == PAREDE:
                     surface.blit(
-                        rocha.celula(self.tile, x, y),
+                        rocha.celula(self.tile, x, y, rocha.BASE_DIA),
                         (x * self.tile + x_desenho, y * self.tile + y_desenho),
                     )
                     continue
@@ -549,22 +614,11 @@ class CityScene(Scene):
         self._desenhar_fala(surface, w, h)
         self._desenhar_fogueira(surface)
         theme.text_tracked_at(surface, "ALDEIA", 17, (20, 20), theme.TEXT_DIM)
-        # a luz: mascara sobre a cena pronta. O mapa inteiro com a
-        # mesma claridade e uma laje lisa; com a luz, o que esta longe
-        # some e o que esta perto do heroi aparece.
-        _luz = luz.Luz()
-        _luz.add(
-            int(self.posicao.x - self.camera.x + self.size[0] // 2),
-            int(self.posicao.y - self.camera.y + self.size[1] // 2),
-            int(self.tile * 6.5), luz.LUZ_HEROI,
-        )
-        if getattr(self, "fogueira_pos", None) is not None:
-            _luz.add(
-                int(self.fogueira_pos.x - self.camera.x + self.size[0] // 2),
-                int(self.fogueira_pos.y - self.camera.y + self.size[1] // 2),
-                int(self.tile * 8.5), luz.LUZ_FOGUEIRA,
-            )
-        _luz.aplicar(surface)
+        # Fora da masmorra e DE DIA. Nao ha mascara de luz aqui: a cena
+        # esta com a claridade do dia, e escurecer o entorno do heroi
+        # apagava a propria aldeia. A fogueira acima e desenhada como
+        # objeto, mas a luz dela e a claridade do dia, nao um foco no
+        # escuro.
         self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E para falar   esc para sair", 14,
@@ -1015,5 +1069,7 @@ class CityScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
+
 
 

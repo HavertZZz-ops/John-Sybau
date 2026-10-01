@@ -20,8 +20,14 @@ import pygame
 # o quanto o ambiente e escurecido. Nem preto — um preto puro faz a
 # borda da tela virar um buraco; 0.62 ainda da para ler a pedra longe.
 AMBIENTE = (74, 70, 84)
-# a cor da luz do heroi: tocha na mao, amarelada
-LUZ_HEROI = (255, 226, 170)
+# O heroi NAO carrega luz. Ele caiu no mundo medieval sem nada, entao
+# nao tem tocha na mao, lampiao ou magical: o round dele no escuro e o
+# que ele tem. Por isso nao existe cor de luz do heroi aqui.
+#
+# A luz da masmorra vem das tochas da parede e da fogueira, e so isso.
+# Fora da masmorra e de dia e nao ha mascara nenhuma.
+# a tocha da parede: amarelada, e menor que a fogueira
+LUZ_TOCHA = (255, 196, 120)
 # a fogueira e maior e mais quente
 LUZ_FOGUEIRA = (255, 186, 108)
 
@@ -51,7 +57,7 @@ class Luz:
         self.ponto_de_luz: list[tuple[int, int, int, tuple[int, int, int]]] = []
 
     def add(self, x: int, y: int, raio: int,
-            cor: tuple[int, int, int] = LUZ_HEROI) -> None:
+            cor: tuple[int, int, int] = LUZ_TOCHA) -> None:
         self.ponto_de_luz.append((int(x), int(y), int(raio), cor))
 
     def aplicar(self, surface: pygame.Surface) -> None:
