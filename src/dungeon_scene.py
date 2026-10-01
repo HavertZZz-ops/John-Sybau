@@ -18,6 +18,7 @@ from . import (  # noqa: I001
     assets,
     luz,
     cenarios,
+    chao as chao_mod,
     coffin,
     settings,
     theme,
@@ -1365,6 +1366,11 @@ class DungeonScene(Scene):
                     _tile_pronto(chave, lado),
                     (x * self.tile + x_desenho, linha),
                 )
+                # detalhe espalhado no chao da masmorra
+                chao_mod.desenhar_celula(
+                    surface, _tile_pronto(chave, lado), self.tile,
+                    x * self.tile + x_desenho, linha, x, y,
+                )
 
         self._desenhar_sombras_das_paredes(surface, x_desenho, y_desenho)
         self._desenhar_luz(surface)
@@ -1843,4 +1849,5 @@ class DungeonScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
 

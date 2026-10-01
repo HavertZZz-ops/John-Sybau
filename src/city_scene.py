@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import animacao, assets, cenarios, luz, rocha, settings, theme, wang
+from . import animacao, assets, cenarios, chao as chao_mod, luz, rocha, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
 from . import estado as estado_mod
 from . import fogueira as fogueira_mod
@@ -530,9 +530,13 @@ class CityScene(Scene):
                     )
                     continue
                 chave, _img = self._wang.tile_e_chave(x, y)
-                surface.blit(
-                    _tile(chave, self.tile),
-                    (x * self.tile + x_desenho, y * self.tile + y_desenho),
+                pos = (x * self.tile + x_desenho, y * self.tile + y_desenho)
+                surface.blit(_tile(chave, self.tile), pos)
+                # detalhe espalhado no chao, para a peca repetida nao
+                # ler como papel de parede
+                chao_mod.desenhar_celula(
+                    surface, _tile(chave, self.tile), self.tile,
+                    pos[0], pos[1], x, y,
                 )
 
         self._desenhar_predios(surface, w, h, x_desenho, y_desenho)
@@ -1011,4 +1015,5 @@ class CityScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
 
