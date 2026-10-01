@@ -542,3 +542,46 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       A moral do teste: ele mediu coisas reais e passou mesmo com o
       defeito na tela. Um teste conta; a imagem ampliada diz se aquilo
       que foi contado se VE.
+
+- [x] #53  A colisao bate com o desenho             (este commit)
+      O jogador mostrou o heroi DENTRO da parede, com o corpo na pedra.
+      A colisao existia e tinha uma conta: um circulo de `tile // 6`,
+      8px num tile de 48, contra um desenho de 90px de largura. O heroi
+      parava com o CENTRO a uma parede e o corpo ficava do outro lado —
+      medido, 41% do desenho dentro da pedra.
+      Agora e a caixa dos PES do heroi, medida pelo desenho: a metade da
+      largura, e uma altura menor, porque o topo (cabeca, espada) pode
+      passar por cima da parede como num jogo de plataforma. Medido: 0px
+      do desenho dentro, andando e correndo.
+
+      Duas tentativas no meio, ambas com a intencao de "ser prudente" e
+      ambas piorando:
+        - 34% da arte dava 15px de meia: o desenho entrava 15px na
+          pedra. A fracao parecia pequena e era o oposto — o que entra
+          na parede e medido a partir do CENTRO do desenho, entao a
+          caixa precisa cobrir o desenho todo;
+        - a largura INTEIRA da arte como meia: o desenho entrava 135px,
+          150% dele. A conta da meia era o que estava errado.
+
+      **Um teste que mediu um defeito que nao existia.** A primeira
+      versao punha o heroi na celula vizinha da parede, que ja estava
+      dentro do alcance da colisao: ele nao andava um pixel, e a
+      medicao "via" 21px de invasao. Era a posicao que o proprio teste
+      tinha escolhido. Andando de LONGE, a invasao e 0px. Mudou a
+      conclusao duas vezes, e nenhuma das duas era do jogo.
+
+- [x] #54  O caixao e um objeto, e voce sai dele   (este commit)
+      O pedido do jogador: o caixao tem colisao de objeto, sincronizada
+      com os pixels dele, e o jogador nao atravessa.
+      A arte do caixao tem 40x56 na escala 1, e 120x168 na escala 3 do
+      jogador: 2,5 tiles de largura. E maior que a celula, e por isso
+      que o jogador acorda DENTRO do objeto. A caixa de colisao vem das
+      medidas da arte (`COFFIN_W` e `COFFIN_H`), e nao de uma fracao do
+      tile — o que bloqueia e o que se ve.
+
+      A consequencia obrigada: a saida tem de liberar o caixao. Sem
+      isso o jogador acorda preso na pedra, que e pior do que ele
+      atravessar a pedra por dois segundos. Em fase `saindo`, `morrendo`
+      e `acordando` o objeto nao bloqueia; em fase livre ele segura.
+      Testado nas duas direcoes: o jogador sai, e depois nao consegue
+      voltar por cima.

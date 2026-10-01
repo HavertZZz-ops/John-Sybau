@@ -1,4 +1,4 @@
-"""Primeiro cenario: as Catacumbas.
+﻿"""Primeiro cenario: as Catacumbas.
 
 O jogo abre com o heroi dentro de um caixao de pedra. A tampa range e
 desliza, ele sai andando, e o nome do lugar aparece no alto, do jeito
@@ -1053,35 +1053,144 @@ class DungeonScene(Scene):
         parede em diagonal: ele encosta na parede norte e nao sobe mais
         nem para o lado.
         """
-        raio = max(4, self.tile // 6)
-        novo = pos + delta
-
-        alvo = pygame.Vector2(novo.x, pos.y)
-        if not self._livre(alvo, raio):
+        alvo = pygame.Vector2(novo := pos + delta)
+        if not self._livre(alvo):
             alvo.x = pos.x
 
         alvo.y = novo.y
-        if not self._livre(alvo, raio):
+        if not self._livre(alvo):
             alvo.y = pos.y
         return alvo
 
-    def _livre(self, pos: pygame.Vector2, raio: int) -> bool:
-        """True se um circulo de raio `raio` nao cruza nenhuma parede.
+    def _pe_do_heroi(self) -> tuple[int, int]:
+        """A largura e a altura que o heroi ocupa NO CHAO.
+
+        A colisao usava um circulo de raio `tile // 6` — 8px num tile de
+        48. O desenho do heroi tem 90px de largura. O resultado era o que
+        o jogador viu: ele encostava com o CENTRO a uma parede e metade
+        do corpo ficava dentro da pedra. Medido, 59% da largura.
+
+        A medida aqui e a do SPRITE, nao uma fracao do tile: e o desenho
+        que o jogador ve que tem de caber, e ele muda com a escala das
+        opcoes. Um `tile // 6` fixo nao acompanha.
+
+        A altura e menor que a largura de proposito: o topo do desenho
+        (a cabeca, a espada) pode passar por cima da parede, como num
+        jogo de plataforma de verdade. O que nao entra no chao e o chao.
+        """
+        arte = assets.equipado_na_tela("punho", assets.get_sprite_scale())
+        if arte is None:
+            arte = pygame.Surface((self.tile // 2, self.tile // 2))
+        # O que e devolvido e a METADE: o raio em X e em Y do circulo
+        # que substitui a caixa.
+        #
+        # A metade tem de ser pelo menos a metade do desenho, senao o
+        # sprite entra na parede. Com `tile // 6` (8px) o desenho de
+        # 90px entrava 37px; com 0.34 da arte (30px) entrava 15px. A
+        # metade do desenho e o que para o corpo na borda.
+        #
+        # A altura e menor, de proposito: o topo (cabeca, espada) pode
+        # passar por cima da parede, como num jogo de plataforma. O que
+        # nao entra no chao e o chao.
+        meia_l = arte.get_width() // 2
+        meia_a = int(arte.get_height() * 0.30) // 2
+        return max(4, meia_l), max(4, meia_a)
+
+    def _livre(self, pos: pygame.Vector2, raio: int | None = None) -> bool:
+        """True se a caixa do heroi em `pos` nao cruza parede nem objeto.
 
         `pos` e em coordenadas de MAPA (pixels do mundo), nao de tela.
         Passar por `_tela_para_mapa` aqui descontaria a camera duas
         vezes e a colisao checaria tiles errados: o jogador andava
         atravessando parede e o teste pegava exatamente isso.
+
+        A caixa e a dos PÉS do heroi, e nao um circulo. E o que separa
+        a parede do desenho: com um circulo, metade do corpo entrava na
+        pedra; com a caixa dos pes, o corpo para na borda e o topo pode
+        passar por cima, como num jogo de plataforma.
+
+        O caixao e um OBJETO com colisao, e nao um tile de parede: o
+        jogador sai de dentro dele no comeco do jogo, entao a celula
+        dele e andavel, mas o OBJETO bloqueia. Sem isso o heroi andava
+        por cima do caixao e oSprite do caixao ficava no meio do
+        personagem.
         """
-        fx = int((pos.x - raio) // self.tile)
-        fy = int((pos.y - raio) // self.tile)
-        ax = int((pos.x + raio) // self.tile)
-        ay = int((pos.y + raio) // self.tile)
+        if raio is not None:
+            # o parametro antigo, em px de raio. Quem chama assim
+            # quer um circulo, e nao a caixa do heroi
+            fx = int((pos.x - raio) // self.tile)
+            fy = int((pos.y - raio) // self.tile)
+            ax = int((pos.x + raio) // self.tile)
+            ay = int((pos.y + raio) // self.tile)
+            for cy in range(min(fy, ay), max(fy, ay) + 1):
+                for cx in range(min(fx, ax), max(fx, ax) + 1):
+                    if self.mapa.em(cx, cy) == PAREDE:
+                        return False
+            return True
+
+        meia_l, meia_a = self._pe_do_heroi()
+        fx = int((pos.x - meia_l) // self.tile)
+        ax = int((pos.x + meia_l) // self.tile)
+        fy = int((pos.y - meia_a) // self.tile)
+        ay = int((pos.y + meia_a) // self.tile)
         for cy in range(min(fy, ay), max(fy, ay) + 1):
             for cx in range(min(fx, ax), max(fx, ax) + 1):
                 if self.mapa.em(cx, cy) == PAREDE:
                     return False
+
+        # o caixao: um objeto solido, do tamanho do desenho dele. A
+        # celula continua andavel (o jogador COMECA dentro dela), mas o
+        # objeto nao deixa passar por cima
+        if self._dentro_do_caixao(pos):
+            return False
         return True
+
+    def _caixa_do_caixao(self) -> pygame.Rect | None:
+        """O retangulo do caixao em pixels de mapa, ou None sem caixao.
+
+        A caixa e a do DESENHO, e nao a da celula: e a arte que diz
+        onde a pedra esta, e o que o jogador ve que tem de bloquear.
+        Ela e menor que a celula, senao o jogador nao sai de dentro dela
+        — que e o que acontece no comeco do jogo, quando ele acorda
+        DENTRO do caixao.
+        """
+        if self.mapa.caixao is None:
+            return None
+        cx, cy = self._centro_caixao()
+        # A caixa vem do DESENHO, e nao de uma fracao do tile: e a arte
+        # que diz onde a pedra esta. `COFFIN_W` e `COFFIN_H` sao as
+        # medidas do corpo desenhado por `coffin.draw_coffin`, e a
+        # ancora e o CENTRO (o desenho e pendurado no `center`).
+        #
+        # A caixa e menor que a celula, de proposito: no comeco do jogo
+        # o jogador acorda DENTRO do caixao, e uma caixa do tamanho da
+        # celula o prenderia la para sempre.
+        escala = assets.get_sprite_scale()
+        largura = coffin.COFFIN_W * escala
+        altura = coffin.COFFIN_H * escala
+        return pygame.Rect(cx - largura / 2, cy - altura / 2,
+                           largura, altura)
+
+    def _dentro_do_caixao(self, pos: pygame.Vector2) -> bool:
+        """Se o heroi esta sobre o desenho do caixao.
+
+        O pedido do jogador: o caixao tem colisao de objeto, e a
+        colisao esta sincronizada com os pixels dele. Aqui a caixa e a
+        mesma que o desenho usa, entao o que bloqueia e o que se ve.
+        """
+        # A saida do caixao nao e bloqueada: e o unico momento em que o
+        # jogador esta DENTRO do objeto, e ele esta subindo para fora.
+        # Sem esta liberacao o jogador acorda preso na pedra, que e
+        # pior do que ele atravessar a pedra por dois segundos.
+        if self.fase in ("saindo", "morrendo", "acordando"):
+            return False
+        caixa = self._caixa_do_caixao()
+        if caixa is None:
+            return False
+        meia_l, meia_a = self._pe_do_heroi()
+        pe = pygame.Rect(
+            pos.x - meia_l, pos.y - meia_a, meia_l * 2, meia_a * 2)
+        return pe.colliderect(caixa)
 
     # desenho -------------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
@@ -1734,3 +1843,4 @@ class DungeonScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+

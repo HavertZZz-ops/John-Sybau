@@ -1222,6 +1222,153 @@ def check_orcamento_da_luta() -> None:
           f"({tuple(perto[:3])} perto contra {tuple(longe[:3])} longe)")
 
 
+def check_colisao_da_masmorra() -> None:
+    """A colisao bate com o desenho do heroi, e o caixao e solido.
+
+    O jogador mostrou o heroi DENTRO da parede, com metade do corpo na
+    pedra. A colisao existia e tinha uma conta: um circulo de
+    `tile // 6` — 8px num tile de 48, contra um desenho de 90px de
+    largura. O heroi parava com o CENTRO a uma parede e o corpo inteiro
+    ficava do outro lado. Medido, 41% do desenho dentro da pedra.
+
+    Agora a e a caixa dos PÉS do heroi, medida pelo desenho: a metade da
+    largura, e uma altura menor, porque o topo (cabeca, espada) pode
+    passar por cima da parede como num jogo de plataforma.
+
+    E o caixao, que e um OBJETO e nao um tile: a arte dele e de 2,5
+    tiles de largura, entao o jogador acorda DENTRO do objeto. Por isso
+    a saida libera o caixao e, em fase livre, ele segura — sem ele o
+    jogador andava por cima da pedra.
+
+    O que se mede, e a cobertura, andando de LONGE: a primeira versao
+    do teste punha o heroi na celula vizinha da parede, que ja estava
+    dentro do alcance da colisao. Ele nao andava um pixel e a medicao
+    "via" um defeito de 21px que nao existia.
+    """
+    from src import assets as _assets
+
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["progresso"] = Progresso()
+    manager.switch("dungeon")
+    cena = manager.active
+    cena.on_enter()
+    cena.fase = "livre"
+    cena.moving = False
+    tile = cena.tile
+    meia_l, meia_a = cena._pe_do_heroi()
+    sprite = _assets.equipado_na_tela("punho", _assets.get_sprite_scale())
+
+    # 1. a caixa cobre a largura do desenho
+    antigo = tile // 6
+    dentro_antigo = sprite.get_width() / 2 - antigo
+    print(f"[ok] a conta antiga ({antigo}px) punha "
+          f"{dentro_antigo:.0f}px do desenho na pedra "
+          f"({dentro_antigo / sprite.get_width():.0%})")
+    assert meia_l >= sprite.get_width() / 2, (
+        f"a caixa ({meia_l}px) e menor que a meia do desenho "
+        f"({sprite.get_width() / 2}px): o heroi entra na parede")
+    print(f"[ok] a caixa ({meia_l}x{meia_a}px de meia) cobre o desenho "
+          f"de {sprite.get_width()}x{sprite.get_height()}px")
+
+    # 2. uma parede com espaco livre atras
+    alvo = None
+    for fy in range(2, cena.mapa.altura - 2):
+        for fx in range(6, cena.mapa.largura - 3):
+            if (cena.mapa.em(fx, fy) != "#"
+                    and cena.mapa.em(fx + 1, fy) == "#"
+                    and cena.mapa.em(fx, fy - 1) != "#"
+                    and cena.mapa.em(fx, fy + 1) != "#"):
+                alvo = (fx, fy)
+                break
+        if alvo:
+            break
+    assert alvo, "o mapa gerado nao tem parede para testar"
+    fx, fy = alvo
+    borda = (fx + 1) * tile
+
+    def anda_ate_a_parede(correndo: bool) -> float:
+        """De longe contra a parede: quanto o desenho invadiu."""
+        cena.posicao = pygame.Vector2((fx - 6) * tile + tile / 2,
+                                      fy * tile + tile / 2)
+        cena.direction = "leste"
+        cena.moving = True
+        cena.fase = "livre"
+        cena.andamento.correndo = correndo
+        for _ in range(900):
+            cena.update(1 / 60)
+        cena.andamento.correndo = False
+        return cena.posicao.x + sprite.get_width() / 2 - borda
+
+    # 3. andando e correndo: o desenho para na borda
+    for correndo, nome in ((False, "andando"), (True, "correndo")):
+        avanca = anda_ate_a_parede(correndo)
+        assert avanca <= 1, (
+            f"{nome}, o desenho avanca {avanca:.1f}px dentro da parede "
+            f"({avanca / sprite.get_width():.0%} do heroi na pedra)")
+        print(f"[ok] {nome}: o desenho para na borda ({avanca:.1f}px)")
+
+    # 4. a diagonal desliza e nunca entra
+    cantos = 0
+    entrou = 0
+    for gy in range(1, cena.mapa.altura - 1):
+        for gx in range(1, cena.mapa.largura - 1):
+            if cena.mapa.em(gx, gy) == "#":
+                continue
+            if not (cena.mapa.em(gx + 1, gy) == "#"
+                    and cena.mapa.em(gx, gy + 1) == "#"):
+                continue
+            cantos += 1
+            p = pygame.Vector2(cena.mapa.para_pixels(gx, gy, tile))
+            d = cena._sem_bater(p, pygame.Vector2(tile * 0.4, tile * 0.4))
+            if cena.mapa.em(int(d.x // tile), int(d.y // tile)) == "#":
+                entrou += 1
+    assert entrou == 0, (
+        f"a diagonal leva para dentro da parede em {entrou} de {cantos} "
+        f"cantos")
+    print(f"[ok] a diagonal desliza em {cantos} cantos, sem entrar")
+
+    # 5. o caixao e um objeto solido, e o jogador sai de dentro
+    cx_t, cy_t = cena.mapa.caixao
+    centro = cena.mapa.para_pixels(cx_t, cy_t, tile)
+    caixa = cena._caixa_do_caixao()
+    cena.fase = "livre"
+    dentro_livre = cena._dentro_do_caixao(pygame.Vector2(*centro))
+    cena.fase = "saindo"
+    dentro_saindo = cena._dentro_do_caixao(pygame.Vector2(*centro))
+    assert not dentro_saindo, (
+        "na fase 'saindo' o caixao bloqueia: o jogador acorda preso "
+        f"numa pedra de {caixa.width}x{caixa.height}px")
+    assert dentro_livre, "em fase livre o caixao nao bloqueia"
+    print(f"[ok] o caixao ({caixa.width}x{caixa.height}px) libera na "
+          f"saida e segura depois")
+
+    # 6. a saida real termina
+    cena.fase = "saindo"
+    cena.fase_tempo = 0.0
+    cena._saida_inicio = centro[1]
+    cena.posicao = pygame.Vector2(*centro)
+    cena.direction = "sul"
+    cena.moving = True
+    for _ in range(500):
+        cena.update(1 / 60)
+    assert cena.fase == "livre", (
+        f"a saida nao terminou: ficou em '{cena.fase}'")
+    print(f"[ok] o jogador sai do caixao e chega em '{cena.fase}'")
+
+    # 7. e do lado de fora, o caixao impede de voltar
+    cena.fase = "livre"
+    cena.posicao = pygame.Vector2(centro[0], centro[1] + tile * 0.9)
+    cena.direction = "norte"
+    cena.moving = True
+    for _ in range(300):
+        cena.update(1 / 60)
+    assert cena.posicao.y >= centro[1] + tile * 0.35, (
+        f"o jogador andou por cima do caixao: foi a y={cena.posicao.y:.0f} "
+        f"e o centro e {centro[1]:.0f}")
+    print(f"[ok] o caixao segura: ninguem anda por cima dele")
+
+
 def check_menu_do_combate() -> None:
     """O menu de combate tem a arte do pacote e icones legiveis.
 
@@ -3059,5 +3206,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
 
