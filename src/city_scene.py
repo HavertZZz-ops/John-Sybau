@@ -433,10 +433,39 @@ class CityScene(Scene):
                 self._limitar_camera()
                 return
 
+    def _pe_do_heroi(self) -> tuple[int, int]:
+        """A caixa dos PÉS do heroi, em pixels.
+
+        A mesma medida da masmorra, e pelo mesmo motivo: o que o olho ve
+        e o desenho de 90px, e a colisao que mede um ponto so deixa o
+        heroi com metade do corpo dentro da parede.
+        """
+        arte = assets.equipado_na_tela("punho", assets.get_sprite_scale())
+        if arte is None:
+            return self.tile // 2, self.tile // 2
+        return max(4, arte.get_width() // 2), max(4, arte.get_height() * 3 // 20)
+
     def _livre(self, ponto: pygame.Vector2) -> bool:
-        return self.mapa.andavel(
-            int(ponto.x // self.tile), int(ponto.y // self.tile)
-        )
+        """True se a caixa dos pes do heroi cabe inteira em chao andavel.
+
+        Antes era um ponto: o CENTRO do heroi em chao andavel, e nada
+        mais. O desenho tem 90px de largura, entao ele encostava com o
+        centro a uma parede e 45px do corpo ficavam na pedra.
+
+        A altura e menor de proposito — o topo (cabeca) passa por cima
+        da parede, como num jogo de plataforma. E a caixa e a mesma da
+        masmorra, para as tres cenas darem a mesma sensacao.
+        """
+        meia_l, meia_a = self._pe_do_heroi()
+        fx = int((ponto.x - meia_l) // self.tile)
+        ax = int((ponto.x + meia_l) // self.tile)
+        fy = int((ponto.y - meia_a) // self.tile)
+        ay = int((ponto.y + meia_a) // self.tile)
+        for cy in range(min(fy, ay), max(fy, ay) + 1):
+            for cx in range(min(fx, ax), max(fx, ax) + 1):
+                if not self.mapa.andavel(cx, cy):
+                    return False
+        return True
 
     def _limitar_camera(self) -> None:
         self.camera.x = max(0.0, min(

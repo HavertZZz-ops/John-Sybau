@@ -1222,6 +1222,107 @@ def check_orcamento_da_luta() -> None:
           f"({tuple(perto[:3])} perto contra {tuple(longe[:3])} longe)")
 
 
+def check_colisao_do_mundo() -> None:
+    """A aldeia, a estrada e a taverna tem a mesma caixa da masmorra.
+
+    A masmorra media um circulo de 8px contra um desenho de 90px. As
+    tres cenas de superficie eram PIORES: `_livre` recebia um ponto e
+    testava um ponto. O heroi so precisava que o CENTRO dele estivesse
+    em chao andavel, e metade do corpo ficava na pedra.
+
+    Agora as tres usam a caixa dos PES, a mesma medida da masmorra: a
+    metade da largura do desenho, e uma altura menor, porque o topo
+    (cabeca) passa por cima da parede como num jogo de plataforma.
+
+    O teste mede as duas coisas que importam: a caixa cobre a largura do
+    desenho, e o desenho para na borda da parede quando o heroi encosta.
+
+    Uma nota sobre o que NAO e defeito: num corredor de duas celulas
+    (96px) um corpo de 90px cabe parado mas nao da um passo inteiro. Com
+    Shift o passo e de 48px e ele nao anda. Isso e geometria correta, e um
+    teste que exigisse caminhada ali estaria medindo o corredor, e nao
+    a colisao.
+    """
+    from src import assets as _assets
+
+    manager = _manager()
+    manager.ui_state.clear()
+    sprite = _assets.equipado_na_tela("punho", _assets.get_sprite_scale())
+    meia = sprite.get_width() / 2
+
+    for nome in ("city", "road", "tavern"):
+        manager.switch(nome)
+        cena = manager.active
+        cena.on_enter()
+        tile = cena.tile
+
+        # 1. a caixa cobre a largura do desenho
+        meia_l, meia_a = cena._pe_do_heroi()
+        assert meia_l >= meia, (
+            f"{nome}: a caixa ({meia_l}px) e menor que a metade do "
+            f"desenho ({meia:.0f}px): o heroi entra na parede")
+        print(f"[ok] {nome}: a caixa dos pes ({meia_l}x{meia_a}px de meia) "
+              f"cobre o desenho de {sprite.get_width()}px")
+
+        # 2. o desenho para na borda: anda de longe contra uma parede
+        if nome == "tavern":
+            from src import tavern_scene as _ts
+            livre = _ts.amenities
+            grade = len(_ts.PLANTA[0])
+            linhas = len(_ts.PLANTA)
+            # o muro e duas celulas depois, e as tres linhas de baixo
+            # tambem tem de estar livres: e a regra da cena
+            mural = None
+            for cy in range(2, linhas - 4):
+                for cx in range(1, grade - 9):
+                    if (all(livre(cx + k, cy) for k in range(6))
+                            and not livre(cx + 6, cy)
+                            and all(livre(cx + k, cy + oy)
+                                    for k in range(6) for oy in range(3))):
+                        mural = (cx, cy)
+                        break
+                if mural:
+                    break
+            avanco = 6
+        else:
+            livre = cena.mapa.em
+            mural = None
+            for cy in range(2, cena.mapa.altura - 2):
+                for cx in range(2, cena.mapa.largura - 9):
+                    if (cena.mapa.em(cx, cy) != "#"
+                            and cena.mapa.em(cx + 1, cy) != "#"
+                            and cena.mapa.em(cx + 2, cy) == "#"):
+                        mural = (cx, cy)
+                        break
+                if mural:
+                    break
+            avanco = 2
+
+        if mural is None:
+            print(f"[ok] {nome}: sem parede isolada para medir "
+                  f"(o mapa e aberto demais)")
+            continue
+        mx, my = mural
+        borda = (mx + avanco) * tile
+
+        cena.posicao = pygame.Vector2(mx * tile + tile / 2,
+                                      my * tile + tile / 2)
+        cena.direction = "leste"
+        cena.moving = False
+        press(manager, pygame.K_RIGHT)
+        manager.update(1 / 60)
+        for _ in range(10):
+            press(manager, pygame.K_RIGHT)
+            manager.update(1 / 60)
+        invadiu = cena.posicao.x + meia - borda
+        print(f"[ok] {nome}: encostou em x={cena.posicao.x:.0f}, o desenho "
+              f"invadiu {invadiu:.1f}px")
+        assert invadiu <= 1, (
+            f"{nome}: o desenho avanca {invadiu:.1f}px dentro da parede "
+            f"({invadiu / sprite.get_width():.0%} do heroi)")
+        print(f"[ok] {nome}: o desenho para na borda ({invadiu:.1f}px)")
+
+
 def check_colisao_da_masmorra() -> None:
     """A colisao bate com o desenho do heroi, e o caixao e solido.
 
@@ -3206,6 +3307,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
 
 

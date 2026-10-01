@@ -203,10 +203,36 @@ class RoadScene(Scene):
             self.posicao = alvo
         self._limitar_camera()
 
+    def _pe_do_heroi(self) -> tuple[int, int]:
+        """A caixa dos PÉS do heroi, em pixels. A mesma da aldeia.
+
+        O que o olho ve e o desenho de 90px; medir so o centro deixa
+        metade do corpo dentro da parede.
+        """
+        arte = assets.equipado_na_tela("punho", assets.get_sprite_scale())
+        if arte is None:
+            return self.tile // 2, self.tile // 2
+        return (max(4, arte.get_width() // 2),
+                max(4, arte.get_height() * 3 // 20))
+
     def _livre(self, ponto: pygame.Vector2) -> bool:
-        x = int(ponto.x // self.tile)
-        y = int(ponto.y // self.tile)
-        return self.mapa.andavel(x, y)
+        """True se a caixa dos pes do heroi cabe inteira em chao andavel.
+
+        Antes era um ponto, e o heroi encostava com o centro a uma
+        parede deixando metade do corpo na pedra.
+        """
+        meia_l, meia_a = self._pe_do_heroi()
+        fx = int((ponto.x - meia_l) // self.tile)
+        ax = int((ponto.x + meia_l) // self.tile)
+        fy = int((ponto.y - meia_a) // self.tile)
+        ay = int((ponto.y + meia_a) // self.tile)
+        for cy in range(min(fy, ay), max(fy, ay) + 1):
+            for cx in range(min(fx, ax), max(fx, ax) + 1):
+                x = int(cx)
+                y = int(cy)
+                if not self.mapa.andavel(x, y):
+                    return False
+        return True
 
     def _limitar_camera(self) -> None:
         self.camera.x = max(0.0, min(

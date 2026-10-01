@@ -585,3 +585,27 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       e `acordando` o objeto nao bloqueia; em fase livre ele segura.
       Testado nas duas direcoes: o jogador sai, e depois nao consegue
       voltar por cima.
+
+- [x] #55  A colisao das outras tres cenas       (este commit)
+      A masmorra media um circulo de 8px contra um desenho de 90px. A
+      aldeia, a estrada e a taverna eram PIORES: `_livre` recebia um
+      ponto e testava um ponto. Bastava o CENTRO do heroi estar em chao
+      andavel, e metade do corpo ficava na pedra.
+
+      As tres usam agora a caixa dos PÉS, a mesma medida da masmorra: a
+      metade da largura do desenho, e uma altura menor, porque o topo
+      (cabeca) passa por cima da parede como num jogo de plataforma. A
+      caixa acompanha a escala das opcoes, entao mudar o tamanho do
+      sprite muda a colisao junto.
+
+      Na taverna o `_andar` foi reorganizado: ele testava uma celula e
+      as duas de baixo em um laco, e agora pede a caixa a
+      `_caminho_livre`, que e a mesma funcao que o caminho do meio usa.
+      O aviso de "caminho fechado" continua no mesmo lugar.
+
+      **O que parece defeito e geometria.** Num corredor de duas
+      celulas (96px) um corpo de 90px cabe parado mas nao da um passo
+      inteiro: com Shift, que e um passo de 48px, o heroi nao anda. Isso
+      esta certo — o corpo dele e quase do tamanho do corredor. O teste
+      passou a exigir so que ele ANDE, e o que a prova e que o desenho
+      dele para na borda.

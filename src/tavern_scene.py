@@ -223,13 +223,10 @@ class TavernScene(Scene):
         ):
             passo = TILE / 2
         alvo = self.posicao + pygame.Vector2(dx * passo, dy * passo)
-        cx = int(alvo.x // TILE)
-        cy = int(alvo.y // TILE)
-        # o rodape do movel e a celula de baixo dele, para nao atravessar
-        # uma estante de 3 celulas de altura pelo meio
-        for oy in range(0, 3):
-            if amenities(cx, cy + oy):
-                continue
+        # a caixa dos pes tem de caber: e o que impede o heroi de
+        # encostar com metade do corpo num movel. O aviso vem daqui
+        # para o jogador entender o que travou
+        if not self._caminho_livre(alvo):
             self._avisar("O caminho esta fechado.", 1.8)
             return
         self.posicao = alvo
@@ -237,10 +234,36 @@ class TavernScene(Scene):
         self._recarregar(NOME_DIRECAO[(dx, dy)])
 
     def _caminho_livre(self, ponto: pygame.Vector2) -> bool:
-        """Se a celula e as duas de baixo aceitam o heroi, como no destino."""
-        cx = int(ponto.x // TILE)
-        cy = int(ponto.y // TILE)
-        return all(amenities(cx, cy + oy) for oy in range(0, 3))
+        """Se a caixa dos pes do heroi cabe na planta da taverna.
+
+        Antes eram tres celulas, uma em cada `oy`: a mesma celula do
+        ponto, mais as duas de baixo. Um ponto so deixa o heroi com
+        metade do corpo na parede; a caixa tem a mesma medida da
+        masmorra e da aldeia, para as tres cenas darem a mesma
+        sensacao.
+
+        E o rodape do movel que importa: uma estante de tres celulas
+        de altura e barrada pela celula de baixo dela, entao a caixa
+        tem de ser testada contra as tres linhas de qualquer forma.
+        """
+        meia_l, meia_a = self._pe_do_heroi()
+        fx = int((ponto.x - meia_l) // TILE)
+        ax = int((ponto.x + meia_l) // TILE)
+        fy = int((ponto.y - meia_a) // TILE)
+        ay = int((ponto.y + meia_a) // TILE)
+        for cy in range(min(fy, ay), max(fy, ay) + 1):
+            for cx in range(min(fx, ax), max(fx, ax) + 1):
+                if not all(amenities(cx, cy + oy) for oy in range(0, 3)):
+                    return False
+        return True
+
+    def _pe_do_heroi(self) -> tuple[int, int]:
+        """A caixa dos PÉS do heroi, em pixels. A mesma da masmorra."""
+        arte = assets.equipado_na_tela("punho", assets.get_sprite_scale())
+        if arte is None:
+            return TILE // 2, TILE // 2
+        return (max(4, arte.get_width() // 2),
+                max(4, arte.get_height() * 3 // 20))
 
     def _dormir(self) -> None:
         """Dorme. Cobra, cura menos que a fogueira, e salva."""
