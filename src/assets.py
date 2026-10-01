@@ -264,6 +264,19 @@ def _escala_de(img: pygame.Surface, escala: int) -> pygame.Surface:
     return img if img.get_size() == alvo else pygame.transform.scale(img, alvo)
 
 
+def escala_de_luta(altura_janela: int) -> int:
+    """O enlarge dos lutadores, em funcao da altura da janela.
+
+    A arte nasce pequena: o heroi tem 40px de altura e o esqueleto 32.
+    Numa tela de 720p um lutador de 40px e um ponto losto no meio da
+    tela. Aqui o enlarge sai da janela — 720p pede 4, 1080p pede 6 — e
+    vale igual para o heroi e para os inimigos, para os dois ficarem na
+    mesma escala de tamanho.
+    """
+    escala = int(altura_janela) // 180
+    return max(3, min(8, escala))
+
+
 def carregar_equipado(conjunto: str, escala: int = 2) -> pygame.Surface | None:
     """O desenho do heroi com aquele conjunto nas maos."""
     if not EQUIP_DIR.is_dir():
@@ -546,7 +559,23 @@ FOE_DIR = settings.SPRITES_DIR / "inimigo"
 # variante mais fraca.
 FOE_GHOUL = FOE_DIR / "ghoul"
 FOE_SKELETON = FOE_DIR
-FOE_KINDS: Tuple[str, ...] = ("ghoul", "ghoul", "skeleton_5", "ghoul")
+# Os quatro inimigos SAO esqueletos, e nao ghouls. Duas razoes, e as
+# duas apareceram olhando a tela:
+#
+# 1. o corte do esqueleto estava em 16x32 numa folha de celulas 32x32,
+#    e cada quadro saia com o personagem pela metade — um manto roxo
+#    sem cabeca. Corrigido o corte (tools/import_sprites.py), os quatro
+#    esqueletos do pacote ficaram legiveis, um deles com chama;
+# 2. o ghoul e um cone creme de 20x32 que, ampliado na tela da luta,
+#    lia como um cogumelo. Nao e ruim, mas nao e o esqueleto que o
+#    jogo promete no nome do inimigo.
+#
+# O primeiro slot e o mais fraco (skeleton_5) e o ultimo e o de chama
+# (skeleton_8), que e o que o chefe usa.
+FOE_KINDS: Tuple[str, ...] = (
+    "skeleton_5", "skeleton_6", "skeleton_7", "skeleton_8",
+)
+FOE_CHEFE = "skeleton_8"
 FOE_STATES: Tuple[str, ...] = ("walk", "attack")
 FOE_BASE: Tuple[int, int] = (32, 64)
 
@@ -571,8 +600,19 @@ def load_foe(
     pasta = FOE_GHOUL if kind.startswith("ghoul") else FOE_SKELETON
     if not pasta.is_dir():
         return []
-    return carregar_animacao(
+    quadros = carregar_animacao(
         direction, "attack" if state == "attack" else "walk",
         box=box, scale=scale, prefixo=kind, pasta=pasta,
     )
+    if state == "attack" and not quadros:
+        # O ghoul so tem arte de caminhada. Sem este desvio o golpe
+        # dele saia com lista vazia e o inimigo ficava congelado no
+        # ultimo quadro de caminhada durante a animaacao inteira.
+        # A caminhada invertida e o movimento de levantar o braco, e
+        # le como preparo de golpe.
+        quadros = list(reversed(carregar_animacao(
+            direction, "walk", box=box, scale=scale,
+            prefixo=kind, pasta=pasta,
+        )))
+    return quadros
 

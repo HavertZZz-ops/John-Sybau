@@ -21,7 +21,7 @@ DT_FIXO = 1 / 60
 DANO_VIDA = 1.0
 
 # posicoes na tela (fracao), para o layout acompanhar a resolucao
-HEROI_POS = (0.30, 0.62)
+HEROI_POS = (0.30, 0.52)
 INIMIGO_X = (0.58, 0.72, 0.86)
 
 
@@ -69,6 +69,13 @@ class CombatScene(Scene):
         self._quadros_heroi: dict[str, list[pygame.Surface]] = {}
         self._quadros_efeito: list[pygame.Surface] = []
         self._quadros_inimigo: dict[str, dict[str, list[pygame.Surface]]] = {}
+        # o enlarge usado nesta luta, guardado para o desenho
+        self.escala_luta = assets.escala_de_luta(self.size[1])
+        # o tile do chao e o vinhete sao fixos: montados uma vez
+        # por tamanho de janela, senao a luta redesenha o cenario
+        # inteiro sessenta vezes por segundo
+        self._tile_cacheado: tuple = ()
+        self._vinhete_cache: dict = {}
 
     # ciclo de vida -------------------------------------------------
     def on_enter(self) -> None:
@@ -77,20 +84,34 @@ class CombatScene(Scene):
         self.index = 0
 
     def _carregar(self) -> None:
-        escala = assets.get_sprite_scale()
-        base = (assets.HERO_BASE[0] * 6, assets.HERO_BASE[1] * 6)
+        # O enlarge e o da LUTA, calculado pela janela, e nao o global
+        # das opcoes: com o global a arte de 40px de altura ficava com
+        # 40px numa tela de 720p. O mesmo valor vai para o heroi e para
+        # cada inimigo, senao os dois ficam de tamanhos diferentes.
+        escala = assets.escala_de_luta(self.size[1])
+        self.escala_luta = escala
+        box_heroi = (assets.HERO_BASE[0] * escala * 3,
+                     assets.HERO_BASE[1] * escala * 3)
         for estado in ("idle", "walk", "attack", "hit", "death"):
             self._quadros_heroi[estado] = assets.carregar_animacao(
-                "leste", estado, box=base, scale=escala
+                "leste", estado, box=box_heroi, scale=escala
             )
         # a espada do golpe e maior que o corpo: entra por cima
         self._quadros_efeito = assets.carregar_animacao(
-            "leste", "attack", box=(base[0] * 3, base[1] * 3), scale=escala
+            "leste", "attack", box=(box_heroi[0] * 2, box_heroi[1] * 2),
+            scale=escala,
         )
+        box_inimigo = (assets.FOE_BASE[0] * escala * 3,
+                       assets.FOE_BASE[1] * escala * 3)
         for i, inimigo in enumerate(self.batalha.inimigos):
-            kind = assets.FOE_KINDS[i % len(assets.FOE_KINDS)]
+            # o chefe usa o esqueleto de chama, que e a variante mais
+            # agressiva do pacote; os outros pegam os quatro na ordem
+            kind = (assets.FOE_CHEFE if self.e_chefe
+                    else assets.FOE_KINDS[i % len(assets.FOE_KINDS)])
             self._quadros_inimigo[id(inimigo)] = {
-                estado: assets.load_foe(kind, "oeste", estado, scale=escala)
+                estado: assets.load_foe(
+                    kind, "oeste", estado, box=box_inimigo, scale=escala
+                )
                 for estado in ("walk", "attack")
             }
 
@@ -272,16 +293,98 @@ class CombatScene(Scene):
                 )
 
     # desenho -------------------------------------------------------
-    def draw(self, surface: pygame.Surface) -> None:
-        w, h = self.size
-        surface.fill(theme.BACKGROUND)
+    def _desenhar_cenario(self, surface: pygame.Surface) -> None:
+        """O chao da catacumba, escurecido, com as bordas fechadas.
 
-        # fundo: um chao escuro, para nao parecer a tela vazia
+        A luta acontecia sobre um retangulo liso com uma linha no meio.
+        Os lutadores ficavam parados no vazio e a tela lia como um
+        formulario em vez de uma masmorra.
+
+        O chao e o tileset que a masmorra ja usa, entao a luta acontece
+        no lugar certo. Sem o arquivo no disco cai no retangulo de
+        antes: a cena nunca pode depender de arte externa para existir.
+        """
+        w, h = self.size
+        horizonte = int(h * 0.60)
+        pygame.draw.rect(surface, theme.BACKGROUND, pygame.Rect(0, 0, w, h))
+
+        tile = self._tile_de_cenario()
+        if tile is not None:
+            lado = tile.get_width()
+            for y in range(-lado, horizonte + lado, lado):
+                pygame.draw.rect(
+                    surface, theme.BACKGROUND,
+                    pygame.Rect(0, y, w, lado),
+                )
+                surface.blit(tile, (0, y))
+            # o chao vai embora para os dois lados, e a repeticao dele
+            # sumiria na emenda se o tile fosse desenhado uma vez so
+            for x in range(lado, w, lado):
+                for y in range(-lado, horizonte + lado, lado):
+                    surface.blit(tile, (x, y))
+            escurecer = pygame.Surface((w, horizonte + lado), pygame.SRCALPHA)
+            escurecer.fill((8, 8, 12, 150))
+            surface.blit(escurecer, (0, 0))
+
         pygame.draw.rect(
             surface, theme.BACKGROUND_SOFT,
-            pygame.Rect(0, int(h * 0.72), w, h),
+            pygame.Rect(0, horizonte, w, h),
         )
-        theme.hairline(surface, 0, int(h * 0.72), w)
+        theme.hairline(surface, 0, horizonte, w)
+
+        # vinhete: escurece as bordas e puxa o olho para o centro da
+        # tela, que e onde a briga acontece
+        vinhete = self._vinhete(w, h)
+        if vinhete is not None:
+            surface.blit(vinhete, (0, 0))
+
+    def _tile_de_cenario(self) -> pygame.Surface | None:
+        """O tile do chao das catacumbas, ou None se nao houver.
+
+        Reaproveita a tabela Wang que a masmorra monta, para a luta
+        acontecer no mesmo chao do mapa e nao num limbo preto.
+        """
+        if self._tile_cacheado:
+            return self._tile_cacheado[0]
+        tile = None
+        try:
+            from . import cenarios, dungeon_scene
+
+            cenario = cenarios.POR_NOME.get("catacumbas")
+            if cenario is not None:
+                tabela = dungeon_scene._tabela_wang(cenario)
+                if tabela:
+                    # a chave (False, False, False, False) e o chao puro
+                    chao = tabela.get((False, False, False, False))
+                    if chao is None:
+                        chao = next(iter(tabela.values()))
+                    if chao is not None:
+                        tile = pygame.transform.scale(chao, (48, 48))
+        except Exception:  # noqa: BLE001 - o tileset e opcional
+            tile = None
+        self._tile_cacheado = (tile,)
+        return tile
+
+    def _vinhete(self, w: int, h: int) -> pygame.Surface | None:
+        """A borda escura, montada uma vez por tamanho de janela."""
+        chave = (w, h)
+        if chave in self._vinhete_cache:
+            return self._vinhete_cache[chave]
+        toldo = max(24, min(w, h) // 6)
+        v = pygame.Surface((w, h), pygame.SRCALPHA)
+        for i in range(toldo):
+            alfa = int(120 * (1.0 - i / toldo) ** 2)
+            pygame.draw.rect(
+                v, (0, 0, 0, alfa),
+                pygame.Rect(i, i, w - 2 * i, h - 2 * i),
+                1,
+            )
+        self._vinhete_cache[chave] = v
+        return v
+
+    def draw(self, surface: pygame.Surface) -> None:
+        w, h = self.size
+        self._desenhar_cenario(surface)
 
         self._desenhar_inimigos(surface, w, h)
         self._desenhar_heroi(surface, w, h)
@@ -389,7 +492,7 @@ class CombatScene(Scene):
             # deixava flutuando, porque o pe dele ficava no meio da
             # linha de chao. Pinar pelo pe e o que coloca todo mundo
             # apoiado no mesmo chao
-            chao = int(h * (0.66 + 0.07 * (i % 3)))
+            chao = int(h * (0.60 + 0.05 * (i % 3)))
             rect = sprite.get_rect(midbottom=(int(x), chao))
 
             if inimigo.vivo:

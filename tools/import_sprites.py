@@ -617,7 +617,12 @@ def importar_squeletos() -> int:
     FOE_DIR.mkdir(parents=True, exist_ok=True)
     # ordem das linhas na folha, de cima para baixo
     ORDEM = ("sul", "norte", "oeste", "leste")
-    FW, FH = 16, 32
+    # A folha do Skeletons Pack e de 192x256 com CELULAS DE 32x32: seis
+    # colunas por oito linhas, e cada linha e uma animacao (andar ou
+    # golpe) de uma direcao. O importador usava FW=16, o que dava doze
+    # colunas e cortava cada esqueleto ao meio — o que aparecia na tela
+    # era um manto roxo sem cabeca. Nao voltar para 16.
+    FW, FH = 32, 32
     total = 0
     try:
         for bruto in brutos:
@@ -632,22 +637,25 @@ def importar_squeletos() -> int:
                 topo = bloco * 2 * FH
                 if topo + 2 * FH > folha.get_height():
                     break
-                for estado, faixa, n in (
-                    ("walk", topo, 8),
-                    ("attack", topo + FH, 12),
+                for estado, faixa in (
+                    ("walk", topo),
+                    ("attack", topo + FH),
                 ):
                     if faixa + FH > folha.get_height():
                         break
                     quadros = []
-                    for i in range(n):
-                        x = i * FW
-                        if x + FW > folha.get_width():
-                            break
-                        quadros.append(
-                            folha.subsurface(
-                                pygame.Rect(x, faixa, FW, FH)
-                            ).copy()
-                        )
+                    # varre as colunas INTEIRAS da folha e descarta as
+                    # vazias: nem toda linha usa as seis colunas, e um
+                    # quadro transparente no meio da animacao faz o
+                    # personagem sumir por um instante
+                    colunas = folha.get_width() // FW
+                    for i in range(colunas):
+                        celula = folha.subsurface(
+                            pygame.Rect(i * FW, faixa, FW, FH)
+                        ).copy()
+                        if celula.get_bounding_rect().width <= 1:
+                            continue
+                        quadros.append(celula)
                     if not quadros:
                         continue
                     quadros = _recortar_e_centralizar(quadros)
