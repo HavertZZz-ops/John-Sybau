@@ -57,7 +57,16 @@ ALCANCE_LUTA = 46
 PASSOS_ATE_O_ESQUELETO = 14
 
 # fases da abertura, em segundos
+# quanto tempo o corpo leva para cair e a tela escurecer, antes do
+# caixao abrir de novo. Curto o bastante para nao encher, longo o
+# bastante para o jogador ver que morreu.
+DURACAO_MORTE = 1.9
+# quantos quadros a arte de queda tem. O pacote traz sete; se a
+# arte mudar, este numero e o unico lugar a acertar.
+QUADROS_MORTE = 6.0
+
 FASE_DURADA = {
+    "morrendo": DURACAO_MORTE,
     "acordando": 2.0,
     "abrindo": 1.4,
     "saindo": 1.6,
@@ -327,6 +336,10 @@ class DungeonScene(Scene):
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
         self.passos = 0
+        # o quadro da animacao de morte. A fase "morrendo" roda o
+        # `death` do pacote e so depois chama a abertura.
+        self.morte_quadro = 0
+        self.andamento = animacao.Passo()
         # o relogio do passo do heroi: o corpo sobe duas vezes por
         # ciclo, inclina e achata. Nao e o mesmo que o metodo
         # `_passo()`, que calcula o deslocamento em pixels.
@@ -556,11 +569,15 @@ class DungeonScene(Scene):
             return
 
         if resultado == "derrota":
+            # Nao e um teleporte. A fase "morrendo" roda a animacao de
+            # queda e escurece a tela; quando ela acaba, a abertura
+            # comeca normalmente. Antes o jogador aparecia no caixao no
+            # mesmo quadro da derrota, e lia como o jogo reiniciando.
             self._avisar("Voce acordou no caixao de novo.", 3.0)
-            self.fase = "acordando"
+            self.fase = "morrendo"
             self.fase_tempo = 0.0
-            self.posicao = pygame.Vector2(self._centro_caixao())
-            self.camera = pygame.Vector2(self.posicao)
+            self.morte_quadro = 0
+            self.moving = False
 
     # entrada -------------------------------------------------------
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -883,9 +900,26 @@ class DungeonScene(Scene):
         }[self.direction]
 
     def _atualizar_abertura(self, dt: float) -> None:
-        """Maquina de estados da saida do caixao."""
+        """Maquina de estados da saida do caixao e da morte."""
         self.fase_tempo += dt
         duracao = FASE_DURADA[self.fase]
+
+        if self.fase == "morrendo":
+            # o corpo cai e a tela escurece. O `death` do pacote tem
+            # sete quadros; a tela vai de clara a preta no mesmo tempo,
+            # para a imagem e o fundo chegarem juntos no fim.
+            # o quadro e o QUE DA TEMPO da fase, com uma curva: rapido
+            # no comeco, que e o tombo, e lento no fim, que e o corpo
+            # parado no chao. A 8fps a arte acabava em 0,75s de 1,9s e
+            # passava mais de um segundo parada com a tela ja preta.
+            avanco = min(1.0, self.fase_tempo / DURACAO_MORTE)
+            self.morte_quadro = QUADROS_MORTE * (1.0 - (1.0 - avanco) ** 2)
+            self.tampa = 1.0
+            if self.fase_tempo >= duracao:
+                self.fase = "acordando"
+                self.fase_tempo = 0.0
+                self.morte_quadro = 0
+            return
 
         if self.fase == "acordando":
             # o caixao treme no fim: e o aviso de que algo se moveu
@@ -985,7 +1019,7 @@ class DungeonScene(Scene):
         escala = assets.get_sprite_scale()
         cx, cy = self._centro_caixao()
 
-        heroi_visivel = self.fase in ("saindo", "livre")
+        heroi_visivel = self.fase in ("morrendo", "saindo", "livre")
         # com a tampa meio fechada ela passa NA FRENTE do heroi: e isso
         # que faz parecer que ele sai de dentro do caixao
         tampa_à_frente = self.tampa < 0.55
@@ -1009,7 +1043,14 @@ class DungeonScene(Scene):
                 tracking=3,
             )
 
-        if self.fase == "acordando" and self.fase_tempo < 0.8:
+        if self.fase == "morrendo":
+            # a tela escurece enquanto o corpo cai, e ja chega quase
+            # preta quando a abertura comeca. Sem isto a morte era um
+            # corte seco de uma cena para a outra e o jogador lia como
+            # o jogo reiniciando, e nao como ele morrendo.
+            escuro = int(150 * min(1.0, self.fase_tempo / DURACAO_MORTE))
+            theme.fade_surface(surface, escuro)
+        elif self.fase == "acordando" and self.fase_tempo < 0.8:
             theme.fade_surface(surface, int(255 * (1 - self.fase_tempo / 0.8)))
 
     def _tela_para_mapa(self, ponto: tuple[int, int]) -> tuple[int, int]:
@@ -1131,16 +1172,44 @@ class DungeonScene(Scene):
         )
 
     def _desenhar_heroi(self, surface: pygame.Surface) -> None:
-        """O heroi no mapa.
+        """O heroi no mapa: andando, parado, ou caindo.
 
-        O desenho do conjunto equipado manda em TODOS os estados, andando
-        ou parado. A animacao de caminhada vem do espadachim do pacote
-        de mercado, que e um personagem DIFERENTE: ele tem espada, e o
-        jogo comeca desarmado. Trocar de desenho a cada passo deixava o
-        heroi com espada andando e sem espada parado.
+        Andando e parado e o desenho do conjunto equipado, animado pelo
+        passo de `animacao`. A animacao de caminhada do pacote de
+        mercado traria uma espada na mao em todos os conjuntos, e o
+        jogador comeca desarmado.
+
+        Na fase "morrendo" o que vale e a arte de queda do pacote, que
+        e uma tira so e serve para qualquer direcao. Sem isto a fase
+        existia so no relogio: a tela escurecia e o heroi continuava em
+        pe.
         """
+        if self.fase == "morrendo" and self.morte_quadro > 0:
+            quadros = assets.load_animation(
+                "sul", "death", scale=assets.get_sprite_scale()
+            )
+            if quadros:
+                i = int(self.morte_quadro) % len(quadros)
+                sprite = quadros[i]
+                centro = (
+                    int(self.posicao.x - self.camera.x + self.size[0] // 2),
+                    int(self.posicao.y - self.camera.y + self.size[1] // 2),
+                )
+                rect = sprite.get_rect(midbottom=centro)
+                sombra = pygame.Surface(
+                    (sprite.get_width() * 3 // 4, max(4, sprite.get_height() // 8)),
+                    pygame.SRCALPHA,
+                )
+                pygame.draw.ellipse(
+                    sombra, (0, 0, 0, 80), sombra.get_rect()
+                )
+                surface.blit(
+                    sombra,
+                    sombra.get_rect(centerx=rect.centerx, bottom=rect.bottom),
+                )
+                surface.blit(sprite, rect)
+                return
         self._desenhar_heroi_equipado(surface)
-
     def _desenhar_item(self, surface: pygame.Surface) -> None:
         """A pocao no chao, com um brilho para o jogador achar.
 
