@@ -38,30 +38,29 @@ checa("ITEM" in acoes, f"a acao ITEM existe: {acoes}")
 checa("ATACAR" in acoes and "DEFENDER" in acoes and "FUGIR" in acoes,
       "usar item NAO substitui as outras acoes")
 
-# --- a pocao cura e custa a vez --------------------------------------
+# --- a pocao cura e passa a vez ---------------------------------------
+#
+# A luta e por turnos, entao a prova nao e mais "a barra baixou": e
+# "a vez passou". O item consome o turno INTEIRO, que e o que mantem a
+# pocao do jogo sem ser de graça: curar todo turno nao custaria nada.
 h = combat.novo_heroi()
 h.vida = 10
 b = combat.Batalha(heroi=h, inimigos=[combat.novo_esqueleto(0)])
-b.turno_heroi = True
-barra_antes = b.heroi.barra.valor
-# a barra comeca em zero, e gastar de zero nao muda nada: sem encher
-# antes, o teste passaria com o custo do item quebrado
-b.heroi.barra.valor = 60.0
-barra_antes = b.heroi.barra.valor
+# o heroi abre a fila pela iniciativa, nao por atributo: `turno_heroi`
+# virou propriedade, e nao se escreve mais nele
+assert b.turno_heroi, "o heroi deveria abrir a fila"
 b.item_escolhido = "pocao"
 ev = b.acao_do_heroi(combat.Acao.ITEM)
 
 checa(b.heroi.vida > 10, f"a pocao curou: {b.heroi.vida} de {h.vida_max}")
 checa(b.heroi.vida == 40, f"a pocao cura 30 de vida: ficou {b.heroi.vida}")
-checa(b.heroi.barra.valor < barra_antes,
-      f"usar item gasta a barra: {b.heroi.barra.valor} de {barra_antes}")
 checa(not b.turno_heroi, "usar item passa a vez")
 checa(any("curou" in e.texto for e in ev),
       f"o log diz que curou: {[e.texto for e in ev]}")
 
 # vida cheia: o item some do jogo, mas o turno NAO passa
 b2 = combat.Batalha(heroi=combat.novo_heroi(), inimigos=[combat.novo_esqueleto(0)])
-b2.turno_heroi = True
+assert b2.turno_heroi
 b2.item_escolhido = "pocao"
 ev2 = b2.acao_do_heroi(combat.Acao.ITEM)
 checa("vida cheia" in " ".join(e.texto for e in ev2),
@@ -70,7 +69,7 @@ checa(b2.turno_heroi, "com a vida cheia o turno continua sendo do jogador")
 
 # sem item escolhido, nada acontece
 b3 = combat.Batalha(heroi=combat.novo_heroi(), inimigos=[combat.novo_esqueleto(0)])
-b3.turno_heroi = True
+assert b3.turno_heroi
 antes = b3.heroi.vida
 b3.acao_do_heroi(combat.Acao.ITEM)
 checa(b3.heroi.vida == antes, "sem item escolhido nao cura ninguem")

@@ -269,12 +269,28 @@ def escala_de_luta(altura_janela: int) -> int:
 
     A arte nasce pequena: o heroi tem 40px de altura e o esqueleto 32.
     Numa tela de 720p um lutador de 40px e um ponto losto no meio da
-    tela. Aqui o enlarge sai da janela — 720p pede 4, 1080p pede 6 — e
+    tela. Aqui o enlarge sai da janela - 720p pede 4, 1080p pede 6 - e
     vale igual para o heroi e para os inimigos, para os dois ficarem na
     mesma escala de tamanho.
+
+    A conta e `altura / 180`, que em 720p da 4. Mas o enlarge e aplicado
+    sobre uma arte que ja foi multiplicada por TRES no box de corte (ver
+    `HERO_BASE` no `_carregar` da cena de combate), e o resultado saía com
+    160px: 22% da janela. Um lutador de luta ocupa um terco da altura.
+    Aqui a conta e a que o alvo pede: a janela dividida por QUATRO
+    caracteres de altura de lutador, e o enlarge sai do tanto que
+    aproxima esse alvo.
+
+    O alvo e medido em pixels de arte, e nao em fator: `escala_de_luta`
+    devolve um multiplo inteiro, que e o que o `smoothscale` precisa para
+    nao borrar a pixel art.
     """
-    escala = int(altura_janela) // 180
-    return max(3, min(8, escala))
+    # a altura do lutador como fracao da janela. 720p com 260px e 36%:
+    # o que o olho le como personagem de frente numa tela de briga
+    alvo = int(altura_janela) * 0.36
+    # a arte crua do heroi tem 40px de altura. O enlarge e o tanto que
+    # ela precisa crescer para chegar no alvo
+    return max(3, min(10, int(alvo / 40)))
 
 
 def carregar_equipado(conjunto: str, escala: int = 2) -> pygame.Surface | None:

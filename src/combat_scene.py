@@ -1,18 +1,27 @@
-"""Cena de combate por turnos, com medidor de tempo.
+﻿"""Cena de combate por turnos.
 
-O Chrono Trigger nao alterna turnos: todo mundo tem uma barra que enche
-sozinha, e age quando ela chega no fim. Aqui a tela mostra essas barras,
-o jogador escolhe o que fazer quando a vez dele chega, e o esqueleto age
-na dele sem perguntar.
+A luta e por turnos: ha uma fila, o mais rapido age primeiro, cada um age
+uma vez, e o jogo PARA enquanto o jogador escolhe. Nao ha cronometro e
+nao ha medidor de tempo na tela: a unica pergunta e "de quem e a vez", e
+ela esta escrita na tela em vez de ser deduzida de uma barra que corre.
 
-A cena cuida do desenho (barras, poses, numeros de dano) e do menu; as
-regras estao em `src/combat.py`.
+Antes era ATB, no estilo Chrono Trigger, com uma barra por lutador
+enquanto com o tempo. A foto do jogador mostrava as barras como riscos
+dourados soltos no chao, com a etiqueta "TEMPO", e nada dizendo de quem
+era a vez. O que a tela mostra agora e a VEZ, no alto, e a fila logo
+abaixo: quem age agora, e quem vem depois.
+
+A cena cuida do desenho (barras de vida, poses, numeros de dano) e do
+menu; as regras estao em `src/combat.py`.
 """
 from __future__ import annotations
 
+import math
+
 import pygame
 
-from . import assets, combat, itens, theme, ui_arte
+from . import arena as arena_mod
+from . import assets, cenarios, combat, equipamento as equip_mod, itens, theme, ui_arte
 from .scene import Scene
 
 DT_FIXO = 1 / 60
@@ -24,10 +33,24 @@ DANO_VIDA = 1.0
 # o heroi: eixo horizontal em fracao da largura. O vertical vem da
 # linha do chao, e o ancoramento e pelo pe.
 HEROI_POS = 0.28
-# a linha do chao da luta, em fracao da altura. Vale para o heroi e
-# para os inimigos: e o que faz os dois parecerem no mesmo plano.
-CHAO_LUTA = 0.62
+# A linha do chao da luta nao mora aqui. Ela e `arena.HORIZONTE`, e as
+# duas needles usarem numeros diferentes era o que fazia o boneco
+# boiar sobre a parede: o fundo cortava em 0.58 e o lutador era
+# ancorado em 0.62, e o pe dele caia 29px dentro do chao.
+#
+# Estas fracoes sao a POSICAO no chao, acima da linha. O primeiro
+# plano (o heroi) e o mais baixo e o maior; os inimigos ficam para tras,
+# cada um um pouco mais alto e menor. E assim que se le um grupo de
+# tres dimensoes numa tela de duas.
 INIMIGO_X = (0.58, 0.72, 0.86)
+# quanto cada inimigo sobe em relacao ao chao, e o quanto encolhe
+INIMIGO_ATRAS = ((0.010, 0.92), (0.026, 0.84), (0.042, 0.76))
+# quanto o heroi desce em relacao ao chao: ele e o mais perto
+HEROI_A_FRENTE = 0.075
+# a pausa entre um inimigo bater e o proximo bater. O golpe precisa ser
+# visto: sem a pausa, os tres inimigos da sala batem em tres quadros
+# seguidos e o log pisca sem ninguem ler.
+PAUSA_ENTRE_INIMIGOS = 0.45
 
 
 class CombatScene(Scene):
@@ -68,6 +91,8 @@ class CombatScene(Scene):
         self.anim_acao = ""          # "heroi" ou "inimigo"
         self.anim_quadro = 0
         self.dano_flutuante: list[tuple[float, float, str, int]] = []
+        # a pausa entre um inimigo e o proximo agirem
+        self._espera_turno = 0.0
         self.log: list[str] = []
         self.resultado = ""
 
@@ -76,6 +101,11 @@ class CombatScene(Scene):
         self._quadros_inimigo: dict[str, dict[str, list[pygame.Surface]]] = {}
         # o enlarge usado nesta luta, guardado para o desenho
         self.escala_luta = assets.escala_de_luta(self.size[1])
+        # o cenario da luta, montado por `arena`. A cena precisa do
+        # horizonte dele para ancorar os lutadores: se cada um usar a
+        # sua conta, o fundo e o boneco discordam da linha e o boneco
+        # fica boiando sobre a parede
+        self.cenario_luta_arena = cenarios.POR_NOME.get("catacumbas")
         # o tile do chao e o vinhete sao fixos: montados uma vez
         # por tamanho de janela, senao a luta redesenha o cenario
         # inteiro sessenta vezes por segundo
@@ -101,17 +131,61 @@ class CombatScene(Scene):
         # cada inimigo, senao os dois ficam de tamanhos diferentes.
         escala = assets.escala_de_luta(self.size[1])
         self.escala_luta = escala
-        box_heroi = (assets.HERO_BASE[0] * escala * 3,
-                     assets.HERO_BASE[1] * escala * 3)
-        for estado in ("idle", "walk", "attack", "hit", "death"):
-            self._quadros_heroi[estado] = assets.carregar_animacao(
-                "leste", estado, box=box_heroi, scale=escala
-            )
-        # a espada do golpe e maior que o corpo: entra por cima
-        self._quadros_efeito = assets.carregar_animacao(
-            "leste", "attack", box=(box_heroi[0] * 2, box_heroi[1] * 2),
-            scale=escala,
+
+        # O heroi da luta e o DESENHO EQUIPADO, o mesmo que anda no mapa,
+        # e nao a folha de animacao do pacote de mercado.
+        #
+        # A folha tem 3 vezes a largura do corpo, porque a espada do
+        # golpe entra por cima dela. Recortar o corpo para o box inteiro
+        # punha o personagem no terço esquerdo de um desenho largo, e o
+        # retangulo do sprite ficava com 180px de largura para 47px de
+        # personagem: o boneco saia parecendo uma caixa, e a sombra e a
+        # barra de vida mediam a caixa, nao o boneco.
+        #
+        # A arte do heroi e a mesma dos sprites do mapa, entao a
+        # consistencia vem de graca: o que o jogador ve na luta e
+        # exatamente o que ele ve na aldeia, so maior.
+        progresso = self.manager.ui_state.get("progresso")
+        conjunto = equip_mod.Conjunto(
+            progresso.arma if progresso else None,
+            progresso.escudo if progresso else None,
         )
+        arte_heroi = assets.equipado_na_tela(conjunto.chave, escala)
+        if arte_heroi is None:
+            arte_heroi = assets.equipado_na_tela("punho", escala)
+
+        # o golpe: o MESMO desenho, deslocado para a frente e para cima,
+        # como um golpe que avanca. E assim que o boneco ataca: o corpo
+        # vai para a direcao do alvo no quadro do golpe.
+        if arte_heroi is not None:
+            larg, alt = arte_heroi.get_size()
+            parado: list[pygame.Surface] = [arte_heroi]
+            golpe: list[pygame.Surface] = []
+            # quatro passos de ataque: avanca, bate, volta
+            for i, (dx, dy, esc) in enumerate((
+                (0.10, -0.02, 1.06), (0.20, -0.04, 1.10),
+                (0.14, -0.02, 1.05), (0.04, 0.00, 1.00),
+            )):
+                alvo = pygame.transform.scale(
+                    arte_heroi, (int(larg * esc), int(alt * esc))
+                )
+                c = pygame.Surface((larg + int(larg * 0.34), alt))
+                c.blit(alvo, (int(larg * dx), int(alt * dy)))
+                golpe.append(c)
+            self._quadros_heroi = {
+                "idle": parado,
+                "walk": parado,
+                "hit": parado,
+                "death": parado,
+                "attack": golpe,
+            }
+            # a espada do golpe entra por cima, maior que o corpo
+            arma = assets.carregar_animacao(
+                "leste", "attack",
+                box=(int(larg * 1.6), int(alt * 1.6)), scale=escala,
+            )
+            self._quadros_efeito = arma or []
+
         box_inimigo = (assets.FOE_BASE[0] * escala * 3,
                        assets.FOE_BASE[1] * escala * 3)
         for i, inimigo in enumerate(self.batalha.inimigos):
@@ -272,17 +346,34 @@ class CombatScene(Scene):
             self._atualizar_animacao(dt)
             return
 
-        eventos = self.batalha.avancar(dt)
+        # Um inimigo age por quadro. A fila e andada de um em um, para
+        # que o jogador veja QUEM bateu: com tres inimigos batendo no
+        # mesmo quadro, o log mostrava tres linhas de dano de uma vez e
+        # nao dava para saber de quem foi. Um por quadro e o que a
+        # leitura de "de quem e a vez" precisa.
+        self._espera_turno = max(0.0, self._espera_turno - dt)
+        eventos = self.batalha.avancar(dt) if self._espera_turno <= 0.0 else []
         if eventos:
             self.log = [e.texto for e in eventos]
             self._flutuar(eventos)
             if any(e.tipo == "dano" for e in eventos):
                 self.anim_acao = "inimigo"
                 self.anim_quadro = 0
+            # a pausa entre um inimigo e o seguinte: o golpe precisa ser
+            # visto antes do proximo. A espera so vale quando o proximo
+            # da fila tambem e um inimigo: se for o heroi, o jogo abre
+            # o menu na hora e nao ha nada para ver.
+            proximo = self.batalha.de_quem_e_a_vez
+            if (proximo is not None and proximo is not self.batalha.heroi
+                    and not self.batalha.concluida):
+                self._espera_turno = PAUSA_ENTRE_INIMIGOS
+            else:
+                self._espera_turno = 0.0
 
-        if self.batalha.turno_heroi and not self.menu_aberto:
-            self.menu_aberto = True
-            self.index = 0
+        if self._espera_turno <= 0.0:
+            if self.batalha.turno_heroi and not self.menu_aberto:
+                self.menu_aberto = True
+                self.index = 0
 
         self._atualizar_animacao(dt)
 
@@ -425,57 +516,48 @@ class CombatScene(Scene):
                 surface.blit(arte, arte.get_rect(midbottom=(px, py)))
 
     def _desenhar_cenario(self, surface: pygame.Surface) -> None:
-        """O chao da catacumba, escurecido, com as bordas fechadas.
+        """A sala da luta: parede em fiadas, chao em perspectiva, tochas.
 
-        A luta acontecia sobre um retangulo liso com uma linha no meio.
-        Os lutadores ficavam parados no vazio e a tela lia como um
-        formulario em vez de uma masmorra.
+        Este metodo era o responsavel por TUDO do fundo, e cada parte
+        estava errada a sua maneira:
 
-        O chao e o tileset que a masmorra ja usa, entao a luta acontece
-        no lugar certo. Sem o arquivo no disco cai no retangulo de
-        antes: a cena nunca pode depender de arte externa para existir.
+          - a parede usava a peca do tileset repetida em x e y, com a
+            peca inteira em cada posicao, e virava um papel de parede
+            com pontilhado;
+          - o chao era o ladrilho repetido em linhas de tamanho igual,
+            todas do mesmo tamanho, sem nenhuma fiada maior que a outra:
+            um retangulo, nao um chao;
+          - embaixo da linha do horizonte era desenhado
+            `theme.BACKGROUND_SOFT`, que e quase preto: uma faixa preta
+            de 300px embaixo dos lutadores, e o motivo de a foto do
+            jogador mostrar o boneco em cima de um vazio;
+          - o vinhete escurecia a tela toda em volta.
+
+        Agora o fundo e `arena.arena`, que monta a parede em fiadas com
+        a junta da propria arte, o chao em fiadas que crescem para a
+        frente, e a luz das tochas. O horizonte vem de la, e e o mesmo
+        que ancoreia os lutadores.
         """
         w, h = self.size
-        horizonte = int(h * CHAO_LUTA)
-        pygame.draw.rect(surface, theme.BACKGROUND, pygame.Rect(0, 0, w, h))
-
-        tile = self._tile_de_cenario()
-        if tile is not None:
-            lado = tile.get_width()
-            for y in range(-lado, horizonte + lado, lado):
-                pygame.draw.rect(
-                    surface, theme.BACKGROUND,
-                    pygame.Rect(0, y, w, lado),
-                )
-                surface.blit(tile, (0, y))
-            # o chao vai embora para os dois lados, e a repeticao dele
-            # sumiria na emenda se o tile fosse desenhado uma vez so
-            for x in range(lado, w, lado):
-                for y in range(-lado, horizonte + lado, lado):
-                    surface.blit(tile, (x, y))
-            escurecer = pygame.Surface((w, horizonte + lado), pygame.SRCALPHA)
-            escurecer.fill((8, 8, 12, 150))
-            surface.blit(escurecer, (0, 0))
-
-        self._desenhar_parede_da_sala(surface, horizonte)
-        # o rodape da parede: uma fiada de pedra mais clara na linha do
-        # chao. Sem ela a parede e o chao se misturam num so plano, e o
-        # fundo da tela volta a ser um retangulo de ladrilho.
-        rodape = pygame.Rect(0, horizonte - 6, w, 6)
-        pygame.draw.rect(surface, (58, 56, 66), rodape)
-        pygame.draw.rect(surface, (22, 21, 26), rodape, 1)
-        pygame.draw.rect(
-            surface, theme.BACKGROUND_SOFT,
-            pygame.Rect(0, horizonte, w, h),
+        horizonte = self._horizonte()
+        surface.blit(
+            arena_mod.arena(w, h, self.cenario_luta_arena, self.anim_tempo),
+            (0, 0),
         )
-        theme.hairline(surface, 0, horizonte, w)
         self._desenhar_enfeites_da_sala(surface, horizonte)
 
-        # vinhete: escurece as bordas e puxa o olho para o centro da
-        # tela, que e onde a briga acontece
         vinhete = self._vinhete(w, h)
         if vinhete is not None:
             surface.blit(vinhete, (0, 0))
+
+    def _horizonte(self) -> int:
+        """A linha do chao da luta, em pixels.
+
+        Vem da arena, e nao de uma conta da cena: as duas usando numeros
+        diferentes era a forma de o fundo e os lutadores discordarem da
+        linha, e o boneco ficar boiando sobre a parede.
+        """
+        return int(self.size[1] * arena_mod.HORIZONTE)
 
     def _tile_de_cenario(self) -> pygame.Surface | None:
         """O tile do chao das catacumbas, ou None se nao houver.
@@ -527,7 +609,7 @@ class CombatScene(Scene):
 
         self._desenhar_inimigos(surface, w, h)
         self._desenhar_heroi(surface, w, h)
-        self._desenhar_barras(surface, w, h)
+        self._desenhar_vez(surface, w, h)
         self._desenhar_dano(surface)
         self._desenhar_log(surface, w, h)
 
@@ -602,12 +684,16 @@ class CombatScene(Scene):
             return
         idx = int(self.anim_tempo * assets.fps_do_estado(estado)) % len(quadros)
         sprite = quadros[idx]
-        # pelo PE, na linha do chao, e nao pelo centro: o heroi era
-        # cortado na cintura pela faixa escura do rodape. E a mesma
-        # regra que o esqueleto ja usava no mapa.
-        chao = int(h * CHAO_LUTA)
+        # pelo PE, e o pe na linha do chao DA ARENA mais o quanto o
+        # heroi avanca para a camera. A versao anterior ancorava numa
+        # conta da cena (0.62) e o fundo cortava em 0.58: o boneco
+        # estava 29px dentro do chao, boiando sobre a parede.
+        chao = int(h * (arena_mod.HORIZONTE + HEROI_A_FRENTE))
         pos = (int(w * HEROI_POS), chao)
         rect = sprite.get_rect(midbottom=pos)
+        # a sombra vem antes do boneco, e no chao: e ela que diz que o
+        # personagem esta apoiado e nao colado na parede
+        arena_mod.sombra_chao(surface, rect.centerx, chao, rect.width)
         surface.blit(sprite, rect)
 
         # a espada entra por cima do corpo enquanto o golpe roda
@@ -629,16 +715,24 @@ class CombatScene(Scene):
                 continue
             idx = int(self.anim_tempo * assets.fps_do_estado(estado)) % len(lista)
             sprite = lista[idx]
+
             x = w * INIMIGO_X[i % len(INIMIGO_X)]
-            y = h * (0.50 + 0.07 * (i % 3))
-            # o esqueleto e mais alto que largo: o rect centrado o
-            # deixava flutuando, porque o pe dele ficava no meio da
-            # linha de chao. Pinar pelo pe e o que coloca todo mundo
-            # apoiado no mesmo chao
-            chao = int(h * CHAO_LUTA) + int(h * 0.05) * (i % 3)
+            # cada inimigo fica um pouco mais ATRAS na tela e um pouco
+            # MENOR. E a profundidade em duas dimensoes: sem isso os
+            # tres ficam na mesma linha, do mesmo tamanho, e a tela le
+            # como tres bonecos colados num retangulo.
+            tras, encolhe = INIMIGO_ATRAS[i % len(INIMIGO_ATRAS)]
+            if encolhe < 1.0:
+                sprite = pygame.transform.smoothscale(
+                    sprite,
+                    (max(1, int(sprite.get_width() * encolhe)),
+                     max(1, int(sprite.get_height() * encolhe))),
+                )
+            chao = int(h * arena_mod.HORIZONTE) + int(h * tras)
             rect = sprite.get_rect(midbottom=(int(x), chao))
 
             if inimigo.vivo:
+                arena_mod.sombra_chao(surface, rect.centerx, chao, rect.width)
                 surface.blit(sprite, rect)
                 self._desenhar_nome(surface, inimigo, rect)
                 continue
@@ -663,57 +757,127 @@ class CombatScene(Scene):
         A barra tem fundo escuro desenhado primeiro: sem ele, a parte
         vazia e tao escura quanto a tela e o que sobra e so um risco
         dourado, que parece um sublinhado em vez de medidor.
+
+        A barra e de VIDA, e nao de tempo: mede o quanto o lutador tem
+        de HP, nao o quanto falta para ele agir. A etiqueta "TEMPO" e a
+        barra de ATB que existiram antes sairam daqui; o que diz de quem
+        e a vez esta em `_desenhar_vez`, no alto da tela.
+
+        De quem e a vez o lutador recebe uma moldura dourada em volta
+        do nome. E o unico lugar da tela que se move quando muda a vez,
+        e e o que o jogador olha para saber o que fazer.
         """
+        de_vez = self.batalha.de_quem_e_a_vez is lutador
+        cor_nome = theme.GOLD if de_vez else theme.TEXT_DIM
         theme.text_tracked_at(
             surface, lutador.nome.upper(), 13,
-            (rect.centerx, rect.top - 30), theme.TEXT_DIM,
+            (rect.centerx, rect.top - 30), cor_nome,
         )
+        if de_vez:
+            # a moldura da vez: um quadrado aberto embaixo do nome,
+            # apontando para o lutador, e uma barra fina em volta
+            larg, alt = self._largura_do_nome(lutador.nome)
+            caixa = pygame.Rect(
+                rect.centerx - larg // 2 - 6, rect.top - 36,
+                larg + 12, 20,
+            )
+            pygame.draw.rect(surface, theme.GOLD, caixa, 1)
+
         largura = max(52, rect.width)
         barra = pygame.Rect(
-            rect.centerx - largura // 2, rect.top - 18, largura, 5
+            rect.centerx - largura // 2, rect.top - 12, largura, 6
         )
-        pygame.draw.rect(surface, (24, 22, 20), barra.inflate(2, 2))
-        pygame.draw.rect(surface, theme.HAIRLINE, barra)
+        pygame.draw.rect(surface, (18, 16, 15), barra.inflate(2, 2))
+        pygame.draw.rect(surface, (58, 52, 44), barra)
         cheio = pygame.Rect(
-            barra.x, barra.y, int(barra.width * lutador.fracao_vida), barra.height
+            barra.x, barra.y,
+            max(0, int(barra.width * lutador.fracao_vida)), barra.height,
         )
-        cor = theme.GOLD if lutador.vivo else theme.TEXT_DIM
+        # a barra e de vida: cheia e dourada, e fica vermelha quando o
+        # lutador esta perto de cair
+        if lutador.fracao_vida > 0.5:
+            cor = theme.GOLD
+        elif lutador.fracao_vida > 0.22:
+            cor = theme.lerp(theme.GOLD, (176, 62, 52), 0.6)
+        else:
+            cor = (196, 68, 56)
         pygame.draw.rect(surface, cor, cheio)
 
-    def _desenhar_barras(self, surface, w, h) -> None:
-        """Os medidores de tempo: a regra do combate, na tela."""
-        y = int(h * 0.80)
-        self._barra_de_tempo(
-            surface, pygame.Rect(int(w * 0.08), y, int(w * 0.34), 7),
-            self.batalha.heroi,
-        )
-        theme.text_tracked_at(
-            surface, "TEMPO", 12, (int(w * 0.08), y - 14), theme.HAIRLINE
-        )
+    def _largura_do_nome(self, nome: str) -> tuple[int, int]:
+        """`(largura, altura)` que o nome ocupa na fonte da tela."""
+        fonte = pygame.font.Font(None, 13)
+        larg, alt = fonte.size(nome.upper())
+        return larg + len(nome.upper()) * 2, alt
 
-        for i, inimigo in enumerate(self.batalha.inimigos_vivos()):
-            x = int(w * (0.52 + 0.16 * i))
-            self._barra_de_tempo(
-                surface, pygame.Rect(x, y, int(w * 0.13), 5), inimigo
-            )
+    def _desenhar_vez(self, surface, w, h) -> None:
+        """De quem e a vez, e a fila inteira, no alto da tela.
 
-    def _barra_de_tempo(self, surface, rect, lutador) -> None:
-        """Medidor de quem pode agir.
+        Este era o lugar das barras de tempo do ATB: a etiqueta "TEMPO"
+        e um medidor por lutador no rodape da tela. A foto do jogador
+        mostrou o resultado, dois riscos dourados no chao com nada
+        dizendo a que se referiam.
 
-        O medidor enche e transborda: enquanto o jogador nao escolhe, a
-        barra fica cheia e piscando, para ficar claro que o tempo parou
-        de andar e nao e a barra que travou.
+        A vez e um texto: "SUA VEZ" quando o heroi age, e o nome do
+        inimigo quando ele age. E a fila logo abaixo, em ordem, com o
+        que vem agora marcado. Uma tela de briga precisa responder a
+        "de quem e a vez" num olhar, e um medidor que corre nao
+        responde a nada.
         """
-        pygame.draw.rect(surface, theme.HAIRLINE, rect)
-        frac = 1.0 if lutador is self.batalha.heroi and self.batalha.turno_heroi \
-            else lutador.barra.fracao
-        cheio = pygame.Rect(rect.x, rect.y, int(rect.width * frac), rect.height)
-        cor = theme.GOLD
-        if lutador is self.batalha.heroi and self.batalha.turno_heroi:
-            # piscando enquanto aguarda a escolha
-            if int(self.anim_tempo * 4) % 2:
-                cor = theme.GOLD_BRIGHT
-        pygame.draw.rect(surface, cor, cheio)
+        de_quem = self.batalha.de_quem_e_a_vez
+        if self.batalha.concluida or de_quem is None:
+            return
+
+        topo = int(h * 0.055)
+        if de_quem is self.batalha.heroi:
+            texto, cor = "SUA VEZ", theme.GOLD
+        else:
+            texto, cor = f"VEZ DE {de_quem.nome.upper()}", theme.TEXT_DIM
+
+        larg_texto = self._largura_do_nome(texto)[0]
+        caixa = pygame.Rect(0, topo - 12, larg_texto + 28, 24)
+        caixa.centerx = w // 2
+        pygame.draw.rect(surface, (14, 13, 12), caixa)
+        pygame.draw.rect(surface, theme.HAIRLINE, caixa, 1)
+        theme.text_tracked_at(
+            surface, texto, 15,
+            (caixa.centerx - larg_texto // 2, caixa.centery), cor,
+        )
+
+        # a fila: quem age agora, e quem vem depois. So os vivos.
+        fila = [c for c in self.batalha.fila if c.vivo]
+        if len(fila) < 2:
+            return
+        y = caixa.bottom + 16
+        x = w // 2 - (len(fila) - 1) * (w * 0.09)
+        for i, c in enumerate(fila):
+            e_agora = i == 0
+            cor_fila = theme.GOLD if e_agora else theme.TEXT_DIM
+            cx = int(x + i * w * 0.18)
+            # a seta marca quem age: e o que diz "agora", sem texto
+            if e_agora:
+                pygame.draw.polygon(
+                    surface, theme.GOLD,
+                    [(cx, y - 8), (cx - 5, y - 16), (cx + 5, y - 16)],
+                )
+            pygame.draw.circle(
+                surface, cor_fila,
+                (cx, y + 4), 8, 0, 2,
+            )
+            pygame.draw.circle(
+                surface, cor_fila,
+                (cx, y + 4), 8, 0 if e_agora else 1,
+            )
+            # a fracao de vida dentro do circulo: da para ver quem esta
+            # machucado sem desviar o olho do meio da tela
+            pygame.draw.arc(
+                surface, theme.GOLD,
+                pygame.Rect(cx - 8, y - 4, 16, 16),
+                math.pi / 2, math.pi / 2 + math.tau * c.fracao_vida, 2,
+            )
+            theme.text_tracked_at(
+                surface, c.nome.split()[0].upper(), 10,
+                (cx, y + 22), cor_fila,
+            )
 
     def _desenhar_dano(self, surface) -> None:
         for x, y, texto, cor in self.dano_flutuante:
@@ -870,3 +1034,8 @@ class CombatScene(Scene):
             surface, "qualquer tecla para voltar", 15,
             (w // 2, int(h * 0.36)), theme.HAIRLINE,
         )
+
+
+
+
+

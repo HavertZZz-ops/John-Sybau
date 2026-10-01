@@ -1,4 +1,4 @@
-"""Teste do ciclo da fuga do chefe.
+﻿"""Teste do ciclo da fuga do chefe.
 
 O caminho que importa: o jogador chega na sala do chefe, luta, escolhe
 fugir, e isso o tira da masmorra. Sem isso, "fugir" era so um estado
@@ -40,13 +40,14 @@ checa(chefe.vida > fraco.vida * 3,
       f"o chefe tem muito mais vida que um esqueleto ({chefe.vida} vs {fraco.vida})")
 checa(chefe.defesa > fraco.defesa, "o chefe defende mais")
 checa(chefe.forca > fraco.forca * 2, "o chefe bate muito mais forte")
-checa(chefe.velocidade_barra > fraco.velocidade_barra,
-      "a barra do chefe enche mais rapido que a do esqueleto")
+checa(chefe.velocidade > fraco.velocidade, "o chefe age antes do esqueleto na fila")
 checa(chefe.nome == "O Cobrador", f"o chefe tem nome: {chefe.nome}")
 
 # --- fugir e uma opcao, nao um caminho obrigatorio -------------------
 b = combat.Batalha(heroi=combat.novo_heroi(), inimigos=[chefe])
-b.turno_heroi = True
+# a vez do heroi abre a fila pela iniciativa: o chefe e mais lento, entao
+# o heroi ja esta na vez dele sem precisar forcar nada
+assert b.turno_heroi, "o heroi deveria abrir a fila contra o chefe"
 acoes = [a.value for a in combat.Acao]
 checa("Fugir" in acoes, f"Fugir esta no menu: {acoes}")
 checa("Atacar" in acoes and "Defender" in acoes,
@@ -55,7 +56,7 @@ checa("Atacar" in acoes and "Defender" in acoes,
 # o heroi pode escolher lutar: atacar funciona normalmente
 b2 = combat.Batalha(heroi=combat.novo_heroi(),
                     inimigos=[combat.novo_chefe()])
-b2.turno_heroi = True
+assert b2.turno_heroi, "o heroi deveria abrir a fila"
 alvo = b2.inimigos[0]
 b2.acao_do_heroi(combat.Acao.ATACAR)
 checa(alvo.vida < alvo.vida_max, "atacar o chefe funciona: ele leva dano")
@@ -64,7 +65,7 @@ checa(not b2.fugiu, "atacar nao marca fuga")
 # e pode escolher fugir
 b3 = combat.Batalha(heroi=combat.novo_heroi(),
                     inimigos=[combat.novo_chefe()])
-b3.turno_heroi = True
+assert b3.turno_heroi, "o heroi deveria abrir a fila"
 vida_heroi = b3.heroi.vida
 alvo3 = b3.inimigos[0]
 vida_chefe = alvo3.vida
@@ -114,3 +115,5 @@ if FALHOU:
     print(f"\n{FALHOU} verificacao(oes) falharam")
     sys.exit(1)
 print("\nfuga do chefe: tudo certo")
+
+

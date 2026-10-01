@@ -1,4 +1,4 @@
-"""Teste headless: sobe o jogo com SDL dummy e desenha alguns frames.
+﻿"""Teste headless: sobe o jogo com SDL dummy e desenha alguns frames.
 
 Roda sem abrir janela, o que permite validar o jogo em CI ou por
 linha de comando:
@@ -1131,31 +1131,206 @@ def check_dungeon_save_cycle() -> None:
 
 
 
+def check_turnos_regras() -> None:
+    """As regras da luta por turnos: fila, ordem e o jogo parado.
+
+    A luta e por FILA: o mais rapido age primeiro, cada um age uma vez, e
+    o jogo PARA enquanto o jogador escolhe. O que este teste segura:
+
+      - nao existe medidor de tempo, nem em `combat` nem no combatente;
+      - a fila abre no mais rapido, e o heroi e mais rapido que o
+        esqueleto da sala 1;
+      - dez segundos parados na vez do jogador nao mudam ninguem;
+      - o heroi age uma vez e so: uma segunda acao fora da vez nao
+        passa;
+      - a ordem se repete a cada volta. Com velocidades iguais, quem
+        agiu por ultimo vai depois: senao o mesmo grupo bate sempre
+        primeiro e a briga fica com resultado travado;
+      - um morto sai da fila e nunca vira alvo.
+    """
+    from src import combat as _combat
+
+    assert not hasattr(_combat, "Barra"), "combat.Barra voltou"
+    lutador = _combat.novo_heroi()
+    assert not hasattr(lutador, "barra"), "o combatente tem barra de novo"
+    assert not hasattr(lutador, "velocidade_barra"), (
+        "a velocidade da barra voltou: a luta voltou a ser por tempo")
+    assert hasattr(lutador, "velocidade"), "o combatente precisa de iniciativa"
+    print("[ok] nao existe mais medidor de tempo no combate")
+
+    heroi = _combat.novo_heroi()
+    esq = _combat.novo_esqueleto(0)
+    assert heroi.velocidade > esq.velocidade, "o heroi devia ser mais rapido"
+    b = _combat.Batalha(heroi=heroi, inimigos=[esq])
+    assert b.fila[0] is heroi, f"a fila nao abre no heroi: {b.fila}"
+    assert b.de_quem_e_a_vez is heroi
+    print(f"[ok] a fila abre no mais rapido "
+          f"({heroi.velocidade:.0f} contra {esq.velocidade:.0f})")
+
+    vida = heroi.vida
+    for _ in range(600):
+        b.avancar(1 / 60)
+    assert heroi.vida == vida, (
+        f"o heroi levou dano na propria vez: {vida} -> {heroi.vida}")
+    print("[ok] dez segundos parado na vez do jogador, e ninguem age")
+
+    vida_esq = esq.vida
+    b.acao_do_heroi(_combat.Acao.ATACAR)
+    assert esq.vida < vida_esq, "o golpe nao causou dano"
+    depois_do_golpe = esq.vida
+    b.acao_do_heroi(_combat.Acao.ATACAR)
+    assert esq.vida == depois_do_golpe, "o heroi agiu duas vezes"
+    print("[ok] o heroi age uma vez, e a segunda acao nao passa")
+
+    mesmos = [
+        _combat.Combatente(nome=f"E{i}", vida=10, vida_max=10,
+                           velocidade=10.0, forca=1)
+        for i in range(3)
+    ]
+    b5 = _combat.Batalha(heroi=_combat.novo_heroi(), inimigos=list(mesmos))
+    primeira = [c.nome for c in b5.fila]
+    for _ in range(4):
+        if b5.turno_heroi:
+            b5.acao_do_heroi(_combat.Acao.ATACAR)
+        b5.avancar(1 / 60)
+    segunda = [c.nome for c in b5.fila]
+    assert primeira[1:] != segunda[1:], (
+        f"a fila nao se repete: {primeira} e {segunda}")
+    print(f"[ok] a ordem muda a cada volta ({primeira} -> {segunda})")
+
+    b6 = _combat.Batalha(
+        heroi=_combat.novo_heroi(),
+        inimigos=[_combat.novo_esqueleto(0), _combat.novo_esqueleto(1)],
+    )
+    morto = b6.inimigos[0]
+    morto.estado = _combat.Estado.MORTO
+    b6._montar_fila()
+    assert morto not in b6.fila, "o morto continua na fila"
+    assert b6.alvo_aleatorio() is not morto, "o morto pode ser alvo"
+    print("[ok] o morto sai da fila e nunca vira alvo")
+
+
+def check_turnos_tela() -> None:
+    """A tela diz de quem e a vez, e o ATB saiu de verdade.
+
+    A foto do jogador mostrou o ATB como dois riscos dourados no chao,
+    com a etiqueta "TEMPO", sem dizer a que se referiam. Aqui o teste
+    mede a tela:
+
+      - a luta comeca na vez do heroi, com o menu aberto;
+      - as barras de tempo do ATB nao existem mais, e a indicacao de
+        "de quem e a vez" existe;
+      - a tela MUDA quando a vez muda, senao o jogador nao tem como
+        saber que a vez passou;
+      - a pausa entre inimigos segura a fila: um nao age durante a
+        pausa do outro, e o menu nao abre antes da hora;
+      - uma luta inteira roda, com o turno passando varias vezes.
+    """
+    from src import combat as _combat
+    from src import combat_scene as _cs
+
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.ui_state["inimigos"] = 3
+    manager.ui_state["fracos"] = True
+    manager.switch("combat")
+    cena = manager.active
+    cena.on_enter()
+    w, h = cena.size
+    tela = pygame.Surface((w, h))
+
+    for _ in range(30):
+        cena.update(1 / 60)
+        cena.draw(tela)
+
+    assert cena.batalha.turno_heroi, "a luta nao comecou na vez do heroi"
+    assert cena.menu_aberto, "o menu nao abriu na vez do heroi"
+    print("[ok] a luta comeca na vez do heroi, com o menu aberto")
+
+    assert not hasattr(cena, "_barra_de_tempo"), (
+        "o medidor de tempo do ATB ainda existe")
+    assert not hasattr(cena, "_desenhar_barras"), (
+        "as barras de tempo ainda sao desenhadas")
+    assert hasattr(cena, "_desenhar_vez"), "a tela nao diz de quem e a vez"
+    print("[ok] as barras de tempo do ATB sairam, a vez entrou")
+
+    antes = pygame.image.tostring(tela, "RGB")
+    cena._escolher(_combat.Acao.ATACAR)
+    cena.update(1 / 60)
+    cena.draw(tela)
+    depois = pygame.image.tostring(tela, "RGB")
+    assert cena.batalha.de_quem_e_a_vez is not cena.batalha.heroi, (
+        "a vez nao passou para o inimigo depois do golpe")
+    assert antes != depois, "a tela ficou igual quando a vez mudou"
+    print("[ok] a tela muda quando a vez muda")
+
+    assert _cs.PAUSA_ENTRE_INIMIGOS > 0.2, (
+        f"a pausa de {_cs.PAUSA_ENTRE_INIMIGOS}s e curta demais para ver")
+    assert cena._espera_turno > 0, "a pausa nao foi armada depois do golpe"
+    vida = cena.batalha.heroi.vida
+    cena._espera_turno = _cs.PAUSA_ENTRE_INIMIGOS
+    cena.update(1 / 60)
+    cena.draw(tela)
+    assert cena.batalha.heroi.vida == vida, "um inimigo agiu durante a pausa"
+    cena.menu_aberto = False
+    cena._espera_turno = 5.0
+    cena.update(1 / 60)
+    assert not cena.menu_aberto, "o menu abriu durante a espera"
+    print(f"[ok] a pausa de {_cs.PAUSA_ENTRE_INIMIGOS}s segura a fila e o menu")
+
+    for passo in range(1200):
+        cena.update(1 / 60)
+        cena.draw(tela)
+        if cena.batalha.concluida:
+            break
+        if cena.batalha.turno_heroi and cena.menu_aberto:
+            if cena.batalha.heroi.fracao_vida < 0.3:
+                cena._escolher(_combat.Acao.DEFENDER)
+            else:
+                cena._escolher(_combat.Acao.ATACAR)
+    assert cena.batalha.volta >= 1, "a luta terminou em menos de uma volta"
+    print(f"[ok] {passo + 1} quadros de luta, {cena.batalha.volta} voltas, "
+          f"concluida: {cena.batalha.concluida}")
+
+
 def check_combat_bases() -> None:
-    """As regras do medidor de tempo, sem pygame."""
+    """As regras da luta por turnos, sem pygame.
+
+    A luta e por FILA: o mais rapido age primeiro, cada um age uma vez, e
+    o jogo para enquanto o jogador escolhe. Nao ha medidor de tempo, e o
+    teste tambem nao: `Barra` foi removida de `combat`, entao qualquer
+    codigo que ainda procure por ela esta usando a regra antiga.
+    """
     from src import combat
 
-    # a barra enche e transborda: quem encheu age e volta ao zero
-    barra = combat.Barra(velocidade=10.0, limite=100.0)
-    for _ in range(100):
-        barra.avancar(0.1)  # 10s * 10/s = 100 -> transborda
-    assert barra.valor < 1.0, f"a barra deveria ter virado, esta em {barra.valor}"
-    print("[ok] a barra enche, transborda e volta ao zero")
+    # nao existe mais medidor de tempo
+    assert not hasattr(combat, "Barra"), (
+        "combat.Barra voltou: a luta voltou a ser por tempo")
+    lutador = combat.novo_heroi()
+    assert not hasattr(lutador, "barra"), (
+        "o combatente tem barra de novo: a luta voltou a ser por tempo")
+    assert hasattr(lutador, "velocidade"), "o combatente precisa de iniciativa"
+    print("[ok] nao ha mais barra de tempo: a luta e por turnos")
 
-    # gastar nunca deixa a barra negativa
-    barra.gastar(500.0)
-    assert barra.valor == 0.0, barra.valor
-    print("[ok] o custo da acao nunca deixa a barra negativa")
-
-    # o heroi e mais rapido que o esqueleto: e o que faz a batalha
-    # avancar em direcao a ele em vez de virar uma fila
+    # a ordem e por iniciativa: o heroi abre a fila
     heroi = combat.novo_heroi()
     esq = combat.novo_esqueleto(0)
-    assert heroi.velocidade_barra > esq.velocidade_barra, "heroi devia ser mais rapido"
+    assert heroi.velocidade > esq.velocidade, "heroi devia ser mais rapido"
+    b = combat.Batalha(heroi=heroi, inimigos=[esq])
+    assert b.fila[0] is heroi, f"a fila nao comeca no heroi: {b.fila}"
+    assert b.de_quem_e_a_vez is heroi
     print(
-        f"[ok] o heroi e mais rapido que o esqueleto "
-        f"({heroi.velocidade_barra:.0f} contra {esq.velocidade_barra:.0f})"
+        f"[ok] a fila comeca no mais rapido "
+        f"({heroi.velocidade:.0f} contra {esq.velocidade:.0f})"
     )
+
+    # o jogo para enquanto o jogador escolhe
+    vida = heroi.vida
+    for _ in range(600):  # dez segundos de tempo, sem agirem ninguem
+        b.avancar(1 / 60)
+    assert heroi.vida == vida, (
+        f"o heroi levou dano durante a propria vez: {vida} -> {heroi.vida}")
+    print("[ok] ninguem age enquanto o jogador nao escolhe")
 
 
 
@@ -1169,13 +1344,11 @@ def check_combat_batalha() -> None:
         sorteio=random.Random(1),
     )
     dt = 1 / 60
-    while not b.turno_heroi and not b.concluida:
-        b.avancar(dt)
     assert b.turno_heroi, "a vez do heroi nunca chegou"
-    assert b.heroi.barra.valor < b.heroi.barra.limite, "a barra deveria ter virado"
-    print("[ok] a vez do heroi chega e a barra para, esperando a escolha")
+    assert b.de_quem_e_a_vez is b.heroi
+    print("[ok] a luta comeca na vez do heroi, esperando a escolha")
 
-    # --- atacar causa dano e consome barra ---
+    # --- atacar causa dano e devolve a vez ---
     esq = b.inimigos[0]
     vida_antes = esq.vida
     b.acao_do_heroi(combat.Acao.ATACAR)
@@ -1599,9 +1772,19 @@ def check_primeiro_inimigo_fraco() -> None:
     assert fraco.vida_max < normal.vida_max, (fraco.vida_max, normal.vida_max)
     assert fraco.forca < normal.forca, (fraco.forca, normal.forca)
     assert fraco.defesa <= normal.defesa, (fraco.defesa, normal.defesa)
-    assert fraco.velocidade_barra < normal.velocidade_barra, (
-        fraco.velocidade_barra, normal.velocidade_barra
+    # a iniciativa: o esqueleto da sala 1 e mais lento, o que da a vez
+    # ao jogador antes de levar o contra-ataque. Era a barra que enchia
+    # devagar; na luta por turnos e a ordem da fila.
+    assert fraco.velocidade < normal.velocidade, (
+        fraco.velocidade, normal.velocidade
     )
+    # e ele nao e o primeiro da fila: o jogador age antes
+    b = _combat.Batalha(heroi=_combat.novo_heroi(), inimigos=[fraco])
+    assert b.de_quem_e_a_vez is b.heroi, (
+        "o esqueleto fraco abriu a fila contra o heroi")
+    print(f"[ok] sala 1: vida {fraco.vida_max} forca {fraco.forca} "
+          f"(normal: {normal.vida_max}/{normal.forca}), "
+          f"e o jogador age primeiro")
     print(f"[ok] sala 1: vida {fraco.vida_max} forca {fraco.forca} "
           f"(normal: {normal.vida_max}/{normal.forca})")
 
@@ -2466,6 +2649,10 @@ def main() -> int:
     print()
     check_menu_items()
     print()
+    check_turnos_regras()
+    print()
+    check_turnos_tela()
+    print()
     check_combat_bases()
     print()
     check_combat_batalha()
@@ -2514,3 +2701,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

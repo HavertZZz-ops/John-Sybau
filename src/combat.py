@@ -1,20 +1,26 @@
-"""Combate por turnos, com medidor de tempo (estilo Chrono Trigger).
+"""Combate por TURNOS: um age por vez, e o jogador escolhe o que fazer.
 
-A regra central do Chrono Trigger e o ATB: todo mundo tem uma barra que
-enche com o tempo, e age sozinho quando ela chega no fim. O jogador
-nao escolhe a ordem, escolhe o QUE fazer quando a vez dele chega. E o
-que torna a batalha demonstravel sem virar um puzzle de fila.
+Antes era ATB, no estilo Chrono Trigger: todo mundo tinha uma barra que
+enchia com o tempo e agia sozinho quando ela transbordava. O jogador
+nao controlava a ordem, so o QUE fazer, e o medidor corria sem parar
+enquanto ele pensava.
+
+A foto do jogador mostrou o resultado na tela: as barras de tempo como
+riscos dourados soltos no chao, com a etiqueta "TEMPO", e nada
+indicando de quem era a vez. E a leitura de um jogo de briga nao pode
+depender de o jogador estar cronometrando.
 
 Aqui:
-  - `Combatente` e qualquer um com vida e uma barra de tempo
-  - `Barra` e o medidor, com a escala de tempo da acao
-  - `Batalha` e a maquina: enche as barras, resolve os turnos, aplica
-    os efeitos
+  - `Combatente` e alguem com vida, forca e defesa. Nada de barra.
+  - `Batalha` tem uma FILA: a ordem de quem age, montada por
+    velocidade. O heroi age, a fila anda, cada inimigo age por vez, e a
+    fila se refaz quando todo mundo ja agiu.
+  - O jogo PARA enquanto o jogador escolhe. Nao ha contagem regressiva:
+    o tempo parado e o que torna a decisao uma decisao.
 
-De proposito nao ha "vez do jogador" rigido: a barra do heroi e
-rapida, a do esqueleto e lenta, e a batalha avanca pelos dois ao
-mesmo tempo. Defender custa tempo, por isso da para escolher a hora de
-se proteger.
+A ordem se refaz a cada volta, e nao e fixa. Com velocidades iguais
+ninguem ganha vez para sempre: quem agiu por ultimo volta a ir depois
+de quem foi na frente. Uma fila que nunca muda e uma fila injusta.
 """
 from __future__ import annotations
 
@@ -33,7 +39,7 @@ class Estado(Enum):
 
 
 class Acao(Enum):
-    """O que o jogador pode escolher quando a vez chega."""
+    """O que o jogador pode escolher quando e a vez dele."""
 
     ATACAR = "Atacar"
     DEFENDER = "Defender"
@@ -43,79 +49,28 @@ class Acao(Enum):
 
 
 @dataclass
-class Barra:
-    """Medidor de tempo: enche, e o dono age quando chega no fim."""
-
-    valor: float = 0.0
-    limite: float = 100.0
-    # quanto tempo a barra enche por segundo
-    velocidade: float = 12.0
-
-    @property
-    def cheia(self) -> bool:
-        return self.valor >= self.limite
-
-    @property
-    def fracao(self) -> float:
-        """0 a 1, para desenhar."""
-        if self.limite <= 0:
-            return 1.0
-        return max(0.0, min(1.0, self.valor / self.limite))
-
-    def avancar(self, dt: float) -> float:
-        """Avanca a barra e devolve quanto transbordou.
-
-        O transbordo importa: uma barra rapida pode dar mais de uma
-        volta em um unico quadro, e esse excedente precisa sobrar em
-        vez de ser jogado fora. Quem chama reassina o valor com o que
-        sobrou.
-        """
-        self.valor += self.velocidade * dt
-        if self.valor < self.limite:
-            return 0.0
-        excesso = self.valor - self.limite
-        self.valor = 0.0
-        return excesso
-
-    def gastar(self, custo: float) -> None:
-        """Desconta o tempo de barra que a acao consumiu.
-
-        O custo nunca deixa a barra negativa: se o jogador esperou
-        menos do que a acao custa, ele age antes de encher de novo. Sem
-        o piso em zero, a barra passaria de menos um para cima aos
-        poucos e a vez seguinte demoraria mais do que devia.
-        """
-        self.valor = max(0.0, self.valor - custo)
-
-    def zerar(self) -> None:
-        self.valor = 0.0
-
-
-@dataclass
 class Combatente:
-    """Alguem que luta."""
+    """Alguem que luta.
+
+    `velocidade` e a INICIATIVA: decide a ordem da fila, e nao um
+    medidor que corre. Um esqueleto mais rapido age antes, uma vez por
+    volta. Nao existe barra nenhuma.
+    """
 
     nome: str
     vida: int
     vida_max: int
-    velocidade_barra: float
     forca: int
+    velocidade: float = 10.0
     defesa: int = 0
     estado: Estado = Estado.VIVO
-    barra: Barra = field(init=False)
     defendendo: bool = False
-    # quanto de tempo de barra cada acao consome
-    custo_ataque: float = 25.0
-    custo_defesa: float = 15.0
-    custo_habilidade: float = 40.0
-    # Curar e caro de proposito. Se a pocao nao gastasse tempo, o
-    # jogador curava todo turno e a luta virava uma espera: o item
-    # Some do jogo. Com 20 de custo, da para curar duas vezes e ainda
-    # sobra um golpe.
-    custo_item: float = 20.0
 
     def __post_init__(self) -> None:
-        self.barra = Barra(velocidade=self.velocidade_barra)
+        # o desempate da fila: sem ele, dois inimigos com a mesma
+        # velocidade trocam de posicao toda volta e a ordem vira
+        # loteria. Com ele, a ordem e estavel.
+        self._ordem = 0.0
 
     @property
     def vivo(self) -> bool:
@@ -125,7 +80,7 @@ class Combatente:
     def fracao_vida(self) -> float:
         if self.vida_max <= 0:
             return 0.0
-        return max(0.0, self.vida / self.vida_max)
+        return max(0.0, min(1.0, self.vida / self.vida_max))
 
     def receber(self, dano: int) -> int:
         """Aplica dano. Defender reduz pela metade."""
@@ -161,20 +116,32 @@ class Evento:
 
 @dataclass
 class Batalha:
-    """A batalha em si: barras, turnos e efeitos."""
+    """A batalha em si: a fila de quem age, e os efeitos."""
 
     heroi: Combatente
     inimigos: list[Combatente] = field(default_factory=list)
     eventos: list[Evento] = field(default_factory=list)
-    turno_heroi: bool = False
     concluida: bool = False
     vencida: bool = False
     # o jogador escolheu sair da luta em vez de ganhar
     fugiu: bool = False
-    # item que a cena escolheu no inventario, para a acao ITEM saber o
-    # que aplicar. A cena e quem mostra a lista; a batalha e quem aplica.
+    # item que a cena escolheu no inventario
     item_escolhido: str | None = None
     sorteio: random.Random = field(default_factory=random.Random)
+
+    # a fila de quem age, nesta volta. Montada por velocidade na ordem
+    # em que os combatentes entraram, e refaca quando acaba a volta.
+    fila: list[Combatente] = field(default_factory=list, init=False)
+    # posicao na fila de quem age agora
+    cursor: int = 0
+    # quantas voltas de fila ja deram
+    volta: int = 0
+    # quem ja agiu nesta volta, para nao refazer a fila com o mesmo
+    # heroi duas vezes
+    _agiu: set[int] = field(default_factory=set, init=False)
+
+    def __post_init__(self) -> None:
+        self._montar_fila()
 
     # --- estado ------------------------------------------------------
     @property
@@ -188,12 +155,57 @@ class Batalha:
     def inimigos_vivos(self) -> list[Combatente]:
         return [c for c in self.inimigos if c.vivo]
 
+    @property
+    def turno_heroi(self) -> bool:
+        """E a vez do heroi agora?"""
+        if self.concluida or not self.heroi.vivo:
+            return False
+        if not self.fila:
+            return False
+        return self.fila[self.cursor] is self.heroi
+
+    @property
+    def de_quem_e_a_vez(self) -> Combatente | None:
+        """Quem age agora, ou None se a batalha ja acabou."""
+        if self.concluida or not self.fila:
+            return None
+        return self.fila[self.cursor]
+
     def alvo_aleatorio(self) -> Combatente | None:
         """Escolhe um inimigo vivo para o golpe acertar."""
         vivos = self.inimigos_vivos()
         if not vivos:
             return None
         return self.sorteio.choice(vivos)
+
+    def _montar_fila(self) -> None:
+        """Monta a ordem de quem age, do mais rapido para o mais lento.
+
+        A ordem NAO e fixa. Quem ageu por ultimo na volta passada vai
+        depois nesta: e o que impede o heroi de estar sempre primeiro e
+        o chefe de estar sempre atras. O desempate e a ordem de entrada,
+        entao a fila e estavel dentro da mesma volta.
+        """
+        # O desempate do empate: quem agiu por ULTIMO na volta passada
+        # vai PRIMEIRO nesta. E a rotacao que impede a vitoria: com a
+        # ordem anterior preservada, tres inimigos com a mesma
+        # velocidade ficavam sempre na mesma posicao, e o heroi levava
+        # dos tres antes de poder agir, toda volta, sem chance de
+        # responder. Invertendo o desempate, o grupo roda.
+        atras = {id(c): i for i, c in enumerate(self.fila)}
+        ordem = {id(c): i for i, c in enumerate(self.todos)}
+        vivos = [c for c in self.todos if c.vivo]
+        self.fila = sorted(
+            vivos,
+            # mais rapido primeiro; empate resolvido por quem ficou mais
+            # atras: o sinal negativo e o que inverte o desempate
+            key=lambda c: (
+                -c.velocidade,
+                -atras.get(id(c), ordem[id(c)]),
+            ),
+        )
+        self.cursor = 0
+        self._agiu = set()
 
     # --- acoes do jogador --------------------------------------------
     def acao_do_heroi(self, acao: Acao) -> list[Evento]:
@@ -209,14 +221,12 @@ class Batalha:
 
         if acao is Acao.DEFENDER:
             self.heroi.defendendo = True
-            self.heroi.barra.gastar(self.heroi.custo_defesa)
             ditos.append(Evento(f"{self.heroi.nome} se defende", "info"))
             self._encerrar_turno_heroi()
             return ditos
 
         if acao is Acao.ATACAR:
             ditos.extend(self._golpe(self.heroi, self.alvo_aleatorio()))
-            self.heroi.barra.gastar(self.heroi.custo_ataque)
             self._encerrar_turno_heroi()
             return ditos
 
@@ -225,7 +235,6 @@ class Batalha:
             # continua socando mesmo depois de achar uma espada: e o
             # golpe dele, nao um poder da arma.
             ditos.extend(self._golpe(self.heroi, self.alvo_aleatorio(), forte=True))
-            self.heroi.barra.gastar(self.heroi.custo_habilidade)
             ditos.append(Evento(f"{self.heroi.nome} solta um SUPER SOCO", "dano"))
             self._encerrar_turno_heroi()
             return ditos
@@ -245,17 +254,15 @@ class Batalha:
             if curado <= 0:
                 ditos.append(Evento(f"{self.heroi.nome} ja esta com a vida cheia", "info"))
                 return ditos
-            self.heroi.barra.gastar(self.heroi.custo_item)
             self.item_escolhido = None
             ditos.append(Evento(f"{self.heroi.nome} usou {nome} e curou {curado}", "cura"))
             self._encerrar_turno_heroi()
             return ditos
 
         if acao is Acao.FUGIR:
-            # Fugir nao e uma acao como as outras: nao consome barra,
-            # nao machuca ninguem e nao da tempo de o inimigo revidar.
-            # A luta acaba na hora, com o heroi como esta. Quem trata
-            # o resto (sair da masmorra) e a cena, olhando `fugiu`.
+            # Fugir nao e uma acao como as outras: nao machuca ninguem
+            # e nao da tempo de o inimigo revidar. A luta acaba na hora,
+            # com o heroi como esta.
             self.fugiu = True
             self.concluida = True
             ditos.append(Evento(f"{self.heroi.nome} foge da luta", "info"))
@@ -281,57 +288,65 @@ class Batalha:
         return eventos
 
     def _encerrar_turno_heroi(self) -> None:
-        self.turno_heroi = False
+        # o heroi agiu: a fila avanca para o proximo
+        self._agiu.add(id(self.heroi))
         # defender limpa a pose depois de resolver o golpe inimigo, nao
         # antes: senao o inimigo acerta o heroi sem a mitigacao
-        self.heroi.defendendo = False
+        self._avancar_cursor()
+
+    def _avancar_cursor(self) -> None:
+        """Passa a fila para quem age agora. Refaz a volta se acabou."""
+        self.cursor += 1
+        # pula quem ja agiu nesta volta: nao vale a pena o heroi agir
+        # duas vezes antes de todo mundo ter agido uma
+        while self.cursor < len(self.fila) and id(self.fila[self.cursor]) in self._agiu:
+            self.cursor += 1
+        # se ninguem mais tem vez nesta volta, abre a proxima
+        if self.cursor >= len(self.fila):
+            self.volta += 1
+            self._montar_fila()
+            self._checar_fim()
 
     # --- loop ---------------------------------------------------------
     def avancar(self, dt: float) -> list[Evento]:
-        """Enche as barras e dispara quem encheu.
+        """Acoes dos inimigos, uma de cada vez.
 
-        O heroi entra em modo de espera quando a barra dele estoura e o
-        jogador ainda nao escolheu. Inimigos agem na hora.
+        Nao enche nada com o tempo: um inimigo age quando o jogador ja
+        agiu, e age SO. Cada inimigo age, e a fila anda. O `dt` fica
+        para a cena animar, e nao para decidir quem age.
+
+        O heroi age quando o jogador escolhe, em `acao_do_heroi`. Nao
+        existe espera: entre a escolha do jogador e a vez do proximo da
+        fila, o jogo para e mostra o que aconteceu.
         """
         novos: list[Evento] = []
         if self.concluida:
             return novos
 
-        # --- heroi ---
-        if not self.turno_heroi and self.heroi.vivo:
-            excesso = self.heroi.barra.avancar(dt)
-            if excesso > 0:
-                self.turno_heroi = True
-                # o transbordo vira o novo valor: quem age duas vezes no
-                # mesmo quadro nao espera a barra encher de novo
-                self.heroi.barra.valor = excesso
+        # na vez do heroi, o jogo PARA: quem age e o jogador, pelo menu. Sem
+        # este return, a fila andava a procura do heroi e o proximo
+        # inimigo batia antes de o menu aparecer na tela.
+        if not self.fila or self.fila[self.cursor] is self.heroi:
+            self._checar_fim()
+            self.eventos.extend(novos)
+            return novos
 
-        # --- inimigos ---
-        for inimigo in self.inimigos_vivos():
-            excesso = inimigo.barra.avancar(dt)
-            if excesso > 0:
-                inimigo.barra.valor = excesso
-                novos.extend(self._acao_inimigo(inimigo))
+        if self.cursor < len(self.fila):
+            inimigo = self.fila[self.cursor]
+            novos.extend(self._acao_inimigo(inimigo))
+            self._agiu.add(id(inimigo))
+            self._avancar_cursor()
 
-        if self.heroi.vivo and not self.inimigos_vivos():
-            self.concluida = True
-            self.vencida = True
-            novos.append(Evento("Vitoria", "info"))
-        elif not self.heroi.vivo:
-            self.concluida = True
-            self.vencida = False
-            novos.append(Evento("O heroi caiu", "morte"))
-
+        self._checar_fim()
         self.eventos.extend(novos)
         return novos
 
     def _acao_inimigo(self, inimigo: Combatente) -> list[Evento]:
-        """O que o esqueleto faz quando a barra dele estoura."""
+        """O que o esqueleto faz quando chega a vez dele."""
         if not self.heroi.vivo:
             return []
         if self.sorteio.random() < 0.25:
             inimigo.defendendo = True
-            inimigo.barra.gastar(inimigo.custo_defesa)
             return [Evento(f"{inimigo.nome} se defende", "info")]
         dano = max(1, inimigo.forca + self.sorteio.randint(-1, 2))
         real = self.heroi.receber(dano)
@@ -339,6 +354,16 @@ class Batalha:
         if not self.heroi.vivo:
             ditos.append(Evento("O heroi caiu", "morte"))
         return ditos
+
+    def _checar_fim(self) -> None:
+        if self.heroi.vivo and not self.inimigos_vivos():
+            self.concluida = True
+            self.vencida = True
+            self.eventos.append(Evento("Vitoria", "info"))
+        elif not self.heroi.vivo:
+            self.concluida = True
+            self.vencida = False
+            self.eventos.append(Evento("O heroi caiu", "morte"))
 
     # --- resumo -------------------------------------------------------
     def texto_status(self) -> str:
@@ -351,61 +376,52 @@ class Batalha:
 # --- fabricas de combatentes -------------------------------------------
 
 def novo_heroi(vida: int = 60, forca: int = 9) -> Combatente:
-    """O heroi: barra rapida, golpes certeiros."""
+    """O heroi: rapido na iniciativa, golpes certeiros."""
     return Combatente(
         nome="John", vida=vida, vida_max=vida,
-        velocidade_barra=26.0, forca=forca, defesa=2,
+        velocidade=18.0, forca=forca, defesa=2,
     )
 
 
 def novo_esqueleto(indice: int = 0, fraco: bool = False) -> Combatente:
-    """Inimigo de catacumba: barra lenta e vida curta, o oposto do heroi.
+    """Inimigo de catacumba: lento na iniciativa e vida curta.
 
-    O nome segue o sprite. O ghoul do pacote gfx tem corpo de verdade e
-    e o inimigo principal; o esqueleto do Skeletons Pack e uma arte de
-    6px de largura por 21 de altura, que le como um palito ao lado do
-    jogador, e fica como a variante mais fraca.
+    O nome segue o sprite. O esqueleto do Skeletons Pack e a variante
+    mais fraca.
 
     `fraco` existe para a PRIMEIRA sala, que tem que ensinar o golpe sem
     matar quem esta aprendendo. Sem esse caminho o primeiro esqueleto
-    tinha exatamente os mesmos numeros dos outros: a sala 1 era igual
-    a sala 4, so que com a placa de "aqui voce aprende".
+    tinha exatamente os mesmos numeros dos outros.
     """
     nomes = ("Cavador", "Ossario", "Guardiao de Ossos", "Sentinela")
     vida = 26 + indice * 8
     forca = 5 + indice * 2
     defesa = 1 + indice
-    barra = 9.0 + indice * 1.5
+    init = 11.0 - indice * 1.5
     if fraco:
-        # a barra mais devagar da duas voltas para o jogador ver o
-        # golpe chegando antes de levar o contra-ataque
+        # mais lento que o heroi: da vez ao jogador antes de levar o
+        # contra-ataque, que e a aula da sala 1
         vida = 12
         forca = 3
         defesa = 0
-        barra = 6.0
+        init = 8.0
     return Combatente(
         nome=nomes[indice % len(nomes)],
         vida=vida, vida_max=vida,
-        velocidade_barra=barra,
-        forca=forca, defesa=defesa,
+        velocidade=init, forca=forca, defesa=defesa,
     )
 
 
 def novo_chefe() -> Combatente:
     """O chefe da ultima sala: forte demais para se puzzling.
 
-    A BARRA dele e rapida de proposito. Um chefe com a barra lenta daria
-    ao jogador seis voltas inteiras de quanto ele quiser, e a
-    permanencia viraria uma roleta. Com a barra rapida, cada vez que
-    ele age o dano ja chegou, e a decisao "lutar ou sair" e do
-    jogador, nao do medidor.
-
-    A vida e alta e a defesa e alta de proposito tambem. Ele nao e
-    matavel no encontro: a aula e saber que fugir existe.
+    A INITIATIVA dele e rapida, nao a barra: ele age cedo na volta. A
+    vida e a defesa sao altas de proposito. Ele nao e matavel no
+    encontro: a aula e saber que fugir existe.
     """
     return Combatente(
         nome="O Cobrador",
         vida=180, vida_max=180,
-        velocidade_barra=17.0,
+        velocidade=16.0,
         forca=17, defesa=5,
     )
