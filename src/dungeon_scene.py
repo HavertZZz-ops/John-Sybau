@@ -705,6 +705,59 @@ class DungeonScene(Scene):
         if numero == sala.numero and sala.dica:
             self.tutorial.mostrar(sala.dica)
 
+    def _casa_longe_do_caixao(self, numero: int) -> tuple[int, int] | None:
+        """Onde o esqueleto brota: o ponto andavel mais longe do caixao.
+
+        O centro da sala brotava a dois tiles e meio do caixao, e o
+        alcance de contato e um pouco maior que isso. A luta começava no
+        mesmo instante em que a abertura terminava: o jogador via o
+        monstro e ja estava dentro da tela de combate, sem dar um passo
+        nem ver a sala.
+
+        Aqui a escolha e o ponto mais distante do caixao dentro da
+        sala. Numa sala onde nao ha ponto assim longe — uma sala
+        pequena, ou um caixao no meio — cai no centro, que e melhor do
+        que nao brotar.
+        """
+        centro = self.mapa.centro_da_sala(numero)
+        if centro is None:
+            return None
+        melhor = None
+        melhor_distancia = -1.0
+        caixao = pygame.Vector2(
+            self.mapa.para_pixels(*self.mapa.caixao, self.tile)
+        )
+        for y in range(0, self.mapa.altura):
+            for x in range(0, self.mapa.largura):
+                if self.mapa.sala_de(x, y) != numero:
+                    continue
+                if not self.mapa.andavel(x, y):
+                    continue
+                if self._ocupada(x, y):
+                    continue
+                ponto = pygame.Vector2(self.mapa.para_pixels(x, y, self.tile))
+                distancia = ponto.distance_to(caixao)
+                if distancia > melhor_distancia:
+                    melhor_distancia = distancia
+                    melhor = (x, y)
+        return melhor if melhor is not None else centro
+
+    def _ocupada(self, x: int, y: int) -> bool:
+        """O esqueleto cabe nesse ponto: ele e a propria celula e as vizinhas.
+
+        O raio e de UMA celula. Com um raio maior a busca nao achava
+        ponto nenhum numa sala de 16x9 — quase tudo era rejeitado por ter
+        parede a duas celulas de distancia — e caia no centro da sala,
+        que era o defeito que este metodo existe para corrigir.
+        """
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                if not self.mapa.andavel(x + dx, y + dy):
+                    return True
+        return False
+
     def _atualizar_esqueleto(self, dt: float) -> None:
         """Arma o esqueleto da sala em que o jogador esta.
 
@@ -731,7 +784,7 @@ class DungeonScene(Scene):
             if numero == self.progresso.onde_esta_o_chefe():
                 casa = self._casa_do_chefe()
             else:
-                casa = self.mapa.centro_da_sala(numero)
+                casa = self._casa_longe_do_caixao(numero)
             if casa is None:
                 return
             # um esqueleto por sala: o proximo so nasce quando o
@@ -1272,7 +1325,13 @@ class DungeonScene(Scene):
         """
         quadros = self._quadros_esqueleto
         if quadros is None:
-            quadros = assets.load_foe(assets.FOE_KINDS[0], "oeste", "walk")
+            # o mesmo enlarge do heroi: com o enlarge padrao de
+            # `load_foe` o esqueleto saia com 32px dentro de um tile de
+            # 16, o dobro de tudo que estava em volta
+            quadros = assets.load_foe(
+                assets.FOE_KINDS[0], "oeste", "walk",
+                scale=assets.get_sprite_scale(),
+            )
             self._quadros_esqueleto = quadros or []
             if not quadros:
                 return
