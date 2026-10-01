@@ -121,6 +121,72 @@ def _frac(miolo: pygame.Rect, x: float, y: float,
     )
 
 
+# O miolo do painel EQUIPMENT contem uma barra de slots VAZIA na direita,
+# que e onde a arteoriginal previa os你自己的 icones. A lista de
+# conjuntos e desenhada na esquerda dessa barra, entao a area dela e
+# metade do miolo, e nao o miolo inteiro: usando o miolo inteiro as
+# linhas encavavam na barra e o desenho do boneco ficava em cima dela.
+_EQUIP_LARGURA = 0.5
+# quanto o desenho do boneco ocupa da metade esquerda. O boneco e
+# estreito e alto, entao o limite e a ALTURA da linha, e nao a largura:
+# aos 26% da largura ele saia com 35px de altura e transbordava a linha
+# em cima da seguinte, porque a linha tem 18px.
+_EQUIP_DESENHO_LADO = 0.26
+_EQUIP_DESENHO_ALTURA_MAX = 1.0
+
+
+# A lista de conjuntos: seis linhas, cada uma com o boneco e o rotulo.
+#
+# A conta antiga era `passo = miolo.height // 6`, com o desenho do
+# boneco blitado na altura INTEIRA (64px) dentro de uma linha de 18px.
+# O boneco transbordava 46px para cima por linha, e a primeira linha
+# invadia a barra de EQUIPMENT: na foto de 1008x720 os seis bonecos
+# apareciam empilhados sobre o titulo e sobre o painel de cima, e o
+# texto de cada linha passava por cima do boneco da linha de baixo.
+#
+# O desenho encolhe para a altura da linha. E a unica parte do painel
+# que nao e arte do pacote, entao ela pode ser reescalada; o que nao
+# pode e pixel art do CraftPix.
+_EQUIP_LINHAS = 6
+_EQUIP_FOLGA = 3
+
+
+def _caber_pequeno(arte: pygame.Surface, altura: int) -> pygame.Surface:
+    """A arte reduzida para caber em `altura`, mantendo a proporcao."""
+    if arte.get_height() <= altura:
+        return arte
+    largura = max(1, arte.get_width() * altura // arte.get_height())
+    return pygame.transform.smoothscale(arte, (largura, altura))
+
+
+def lado_do_desenho(linha: pygame.Rect) -> int:
+    """A altura em que o boneco cabe na linha.
+
+    O minimo entre a fração da largura e a altura da linha. O boneco e
+    estreito: pela largura ele cabia com folga, e o que estourava era a
+    altura, 18px contra os 35px que a fração da largura permitia.
+    """
+    return max(10, min(int(linha.width * _EQUIP_DESENHO_LADO),
+                       int(linha.height * _EQUIP_DESENHO_ALTURA_MAX)))
+
+
+def linhas_do_equipamento(miolo: pygame.Rect) -> tuple[list[pygame.Rect], int]:
+    """`(as seis linhas, a altura de cada uma)` dentro do miolo.
+
+    A altura e a que sobra depois da folga entre linhas, e nao a divisao
+    do miolo: com a divisao sobrava metade do que o boneco precisa.
+    """
+    passo = max(12, (miolo.height - _EQUIP_FOLGA * (_EQUIP_LINHAS - 1))
+               // _EQUIP_LINHAS)
+    largura = int(miolo.width * _EQUIP_LARGURA)
+    linhas = [
+        pygame.Rect(miolo.x, miolo.y + i * (passo + _EQUIP_FOLGA),
+                    largura, passo)
+        for i in range(_EQUIP_LINHAS)
+    ]
+    return linhas, passo
+
+
 # A geometria da folha SHOP foi medida com `tools/medir_loja.py`: tres
 # colunas, duas fileiras de slots e um botao BUY embaixo de cada slot.
 # Sao frações do miolo, e nao pixels, para acompanhar o painel ampliado.

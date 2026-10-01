@@ -1,4 +1,4 @@
-"""O interior da taverna: a sala de verdade, com o dono la dentro.
+﻿"""O interior da taverna: a sala de verdade, com o dono la dentro.
 
 Antes a taverna era so um telhado na aldeia e um botao de pernoitar.
 Agora o jogador entra: a porta abre, o salao aparece com o balcao, as
@@ -496,22 +496,27 @@ class TavernScene(Scene):
             (w // 2, h // 2), int(w * 0.34))
         if miolo is None:
             return
-        passo = max(16, min(24, miolo.height // len(conjuntos)))
-        y = miolo.y
+        linhas, passo = ui_arte.linhas_do_equipamento(miolo)
         for i, c in enumerate(conjuntos):
+            if i >= len(linhas):
+                break
+            linha = linhas[i]
             marcado = i == self.index_equip
             if marcado:
-                pygame.draw.rect(
-                    surface, theme.GOLD,
-                    pygame.Rect(miolo.x, y, miolo.width, passo - 2), 1)
+                pygame.draw.rect(surface, theme.GOLD, linha, 1)
             arte = assets.carregar_equipado(c.chave, escala=1)
-            if arte is not None:
-                surface.blit(arte, arte.get_rect(
-                    midleft=(miolo.x + 2, y + passo // 2)))
+            # o boneco encolhe para a altura da linha, ou transborda
+            # 46px para cima e invade a barra de EQUIPMENT
+            if arte is None:
+                texto_x = linha.x + 2
+            else:
+                pequeno = ui_arte._caber_pequeno(arte, ui_arte.lado_do_desenho(linha))
+                surface.blit(pequeno, pequeno.get_rect(
+                    midleft=(linha.x + 2, linha.centery)))
+                texto_x = linha.x + pequeno.get_width() + 8
             theme.text_tracked_at(
-                surface, c.rotulo, 13, (miolo.x + 30, y + 4),
+                surface, c.rotulo, 13, (texto_x, linha.y + 2),
                 theme.GOLD if marcado else theme.TEXT)
-            y += passo
         theme.text_tracked_at(
             surface, "enter usa   esc volta", 12,
             (miolo.x, miolo.bottom + 6), theme.TEXT_DIM)

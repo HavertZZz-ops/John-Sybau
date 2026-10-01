@@ -1,4 +1,4 @@
-"""A cidadezinha dos moradores locais.
+﻿"""A cidadezinha dos moradores locais.
 
 Fica depois da estrada, e e o lugar para onde o jogador vai quando sai
 da masmorra. Sao quatro moradores, cada um com nome e uma frase. Nao ha
@@ -577,7 +577,7 @@ class CityScene(Scene):
 
     def _desenhar_inventario_mundo(self, surface: pygame.Surface) -> None:
         # o submenu de equipamento e um submenu, nao uma segunda janela:
-        # desenhado por cima do inventario os dois painéis caiam no mesmo
+        # desenhado por cima do inventario os dois painÃ©is caiam no mesmo
         # centro. Aqui ele SUBSTITUI o inventario enquanto estiver aberto.
         if self.modo_equip is not None:
             self._desenhar_equipamento(surface)
@@ -715,7 +715,7 @@ class CityScene(Scene):
         A folha SHOP traz seis slots, seis botoes BUY e o contador de
         moeda, e nada disso muda: o jogo tem duas pocas e uma moeda.
         O que o codigo coloca e o CONTEUDO de cada slot, e a posicao dos
-        slots nao e adivinhada — `ui_arte.slots_da_loja` devolve os
+        slots nao e adivinhada â€” `ui_arte.slots_da_loja` devolve os
         retangulos medidos com `tools/medir_loja.py`.
 
         A versao anterior desenhava as linhas por cima da arte, e o
@@ -831,7 +831,7 @@ class CityScene(Scene):
         """O predio e desenhado DEPOIS do chao e ANTES dos moradores.
 
         A ordem importa duas vezes. Depois do chao, senao o telhado
-        ficaria sob o calçamento. Antes dos moradores, senao o
+        ficaria sob o calÃ§amento. Antes dos moradores, senao o
         taverneiro apareceria desenhado por cima do telhado em vez de
         estar na porta.
         """
@@ -898,22 +898,28 @@ class CityScene(Scene):
         )
         if miolo is None:
             return
-        passo = max(16, min(24, miolo.height // len(conjuntos)))
-        y = miolo.y
+        linhas, passo = ui_arte.linhas_do_equipamento(miolo)
         for i, c in enumerate(conjuntos):
+            if i >= len(linhas):
+                break
+            linha = linhas[i]
             marcado = i == self.index_equip
             cor = theme.GOLD if marcado else theme.TEXT
             if marcado:
-                pygame.draw.rect(
-                    surface, theme.GOLD,
-                    pygame.Rect(miolo.x, y, miolo.width, passo - 2), 1)
+                pygame.draw.rect(surface, theme.GOLD, linha, 1)
             arte = assets.carregar_equipado(c.chave, escala=1)
-            if arte is not None:
-                surface.blit(arte, arte.get_rect(
-                    midleft=(miolo.x + 2, y + passo // 2)))
+            # o boneco encolhe para a altura da linha. Com a altura
+            # inteira ele transbordava 46px para cima e a primeira
+            # linha invadia a barra de EQUIPMENT
+            if arte is None:
+                texto_x = linha.x + 2
+            else:
+                pequeno = ui_arte._caber_pequeno(arte, ui_arte.lado_do_desenho(linha))
+                surface.blit(pequeno, pequeno.get_rect(
+                    midleft=(linha.x + 2, linha.centery)))
+                texto_x = linha.x + pequeno.get_width() + 8
             theme.text_tracked_at(
-                surface, c.rotulo, 13, (miolo.x + 30, y + 4), cor)
-            y += passo
+                surface, c.rotulo, 13, (texto_x, linha.y + 2), cor)
         theme.text_tracked_at(
             surface, "enter usa   esc volta", 12,
             (miolo.x, miolo.bottom + 6), theme.TEXT_DIM)
@@ -970,3 +976,4 @@ class CityScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+

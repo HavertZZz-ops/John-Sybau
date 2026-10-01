@@ -1,4 +1,4 @@
-"""A estrada: o mundo de fora da masmorra.
+﻿"""A estrada: o mundo de fora da masmorra.
 
 E para onde o jogador chega quando foge do chefe forte da ultima sala.
 Por enquanto e o pedaco entre a masmorra e a cidade: um caminho de terra
@@ -297,7 +297,7 @@ class RoadScene(Scene):
 
     def _desenhar_inventario_mundo(self, surface: pygame.Surface) -> None:
         # o submenu de equipamento e um submenu, nao uma segunda janela:
-        # desenhado por cima do inventario os dois painéis caiam no mesmo
+        # desenhado por cima do inventario os dois painÃ©is caiam no mesmo
         # centro. Aqui ele SUBSTITUI o inventario enquanto estiver aberto.
         if self.modo_equip is not None:
             self._desenhar_equipamento(surface)
@@ -378,22 +378,28 @@ class RoadScene(Scene):
         )
         if miolo is None:
             return
-        passo = max(16, min(24, miolo.height // len(conjuntos)))
-        y = miolo.y
+        linhas, passo = ui_arte.linhas_do_equipamento(miolo)
         for i, c in enumerate(conjuntos):
+            if i >= len(linhas):
+                break
+            linha = linhas[i]
             marcado = i == self.index_equip
             cor = theme.GOLD if marcado else theme.TEXT
             if marcado:
-                pygame.draw.rect(
-                    surface, theme.GOLD,
-                    pygame.Rect(miolo.x, y, miolo.width, passo - 2), 1)
+                pygame.draw.rect(surface, theme.GOLD, linha, 1)
             arte = assets.carregar_equipado(c.chave, escala=1)
-            if arte is not None:
-                surface.blit(arte, arte.get_rect(
-                    midleft=(miolo.x + 2, y + passo // 2)))
+            # o boneco encolhe para a altura da linha. Com a altura
+            # inteira ele transbordava 46px para cima e a primeira
+            # linha invadia a barra de EQUIPMENT
+            if arte is None:
+                texto_x = linha.x + 2
+            else:
+                pequeno = ui_arte._caber_pequeno(arte, ui_arte.lado_do_desenho(linha))
+                surface.blit(pequeno, pequeno.get_rect(
+                    midleft=(linha.x + 2, linha.centery)))
+                texto_x = linha.x + pequeno.get_width() + 8
             theme.text_tracked_at(
-                surface, c.rotulo, 13, (miolo.x + 30, y + 4), cor)
-            y += passo
+                surface, c.rotulo, 13, (texto_x, linha.y + 2), cor)
         theme.text_tracked_at(
             surface, "enter usa   esc volta", 12,
             (miolo.x, miolo.bottom + 6), theme.TEXT_DIM)
@@ -450,3 +456,4 @@ class RoadScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+

@@ -375,3 +375,44 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       consertar uma faixa que nao existia, e o jeito de saber foi ler
       os pixels em vez de olhar a imagem.
 
+
+- [x] #47  Os menus nao ficam mais embolados          (este commit)
+      Os menus estavam sendo medidos, nunca olhados. Fotografados na
+      resolucao do jogador, 1008x720, apareceram dois defeitos que os
+      testes antigos, que mediamMOEDA e posicao, nunca pegaram.
+
+      `tools/preview_menus.py` abria com `Config()` cru, que abre em
+      1280x720. Um painel medido em uma resolucao corta diferente na
+      outra, entao todas as fotos anteriores eram de uma tela que o
+      jogador nunca viu. Agora o preview usa `preview_real.config_real()`.
+
+      **O rodape do inventario.** A grade usava o miolo INTEIRO, e no
+      rodape moravam tres coisas ao mesmo tempo: o desenho do conjunto,
+      o rotulo dele e o contador de ouro. Na foto a ultima fileira da
+      grade ficava embaixo do boneco, o rotulo passava por cima do
+      boneco, e o contador caia em cima da linha de dica as vezes fora
+      do painel.
+      A grade agora ocupa 70% do miolo e a faixa de baixo e do rodape.
+      O contador deixou de usar uma caixa fixa de 14px na ultima linha
+      e passou a ser posicionado por fracao da faixa, para cair em cima
+      do desenho da moeda que ja vem na arte.
+      E as quatro cenas do mundo, que tinham cada uma uma copia
+      IDENTICA desse desenho (2078 caracteres, byte por byte), com a
+      mesma conta e o mesmo defeito: 65 linhas duplicadas. Agora e uma
+      funcao so, `ui_arte.desenhar_inventario`.
+
+      **A lista de conjuntos.** O passo era `miolo.height // 6`, uns
+      18px, e o boneco era desenhado com a altura inteira, 64px. Ele
+      transbordava 46px para cima por linha e a primeira linha invadia
+      a barra de EQUIPMENT: na foto os seis bonecos apareciam
+      empilhados sobre o titulo e sobre o painel de cima.
+      Duas coisas aqui que a imagem sozinha nao contava:
+        - o miolo do painel traz uma barra de slots VAZIA na direita,
+          que e onde a arte original previa os icones. A lista e
+          desenhada na esquerda dessa barra, entao a area dela e metade
+          do miolo, e nao o miolo inteiro;
+        - o boneco e estreito e alto, entao o limite do encolhimento e
+          a ALTURA da linha. Pela largura ele cabia com folga (35px),
+          e era a altura que estourava. A primeira correcao encolheu
+          pela fração da largura e o defeito continuou igual.
+      A lista e as seis linhas tambem eram uma copia em cada cena.

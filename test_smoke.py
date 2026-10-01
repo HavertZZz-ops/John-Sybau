@@ -2057,6 +2057,89 @@ def check_corrida_shift() -> None:
     print("[ok] a corrida com Shift funciona nas quatro cenas do mundo")
 
 
+def check_lista_de_conjuntos() -> None:
+    """A lista de conjuntos cabe na linha, nas quatro cenas do mundo.
+
+    O painel EQUIPMENT tem seis conjuntos, cada um com o boneco daquele
+    conjunto. A conta antiga era `miolo.height // 6` para o passo, e o
+    boneco era blitado com a altura inteira, 64px, dentro de uma linha
+    de 18px: ele transbordava 46px para cima e a primeira linha
+    invadia a barra de titulo. Nas quatro copias da lista.
+
+    Alem disso, o miolo do painel traz uma barra de slots VAZIA na
+    direita, que e onde a arte original previa os icones. A lista e
+    desenhada na esquerda dessa barra, entao a area dela e metade do
+    miolo.
+
+    O boneco e estreito e alto, entao o limite do encolhimento e a
+    ALTURA da linha, e nao a largura: aos 26% da largura ele saia com
+    35px e ainda transbordava.
+    """
+    from src import assets as _assets
+    from src import equipamento as _equip
+    from src import ui_arte
+
+    manager = _manager()
+    manager.ui_state.clear()
+    # a cena so existe depois do primeiro switch, e e dela que vem o
+    # tamanho da tela: o `manager.active` comeca nulo
+    manager.switch("title")
+    tela = pygame.Surface(manager.active.size)
+    w, h = tela.get_size()
+    conjuntos = _equip.todos_os_conjuntos()
+
+    assert len(conjuntos) == ui_arte._EQUIP_LINHAS, (
+        f"a lista desenha {ui_arte._EQUIP_LINHAS} linhas e o jogo tem "
+        f"{len(conjuntos)} conjuntos")
+
+    for nome in ("city", "road", "dungeon", "tavern"):
+        manager.switch(nome)
+        painel = ui_arte.desenhar(
+            tela, ui_arte.PAINEL_EQUIPAMENTO,
+            (w // 2, h // 2), int(w * 0.34))
+        assert painel is not None, f"{nome}: o painel nao carregou"
+
+        linhas, passo = ui_arte.linhas_do_equipamento(painel)
+        lado = ui_arte.lado_do_desenho(linhas[0])
+        assert lado <= linhas[0].height, (
+            f"{nome}: o boneco cabe em {lado}px e a linha tem "
+            f"{linhas[0].height}px")
+
+        # o boneco de cada conjunto cabe na linha, medido no desenho real
+        for i, c in enumerate(conjuntos):
+            arte = _assets.carregar_equipado(c.chave, escala=1)
+            if arte is None:
+                continue
+            pequeno = ui_arte._caber_pequeno(arte, lado)
+            assert pequeno.get_height() <= linhas[i].height, (
+                f"{nome} conjunto {i} ({c.rotulo}): desenho de "
+                f"{pequeno.get_height()}px numa linha de "
+                f"{linhas[i].height}px")
+
+        # as seis linhas cabem no miolo
+        assert linhas[-1].bottom <= painel.bottom, (
+            f"{nome}: a ultima linha sai em {linhas[-1].bottom}, "
+            f"o miolo termina em {painel.bottom}")
+
+        # a lista fica na esquerda, sem invadir a barra de slots da arte
+        assert linhas[0].right <= painel.centerx, (
+            f"{nome}: a lista chega em {linhas[0].right}, o meio e "
+            f"{painel.centerx}")
+
+        # o texto comeca depois do boneco
+        for i, c in enumerate(conjuntos):
+            arte = _assets.carregar_equipado(c.chave, escala=1)
+            if arte is None:
+                continue
+            pequeno = ui_arte._caber_pequeno(arte, lado)
+            texto_x = linhas[i].x + pequeno.get_width() + 8
+            assert texto_x < painel.right, (
+                f"{nome} conjunto {i}: o texto em {texto_x} sai do painel")
+
+        print(f"[ok] {nome}: {len(conjuntos)} conjuntos em linhas de "
+              f"{passo}px, boneco de {lado}px, lista em {linhas[0].right}")
+
+
 def check_rodape_do_inventario() -> None:
     """O rodape do inventario: cada coisa no seu lugar, e nada sobre nada.
 
@@ -2321,6 +2404,8 @@ def main() -> int:
     check_taverna()
     print()
     check_corrida_shift()
+    print()
+    check_lista_de_conjuntos()
     print()
     check_rodape_do_inventario()
     print()
