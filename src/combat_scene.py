@@ -36,10 +36,15 @@ class CombatScene(Scene):
         # O chefe nao e um esqueleto mais forte: ele tem barra rapida
         # e defesa alta, e muda o que o menu precisa oferecer.
         self.e_chefe = bool(manager.ui_state.get("e_chefe", False))
+        # a primeira sala marca a luta como fraca: e onde se ensina o
+        # golpe. Sem ler este sinal, `fracos` no progresso nao fazia
+        # nada e o primeiro esqueleto era forte como os outros.
+        fracos = bool(manager.ui_state.get("fracos", False))
         lista = (
             [combat.novo_chefe()]
             if self.e_chefe
-            else [combat.novo_esqueleto(i) for i in range(inimigos)]
+            else [combat.novo_esqueleto(i, fraco=fracos)
+                  for i in range(inimigos)]
         )
         self.batalha = combat.Batalha(
             heroi=combat.novo_heroi(),

@@ -45,6 +45,8 @@ from src.config import (  # noqa: E402
 )
 from src.input_map import InputMap  # noqa: E402
 from src.main import build_scene_manager, create_window  # noqa: E402
+from src.estado import Estado  # noqa: E402
+from src.progresso import Progresso  # noqa: E402
 
 FRAMES = 5
 SCENES = ("title", "options", "game", "dungeon")
@@ -1504,6 +1506,150 @@ def check_moldura_zero_nao_apaga_cache() -> None:
         cfg._FRAME_CACHE = original
 
 
+def check_equipamento_abre_com_r() -> None:
+    """Q abre o inventario e R abre o submenu de equipamento.
+
+    O R estava com o teste ANINHADO dentro do do Q nas tres cenas: o
+    evento de R nunca satisfazia a condicao do Q, entao o submenu era
+    inalcancavel. Este teste e o que impede a volta do aninhamento.
+    """
+    import pygame as _pg
+    manager = _manager()
+    for nome in ("dungeon", "road", "city"):
+        manager.ui_state.clear()
+        manager.ui_state["progresso"] = Progresso()
+        manager.ui_state["estado"] = Estado(vida=30, ouro=200)
+        manager.switch(nome)
+        cena = manager.active
+        if hasattr(cena, "on_enter"):
+            cena.on_enter()
+        # a masmorra e a estrada tem abertura antes de aceitar tecla, e a
+        # masmorra ainda tem a aula na tela: as duas engolem o Q e o
+        # teste passava a testar a aula, nao o menu
+        for _ in range(int(12.0 / (1 / 60))):
+            manager.update(1 / 60)
+        tuta = getattr(cena, "tutorial", None)
+        for _ in range(int(20.0 / (1 / 60))):
+            if tuta is None or (tuta.indice < 0 and tuta.tempo <= 0):
+                break
+            manager.update(1 / 60)
+
+        cena.handle_event(keydown(_pg.K_q))
+        assert cena.inventario_aberto, f"{nome}: o Q nao abriu o inventario"
+
+        cena.handle_event(keydown(_pg.K_r))
+        assert cena.modo_equip is not None, (
+            f"{nome}: o R nao abriu o submenu de equipamento com o "
+            "inventario aberto"
+        )
+
+        # e o R de novo fecha, para o submenu nao ser uma单向 street
+        cena.handle_event(keydown(_pg.K_r))
+        assert cena.modo_equip is None, (
+            f"{nome}: o R nao fechou o submenu de equipamento"
+        )
+
+        # R sem o inventario aberto nao pode abrir nada
+        cena.handle_event(keydown(_pg.K_q))
+        assert not cena.inventario_aberto, f"{nome}: o Q nao fechou"
+        cena.handle_event(keydown(_pg.K_r))
+        assert cena.modo_equip is None, (
+            f"{nome}: o R abriu equipamento com o inventario fechado"
+        )
+    print("[ok] Q e R abrem e fecham os menus nas tres cenas")
+
+    # o desenho do submenu nao pode estourar: antes ele era definido e
+    # nunca chamado, e agora e chamado dentro do desenho do inventario
+    manager.ui_state.clear()
+    manager.ui_state["progresso"] = Progresso()
+    manager.ui_state["estado"] = Estado(vida=30, ouro=200)
+    manager.switch("city")
+    cena = manager.active
+    cena.handle_event(keydown(_pg.K_q))
+    cena.handle_event(keydown(_pg.K_r))
+    manager.draw()
+    assert cena.modo_equip == 0, cena.modo_equip
+    print("[ok] o submenu de equipamento e desenhado")
+
+
+def check_primeiro_inimigo_fraco() -> None:
+    """O esqueleto da sala 1 e mais fraco que o das outras salas.
+
+    O campo `fracos` existia no progresso desde o comeco e ninguem lia:
+    a primeira luta montava o mesmo esqueleto das outras, so que com a
+    placa de "aqui voce aprende".
+    """
+    from src import combat as _combat
+
+    fraco = _combat.novo_esqueleto(0, fraco=True)
+    normal = _combat.novo_esqueleto(0)
+
+    assert fraco.vida_max < normal.vida_max, (fraco.vida_max, normal.vida_max)
+    assert fraco.forca < normal.forca, (fraco.forca, normal.forca)
+    assert fraco.defesa <= normal.defesa, (fraco.defesa, normal.defesa)
+    assert fraco.velocidade_barra < normal.velocidade_barra, (
+        fraco.velocidade_barra, normal.velocidade_barra
+    )
+    print(f"[ok] sala 1: vida {fraco.vida_max} forca {fraco.forca} "
+          f"(normal: {normal.vida_max}/{normal.forca})")
+
+    # e so a sala 1 que e fraca
+    p = Progresso()
+    for numero in range(1, len(cena_salas()) + 1):
+        p.sala = numero
+        esperado = numero == 1
+        assert p.sala_atual().fracos is esperado, (
+            f"a sala {numero} marcou fracos={p.sala_atual().fracos}, "
+            f"esperado {esperado}"
+        )
+    print("[ok] so a sala 1 monta o esqueleto fraco")
+
+
+def cena_salas():
+    from src.progresso import SALAS
+    return SALAS
+
+
+def check_menu_de_combate_da_arte() -> None:
+    """O menu de combate usa os slots da arte, e o inventario e a arte.
+
+    Sem isto o jogo volta para a lista de texto em qualquer maquina que
+    nao tenha os arquivos de UI, e o defeito some do teste.
+    """
+    from src import ui_arte
+
+    import pygame as _pg
+    _pg.init()
+    _pg.display.set_mode((1, 1))
+
+    for nome in (ui_arte.PAINEL_INVENTARIO, ui_arte.PAINEL_LOJA,
+                 ui_arte.PAINEL_EQUIPAMENTO, ui_arte.PAINEL_ACAO_BAR,
+                 ui_arte.PAINEL_ACAO_HEADER):
+        img = ui_arte.carregar(nome)
+        assert img is not None, f"painel ausente: {nome}"
+        assert img.get_width() >= 10 and img.get_height() >= 10, (
+            nome, img.get_size()
+        )
+    print("[ok] os cinco paineis do pacote carregam")
+
+    # os slots tem que cair dentro do miolo: foi o erro da versao
+    # anterior, em que as linhas cobriam a moldura
+    s = _pg.Surface((400, 400))
+    for nome, topo, base in (
+        (ui_arte.PAINEL_LOJA, 0.10, 0.94),
+        (ui_arte.PAINEL_ACAO_BAR, 0.24, 0.90),
+    ):
+        miolo = ui_arte.desenhar(s, nome, (200, 200), 300,
+                                 topo_rel=topo, base_rel=base)
+        assert miolo is not None, nome
+        slots = (ui_arte.slots_da_loja(miolo, 6) if nome == ui_arte.PAINEL_LOJA
+                 else ui_arte.slots_da_barra(miolo, 5))
+        for r in slots:
+            assert r.width > 4 and r.height > 4, (nome, r)
+            assert miolo.colliderect(r), f"{nome}: o slot {r} saiu do miolo"
+    print("[ok] os slots ficam dentro do miolo do painel")
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -1578,6 +1724,12 @@ def main() -> int:
     check_tutorial()
     print()
     check_tutorial_na_masmorra()
+    print()
+    check_equipamento_abre_com_r()
+    print()
+    check_primeiro_inimigo_fraco()
+    print()
+    check_menu_de_combate_da_arte()
     print()
     check_dynamic_resolution_persists()
     print()

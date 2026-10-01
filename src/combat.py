@@ -358,21 +358,36 @@ def novo_heroi(vida: int = 60, forca: int = 9) -> Combatente:
     )
 
 
-def novo_esqueleto(indice: int = 0) -> Combatente:
+def novo_esqueleto(indice: int = 0, fraco: bool = False) -> Combatente:
     """Inimigo de catacumba: barra lenta e vida curta, o oposto do heroi.
 
     O nome segue o sprite. O ghoul do pacote gfx tem corpo de verdade e
     e o inimigo principal; o esqueleto do Skeletons Pack e uma arte de
     6px de largura por 21 de altura, que le como um palito ao lado do
     jogador, e fica como a variante mais fraca.
+
+    `fraco` existe para a PRIMEIRA sala, que tem que ensinar o golpe sem
+    matar quem esta aprendendo. Sem esse caminho o primeiro esqueleto
+    tinha exatamente os mesmos numeros dos outros: a sala 1 era igual
+    a sala 4, so que com a placa de "aqui voce aprende".
     """
     nomes = ("Cavador", "Ossario", "Guardiao de Ossos", "Sentinela")
     vida = 26 + indice * 8
+    forca = 5 + indice * 2
+    defesa = 1 + indice
+    barra = 9.0 + indice * 1.5
+    if fraco:
+        # a barra mais devagar da duas voltas para o jogador ver o
+        # golpe chegando antes de levar o contra-ataque
+        vida = 12
+        forca = 3
+        defesa = 0
+        barra = 6.0
     return Combatente(
         nome=nomes[indice % len(nomes)],
         vida=vida, vida_max=vida,
-        velocidade_barra=9.0 + indice * 1.5,
-        forca=5 + indice * 2, defesa=1 + indice,
+        velocidade_barra=barra,
+        forca=forca, defesa=defesa,
     )
 
 

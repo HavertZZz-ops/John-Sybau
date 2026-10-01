@@ -152,7 +152,9 @@ class RoadScene(Scene):
             self.modo_equip = 0 if self.modo_equip is None else None
             return
         if self.key(event, "inventario"):
-            self._fechar_outros_menus()
+            # fecha os outros menus SEM mexer no inventario: e o
+            # proprio Q que esta decidindo se ele fica aberto
+            self._fechar_outros_menus(mantem_inventario=True)
             self.inventario_aberto = not self.inventario_aberto
             return
 
@@ -411,14 +413,20 @@ class RoadScene(Scene):
                 center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
                         int(self.posicao.y - self.camera.y + self.size[1] // 2))))
 
-    def _fechar_outros_menus(self) -> None:
+    def _fechar_outros_menus(self, mantem_inventario: bool = False) -> None:
         """So um menu por vez.
 
         A loja abria POR CIMA do inventario, e os dois paineis
         ficavam empilhados no meio da tela. Cada menu aqui e a unica
         coisa que o jogador precisa ver enquanto ele esta aberto.
+
+        `mantem_inventario` existe para o Q. O Q primeiro fecha os
+        outros menus e depois alterna o inventario; sem este sinal o
+        metodo zerava a flag e o `not` seguinte a reabria, e o painel
+        nunca saia de tela.
         """
-        self.inventario_aberto = False
+        if not mantem_inventario:
+            self.inventario_aberto = False
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
