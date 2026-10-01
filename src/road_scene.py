@@ -14,7 +14,7 @@ import random
 
 import pygame
 
-from . import animacao, assets, cenarios, settings, theme, wang
+from . import animacao, assets, cenarios, luz, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
 from . import estado as estado_mod
 from . import equipamento as equip_mod
@@ -253,6 +253,22 @@ class RoadScene(Scene):
 
         theme.text_tracked_at(
             surface, "ESTRADA", 17, (20, 20), theme.TEXT_DIM)
+        # a luz: mascara sobre a cena pronta. O mapa inteiro com a
+        # mesma claridade e uma laje lisa; com a luz, o que esta longe
+        # some e o que esta perto do heroi aparece.
+        _luz = luz.Luz()
+        _luz.add(
+            int(self.posicao.x - self.camera.x + self.size[0] // 2),
+            int(self.posicao.y - self.camera.y + self.size[1] // 2),
+            int(self.tile * 6.5), luz.LUZ_HEROI,
+        )
+        if getattr(self, "fogueira_pos", None) is not None:
+            _luz.add(
+                int(self.fogueira_pos.x - self.camera.x + self.size[0] // 2),
+                int(self.fogueira_pos.y - self.camera.y + self.size[1] // 2),
+                int(self.tile * 8.5), luz.LUZ_FOGUEIRA,
+            )
+        _luz.aplicar(surface)
         self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E segue para a aldeia", 15,

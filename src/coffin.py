@@ -34,7 +34,11 @@ STONE_LIGHT = (108, 112, 122)
 STONE_HI = (132, 136, 146)
 STONE_DARK = (46, 48, 55)
 STONE_EDGE = (26, 27, 31)
-INTERIOR = (14, 13, 12)
+# o interior NAO e preto. A cena escurece o que esta fora do circulo
+# de luz por um fator de 0,29, e um preto de verdade virava zero.
+INTERIOR = (44, 40, 44)
+INTERIOR_FUNDO = (24, 21, 24)
+INTERIOR_ARESTA = (96, 92, 100)
 PLINTH = (40, 41, 47)
 
 def _sorteio(n: int, seed: int) -> list[float]:
@@ -199,13 +203,42 @@ def _base_completa(w: int, h: int) -> pygame.Surface:
     )
     vao = [(x, y + max(2, h // 18)) for x, y in vao]
     _preencher_forma(base, vao, INTERIOR)
+
+    # degrade dentro do oco: a boca do tumulo e mais clara que o fundo.
+    # E o que separa "um buraco" de "uma cova funda".
+    ys = [int(y) for _x, y in vao]
+    y0, y1 = min(ys), max(ys)
+    if y1 > y0 + 1:
+        for y in range(y0, y1 + 1):
+            t = (y - y0) / (y1 - y0)
+            cor = (
+                int(INTERIOR[0] + (INTERIOR_FUNDO[0] - INTERIOR[0]) * t),
+                int(INTERIOR[1] + (INTERIOR_FUNDO[1] - INTERIOR[1]) * t),
+                int(INTERIOR[2] + (INTERIOR_FUNDO[2] - INTERIOR[2]) * t),
+            )
+            pygame.draw.line(base, cor, (0, y), (w, y))
+
+    # brilho na aresta interna dos dois lados: e a luz do jogador
+    # batendo na parede de dentro do tumulo, e e o que da a sensacao
+    # de concavidade em vez de recorte
+    for lado in (0, len(vao) // 2):
+        pontos = vao[lado:lado + len(vao) // 2]
+        if len(pontos) > 2:
+            pygame.draw.lines(
+                base, INTERIOR_ARESTA, False,
+                [(int(x) + (2 if lado else -1), int(y))
+                 for x, y in pontos], 1,
+            )
+
     pygame.draw.lines(
         base, STONE_EDGE, True, [(int(x), int(y)) for x, y in vao], 1
     )
 
-    # sombra interna na parede de cima, dando profundidade ao buraco
-    sombra = pygame.Surface((w, max(2, h // 7)), pygame.SRCALPHA)
-    sombra.fill((0, 0, 0, 150))
+    # sombra so na parede de cima, mais leve do que era: com a mascara
+    # de luz por cima, uma sombra de 150 em um buraco de 14 deixava o
+    # interior completamente preto
+    sombra = pygame.Surface((w, max(2, h // 9)), pygame.SRCALPHA)
+    sombra.fill((0, 0, 0, 78))
     base.blit(sombra, (0, 0))
 
     # limo e po no fundo, para a pedra nao parecer lavada

@@ -16,6 +16,7 @@ import pygame
 from . import (  # noqa: I001
     animacao,
     assets,
+    luz,
     cenarios,
     coffin,
     settings,
@@ -1096,6 +1097,12 @@ class DungeonScene(Scene):
                 tracking=3,
             )
 
+        # a luz vem depois de TUDO estar desenhado: e uma mascara sobre
+        # a cena pronta, e nao um desenho a mais. Antes dela o mapa era
+        # uma laje marrom com luz igual em todo canto, e a fogueira era
+        # so um desenho.
+        self._aplicar_luz(surface)
+
         if self.fase == "morrendo":
             # a tela escurece enquanto o corpo cai, e ja chega quase
             # preta quando a abertura comeca. Sem isto a morte era um
@@ -1105,6 +1112,35 @@ class DungeonScene(Scene):
             theme.fade_surface(surface, escuro)
         elif self.fase == "acordando" and self.fase_tempo < 0.8:
             theme.fade_surface(surface, int(255 * (1 - self.fase_tempo / 0.8)))
+
+    def _aplicar_luz(self, surface: pygame.Surface) -> None:
+        """Escurece a cena e abre a luz no heroi, na fogueira e nas tochas.
+
+        O alcance e medido em TILES, e nao em pixels: seis tiles de luz
+        em 720p e seis tiles em 1080p, e nao um circulo que cresce
+        junto com a janela. Sem isso o jogador enxerga o dobro do
+        cenario numa tela grande e nada numa pequena.
+        """
+        w, h = self.size
+        mascara = luz.Luz()
+        # o heroi: uma tocha na mao. O raio cobre uns seis tiles.
+        mascara.add(
+            int(self.posicao.x - self.camera.x + w // 2),
+            int(self.posicao.y - self.camera.y + h // 2),
+            int(self.tile * 6.0),
+            luz.LUZ_HEROI,
+        )
+        # a fogueira: maior e mais quente, e e a unica luz parada da
+        # sala — o jogador precisa poder achar o caminho de volta
+        if self.fogueira_pos is not None:
+            mascara.add(
+                int(self.fogueira_pos.x - self.camera.x + w // 2),
+                int(self.fogueira_pos.y - self.camera.y + h // 2),
+                int(self.tile * 8.5),
+                luz.LUZ_FOGUEIRA,
+            )
+        mascara.aplicar(surface)
+        surface.blit(luz.vinhete(w, h), (0, 0))
 
     def _tela_para_mapa(self, ponto: tuple[int, int]) -> tuple[int, int]:
         """Converte coordenada de tela em coordenada de tile."""
