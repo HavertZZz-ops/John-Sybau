@@ -263,3 +263,65 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       quebrava com AttributeError, e como a fuga da masmorra passa por
       ali, o caminho para a aldeia estava cortado. Achado pelo fumaco
       longo depois que a taverna entrou na lista de cenas.
+
+- [x] #37  O heroi passa a andar                        (`0df2627`)
+      O heroi andava como foto. `src/animacao.py` faz o passo na
+      mao: perna da frente e de tras trocam, o quadril sobe dois
+      pixels, o tronco inclina, o corpo estica e a sombra se achata
+      no ar. Vale para o heroi em movimento ou parado, e entrou na
+      masmorra, na estrada, na aldeia e na taverna. Chegar perto de
+      alguem passa a ter dois corpos em vez de um boneco deslizando.
+
+- [x] #38  A morte e uma animacao, nao um sumico          (`b192954`)
+      Vencido, o heroi sumia de uma vez. Agora a fase `morrendo`
+      dura 1.9s, toca a folha `death` quadro a quadro, segura o
+      ultimo quadro e so entao some num fade.
+
+- [x] #39  Os esqueletos finalmente atacam              (`c1735de`)
+      `ghoul` nao tinha arte de ataque nenhuma, e `assets.load_foe`
+      devolvia a caminhada ao contrario como plano B, o que fazia o
+      bicho recuar na hora de bater. O esqueleto tambem estava
+      cortado em celulas de 16x32 quando a arte e de 32x32, entao
+      cada lado vinha com a mao do vizinho e a cabeça errada.
+      Agora a folha e refatiada em 32x32, com quatro de caminhada e
+      seis de ataque por direcao, e o combate escolhe `walk`, `idle`,
+      `attack`, `hit` e `death` de verdade.
+
+- [x] #40  A luta e na escala da tela do jogador          (`df3ec77`)
+      O combate encolhia o heroi para caber numa tela de teste e
+      ficava minusculo na tela do jogador, que roda em 1008x720 com
+      `sprite_scale` 3. O enlarge saiu do proprio `Config`: cada lutador
+      e desenhado na escala real da tela. O primeiro esqueleto tambem
+      nascia em cima do jogador e derrubava-o antes de dar um passo;
+      agora nasce a 7.2 tiles, longe o bastante para andar e brigar.
+
+- [x] #41  A masmorra tem luz                           (`a504a73`)
+      Nada tem luz nenhuma: o mapa e a mesma cor em todo canto.
+      `src/luz.py` monta uma mascara escura e abre um circulo em
+      volta do heroi, com a luz caindo com a distancia. Vale para
+      masmorra, estrada e aldeia, que era onde se via mais o problema.
+
+- [x] #42  O caixao tem fundo                            (este commit)
+      Abrir o caixao te jogava num retangulo preto. Agora tem
+      parede de pedra ao fundo, degrade e um brilho quente vindo do
+      proprio caixao, que e a unica coisa ali dentro com luz.
+
+- [x] #43  A masmorra tem o que olhar                    (este commit`)
+      Uma sala e um retangulo de ladrilho. `src/cenario.py` corta
+      ossos, barris, potes e panelas do pacote e espalha pela sala
+      com uma semente, longe das paredes.
+      Duas armadilhas do pacote experimental:
+        - `pygame.display.set_mode()` em runtime destroi a janela
+          aberta. O fatiador respeita a tela existente e faz o
+          redimensionamento so no uso isolado (`python -m src.cenario`);
+        - o parametro `cenario` da funcao sombreava o modulo de
+          mesmo nome. Agora o modulo e `cenario_mod`.
+
+- [x] #44  A luta acontece na sala em que voce esta      (`7949325`)
+      Era este o pedido: o fundo da luta era uma parede de catacumba
+      em toda parte, igual na sala 1 e na sala 5. Agora `dungeon`
+      passa `cenario_luta` com o tileset e a lista de enfeites da
+      sala, e o combate desenha a parede e o chao daquele tileset e
+      os enfeites daquela sala. Os enfeites ficam nos cantos, em duas
+      profundidades, para nao virarem uma fileira atras dos lutadores.
+      A sala agora e o lugar, e nao um fundo generico.
