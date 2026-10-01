@@ -21,7 +21,12 @@ DT_FIXO = 1 / 60
 DANO_VIDA = 1.0
 
 # posicoes na tela (fracao), para o layout acompanhar a resolucao
-HEROI_POS = (0.30, 0.52)
+# o heroi: eixo horizontal em fracao da largura. O vertical vem da
+# linha do chao, e o ancoramento e pelo pe.
+HEROI_POS = 0.28
+# a linha do chao da luta, em fracao da altura. Vale para o heroi e
+# para os inimigos: e o que faz os dois parecerem no mesmo plano.
+CHAO_LUTA = 0.62
 INIMIGO_X = (0.58, 0.72, 0.86)
 
 
@@ -305,7 +310,7 @@ class CombatScene(Scene):
         antes: a cena nunca pode depender de arte externa para existir.
         """
         w, h = self.size
-        horizonte = int(h * 0.60)
+        horizonte = int(h * CHAO_LUTA)
         pygame.draw.rect(surface, theme.BACKGROUND, pygame.Rect(0, 0, w, h))
 
         tile = self._tile_de_cenario()
@@ -463,8 +468,12 @@ class CombatScene(Scene):
             return
         idx = int(self.anim_tempo * assets.fps_do_estado(estado)) % len(quadros)
         sprite = quadros[idx]
-        pos = (int(w * HEROI_POS[0]), int(h * HEROI_POS[1]))
-        rect = sprite.get_rect(center=pos)
+        # pelo PE, na linha do chao, e nao pelo centro: o heroi era
+        # cortado na cintura pela faixa escura do rodape. E a mesma
+        # regra que o esqueleto ja usava no mapa.
+        chao = int(h * CHAO_LUTA)
+        pos = (int(w * HEROI_POS), chao)
+        rect = sprite.get_rect(midbottom=pos)
         surface.blit(sprite, rect)
 
         # a espada entra por cima do corpo enquanto o golpe roda
@@ -492,7 +501,7 @@ class CombatScene(Scene):
             # deixava flutuando, porque o pe dele ficava no meio da
             # linha de chao. Pinar pelo pe e o que coloca todo mundo
             # apoiado no mesmo chao
-            chao = int(h * (0.60 + 0.05 * (i % 3)))
+            chao = int(h * CHAO_LUTA) + int(h * 0.05) * (i % 3)
             rect = sprite.get_rect(midbottom=(int(x), chao))
 
             if inimigo.vivo:
