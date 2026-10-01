@@ -177,8 +177,14 @@ class CityScene(Scene):
 
         self.time = 0.0
         self.tile = TILE_BASE * assets.get_sprite_scale()
+        # A entrada do mapa fica quinze tiles a oeste do aglomerado, e
+        # o jogador nascia la: o primeiro quadro da aldeia era uma
+        # pedra vazia, sem morador, fogueira nem construcao. Agora ele
+        # chega na borda oeste da aldeia, e ela aparece inteira.
         self.posicao = pygame.Vector2(
-            self.mapa.para_pixels(*self.mapa.entrada, self.tile)
+            self.mapa.para_pixels(
+                *self._entrada_da_aldeia(), self.tile
+            )
         )
         self.camera = pygame.Vector2(self.posicao)
 
@@ -300,6 +306,32 @@ class CityScene(Scene):
         p = self.progresso
         if p is not None and p.mundo == "estrada":
             p.mundo = "cidade"
+
+    def _entrada_da_aldeia(self) -> tuple[int, int]:
+        """Onde o jogador aparece na aldeia: a oeste do aglomerado.
+
+        Nao e a entrada do mapa. A entrada do mapa e quinze tiles a
+        oeste de onde ficam os moradores, a fogueira e a taverna, e o
+        primeiro quadro da cena era uma pedra vazia.
+        """
+        centro = self.mapa.centro_da_sala(2) or self.mapa.entrada
+        melhor = (self.mapa.entrada, -1)
+        # anda para oeste do centro ate achar chao andavel, sem sair da
+        # sala: e o ponto de onde o jogador ve a aldeia inteira
+        for raio in range(0, 12):
+            for dx in range(-raio, raio + 1):
+                for dy in range(-raio, raio + 1):
+                    if max(abs(dx), abs(dy)) != raio:
+                        continue
+                    x = centro[0] - raio + dx
+                    y = centro[1] + dy
+                    if not self.mapa.andavel(x, y):
+                        continue
+                    if self.mapa.sala_de(x, y) != 2:
+                        continue
+                    if melhor[1] < raio:
+                        melhor = ((x, y), raio)
+        return melhor[0]
 
     def _avisar(self, texto: str, segundos: float = 3.4) -> None:
         self.avisar = texto

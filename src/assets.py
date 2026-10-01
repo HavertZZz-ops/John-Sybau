@@ -343,7 +343,12 @@ def carregar_casa(nome: str, escala: int = 2) -> pygame.Surface | None:
     except (pygame.error, OSError) as exc:
         print(f"[assets] predio ausente: {caminho.name} ({exc})")
         return None
-    alvo = (imagem.get_width() * escala, imagem.get_height() * escala)
+    # a ALTURA alvo e a do heroi na tela, e nao a arte crua vezes o
+    # enlarge. O morador foi gerado em 64x64 e saia em 192x192 na escala
+    # 3, contra 97x120 do heroi equipado: na tela o Tao Anchieta tinha
+    # 1,6 vez a altura do jogador e a aldeia parecia um lugar de
+    # gigantes. A altura vem do que a cena ja usa para o heroi.
+    alvo = _altura_do_morador(imagem, escala)
     if imagem.get_size() != alvo:
         imagem = pygame.transform.scale(imagem, alvo)
     _CASA_CACHE[chave] = imagem
@@ -413,6 +418,30 @@ MORADOR_DIR: Path = settings.SPRITES_DIR / "moradores"
 _MORADOR_CACHE: dict[tuple[str, int], pygame.Surface] = {}
 
 
+# a altura que um morador deve ter na tela, e a mesma do heroi
+# equipado. Medida com `equipado_na_tela`: em escala 3 o heroi sai com
+# 120px de altura, e o morador saia com 192.
+_ALTURA_MORADOR: dict[int, int] = {}
+
+
+def _altura_do_morador(imagem: pygame.Surface, escala: int) -> tuple[int, int]:
+    """O tamanho do morador, casado com a altura do heroi na tela."""
+    if escala not in _ALTURA_MORADOR:
+        alvo = None
+        for chave in ("espada", "maca", "punho"):
+            arte = equipado_na_tela(chave, escala)
+            if arte is not None:
+                alvo = arte.get_height()
+                break
+        if alvo is None:
+            alvo = imagem.get_height() * escala
+        _ALTURA_MORADOR[escala] = alvo
+
+    altura = _ALTURA_MORADOR[escala]
+    largura = max(1, int(imagem.get_width() * altura / imagem.get_height()))
+    return (largura, altura)
+
+
 def carregar_morador(nome: str, escala: int = 2) -> pygame.Surface | None:
     """Carrega o desenho de um morador, ampliado e em cache.
 
@@ -435,7 +464,7 @@ def carregar_morador(nome: str, escala: int = 2) -> pygame.Surface | None:
     except (pygame.error, OSError) as exc:
         print(f"[assets] morador ausente: {caminho.name} ({exc})")
         return None
-    alvo = (imagem.get_width() * escala, imagem.get_height() * escala)
+    alvo = _altura_do_morador(imagem, escala)
     if imagem.get_size() != alvo:
         imagem = pygame.transform.scale(imagem, alvo)
     _MORADOR_CACHE[chave] = imagem

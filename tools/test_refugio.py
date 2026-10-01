@@ -115,12 +115,26 @@ for nome in sorted(esperados):
         faltando.append(nome)
 checa(not faltando, f"todos os moradores tem desenho; faltando: {faltando}")
 
+# a altura de referencia: a do heroi na MESMA escala do morador. O
+# morador e reduzido ate ela, e nao ate a arte crua vezes o enlarge:
+# antes ele saia com 192px de altura contra 120 do heroi, e o Tao
+# Anchieta tinha um metro e meio de vantagem na tela.
+for _escala in (1, 2, 3):
+    _heroi = assets.equipado_na_tela("espada", _escala)
+    if _heroi is None:
+        continue
+    _altura_heroi = _heroi.get_height()
+    for nome in sorted(esperados):
+        arte = assets.carregar_morador(nome, escala=_escala)
+        checa(arte is not None, f"o desenho de {nome} carrega")
+        if arte is not None:
+            checa(arte.get_height() == _altura_heroi,
+                  f"{nome} na escala {_escala} tem a altura do heroi "
+                  f"({_altura_heroi}px): {arte.get_height()}px")
+
 for nome in sorted(esperados):
     arte = assets.carregar_morador(nome, escala=2)
-    checa(arte is not None, f"o desenho de {nome} carrega")
     if arte is not None:
-        checa(arte.get_width() == 128,
-              f"{nome} ampliado 2x tem 128px: {arte.get_width()}")
         # transparente: o desenho tem que cortar, nao vir em quadrado
         w, h = arte.get_size()
         canto = arte.get_at((1, 1))[3]
