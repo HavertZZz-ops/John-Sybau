@@ -19,6 +19,13 @@ from src.main import build_scene_manager, create_window  # noqa: E402
 from src.progresso import Progresso  # noqa: E402
 from src.scene_manager import SceneManager  # noqa: E402
 
+# Os menus foram fotografados com `Config()` cru, que abre em 1280x720.
+# O jogo do jogador roda em 1008x720 com `sprite_scale` 3, e um painel
+# medido em uma resolucao corta diferente na outra. A foto tem de ser
+# da resolucao de quem joga.
+sys.path.insert(0, str(RAIZ / "tools"))
+from preview_real import config_real  # noqa: E402
+
 L, A = pygame.Surface.convert_alpha, pygame.event.Event
 
 
@@ -36,9 +43,13 @@ def teclar(ger, k):
 
 
 pygame.init()
-janela = create_window(__import__("src.config", fromlist=["Config"]).Config())
-ger = build_scene_manager(SceneManager(janela))
+CONFIG = config_real()
+assets.set_sprite_scale(CONFIG.sprite_scale)
+janela = create_window(CONFIG)
+ger = build_scene_manager(SceneManager(janela, CONFIG))
 ger.ui_state.clear()
+print(f"config da foto: {CONFIG.width}x{CONFIG.height}, "
+      f"sprite_scale {CONFIG.sprite_scale}")
 
 p = Progresso()
 p.itens["pocao"] = 2

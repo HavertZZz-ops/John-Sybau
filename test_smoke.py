@@ -2057,6 +2057,107 @@ def check_corrida_shift() -> None:
     print("[ok] a corrida com Shift funciona nas quatro cenas do mundo")
 
 
+def check_rodape_do_inventario() -> None:
+    """O rodape do inventario: cada coisa no seu lugar, e nada sobre nada.
+
+    As quatro cenas do mundo tinham cada uma uma copia deste desenho, e
+    nas quatro a conta estava errada: a grade usava o miolo inteiro, a
+    ultima fileira ficava embaixo do desenho do conjunto, o rotulo caia
+    em cima do boneco, e o contador caia em cima da linha de dica, as
+    vezes fora do painel.
+
+    Layout nao se prova olhando a foto. Aqui cada peca do rodape ganha um
+    retangulo, e o defeito testado e a sobreposicao: dois retangulos que
+    se cruzam, mesmo que o resultado final pareca bom.
+    """
+    from src import ui_arte
+
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.switch("city")
+    tela = pygame.Surface(manager.active.size)
+    painel = ui_arte.desenhar(
+        tela, ui_arte.PAINEL_INVENTARIO,
+        (tela.get_width() // 2, tela.get_height() // 2),
+        int(tela.get_width() * 0.42))
+    assert painel is not None, "o painel de inventario nao carregou"
+
+    grade, rodape = ui_arte._cabe(painel)
+
+    # a grade para antes do rodape: era a ultima fileira em cima do boneco
+    COLUNAS, fileiras = 5, 4
+    cw = grade.width // COLUNAS
+    ch = grade.height // fileiras
+    ultima = pygame.Rect(grade.x, grade.y + 3 * ch, grade.width, ch)
+    assert grade.bottom <= rodape.top, "a grade invade o rodape"
+    assert ultima.bottom <= rodape.top, f"a ultima fileira invade: {ultima}"
+    print(f"[ok] a grade para em {ultima.bottom} e o rodape comeca "
+          f"em {rodape.top}")
+
+    # as colunas cabem dentro do painel: as fichas saiam pela esquerda
+    for i in range(COLUNAS):
+        coluna = pygame.Rect(grade.x + i * cw, grade.y, cw, ch)
+        assert coluna.left >= painel.left, f"a coluna {i} sai a esquerda"
+        assert coluna.right <= painel.right, f"a coluna {i} sai a direita"
+    print(f"[ok] as {COLUNAS} colunas cabem entre {painel.left} e {painel.right}")
+
+    # o rotulo, o contador e o conjunto nao se cruzam
+    rotulo = pygame.Rect(rodape.x + 8, rodape.centery - 7, 150, 13)
+    contador = pygame.Rect(
+        rodape.x + int(rodape.width * ui_arte._INVENTARIO_CONTADOR_X),
+        rodape.y + int(rodape.height * ui_arte._INVENTARIO_CONTADOR_TOPO),
+        60, 14)
+    assert not rotulo.colliderect(contador), f"{rotulo} e {contador} se cruzam"
+    reservada = int(rodape.width * ui_arte._INVENTARIO_CONJUNTO_LADO)
+    conjunto = pygame.Rect(
+        rodape.right - max(reservada, 40) + 4, rodape.y,
+        max(reservada, 40), rodape.height - ui_arte._INVENTARIO_CONJUNTO_FOLGA)
+    assert conjunto.left >= rotulo.right, f"o conjunto cobre o rotulo: {conjunto}"
+    print("[ok] rotulo, contador e conjunto nao se cruzam")
+
+    # o contador fica dentro do painel e acima da linha de dica
+    dica = pygame.Rect(painel.left, painel.bottom + 8, 260, 13)
+    assert contador.bottom <= painel.bottom, (
+        f"o contador saiu do painel: {contador.bottom} > {painel.bottom}")
+    assert contador.bottom <= dica.top, (
+        f"o contador caiu na dica: {contador.bottom} > {dica.top}")
+    print(f"[ok] o contador para em {contador.bottom}, a dica em {dica.top}")
+
+    # e sobra altura para o desenho do conjunto caber na faixa
+    altura = rodape.height - ui_arte._INVENTARIO_CONJUNTO_FOLGA
+    assert altura >= 24, f"o rodape e curto demais para o boneco: {altura}px"
+    print(f"[ok] sobra {altura}px de altura para o desenho do conjunto")
+
+    # a loja usa o mesmo contador, entao a conta tem de servir la tambem.
+    # A loja e desenhada de verdade, com o painel SHOP, e o numero tem
+    # de cair em cima do desenho da moeda que vem na arte
+    from src.city_scene import CityScene
+    manager.switch("city")
+    cidade = manager.active
+    cidade.on_enter()
+    cidade.perto = next(
+        (m for m in cidade.moradores if m.nome == "O Estranho"), None)
+    press(manager, pygame.K_e)
+    manager.update(1 / 60)
+    assert cidade.loja is not None, "a loja nao abriu para o teste do contador"
+    # o miolo da loja: a cena o desenha e devolve, e aqui o teste redesenha
+    # o mesmo painel para ter o retangulo em maos
+    painel_loja = ui_arte.desenhar(
+        pygame.Surface(cidade.size), ui_arte.PAINEL_LOJA,
+        (cidade.size[0] // 2, cidade.size[1] // 2),
+        int(cidade.size[0] * 0.34), topo_rel=0.10, base_rel=0.94)
+    assert painel_loja is not None, "a loja nao desenhou o painel SHOP"
+    _, rodape_loja = ui_arte._cabe(painel_loja)
+    numero = pygame.Rect(
+        rodape_loja.x + int(rodape_loja.width * ui_arte._INVENTARIO_CONTADOR_X),
+        rodape_loja.y + int(rodape_loja.height * ui_arte._INVENTARIO_CONTADOR_TOPO),
+        60, 14)
+    assert numero.bottom <= painel_loja.bottom, (
+        f"o numero da loja saiu do painel: {numero.bottom} > {painel_loja.bottom}")
+    print(f"[ok] o numero da loja para em {numero.bottom}, "
+          f"o painel em {painel_loja.bottom}")
+
+
 def check_parede_solida() -> None:
     """A parede do mapa e solida, e nao a cor do fundo.
 
@@ -2220,6 +2321,8 @@ def main() -> int:
     check_taverna()
     print()
     check_corrida_shift()
+    print()
+    check_rodape_do_inventario()
     print()
     check_parede_solida()
     print()

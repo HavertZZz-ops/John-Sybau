@@ -606,47 +606,14 @@ class CityScene(Scene):
             )
             return
 
-        if not linhas:
-            theme.text_tracked_at(
-                surface, "Voce nao carrega nada", 16,
-                (painel.centerx - 60, painel.centery - 8), theme.TEXT_DIM)
-        else:
-            # os itens vao DENTRO da grade, que e o que o painel foi
-            # desenhado para. A primeira versao escrevia as linhas por
-            # cima dos quadrados vazios e o painel ficava ilegivel.
-            COLUNAS = 5
-            fileiras = 4
-            cw = painel.width // COLUNAS
-            ch = painel.height // fileiras
-            for i, (_id, item, qtd) in enumerate(linhas[:COLUNAS * fileiras]):
-                cx = painel.x + (i % COLUNAS) * cw
-                cy = painel.y + (i // COLUNAS) * ch
-                caixa = pygame.Rect(cx + 3, cy + 3, cw - 6, ch - 6)
-                pygame.draw.rect(surface, theme.BACKGROUND_SOFT, caixa)
-                pygame.draw.rect(surface, theme.HAIRLINE, caixa, 1)
-                palavras = item.nome.split()
-                theme.text_tracked_at(
-                    surface, palavras[0][:9], 13,
-                    (caixa.x + 4, caixa.y + 8), theme.TEXT)
-                if len(palavras) > 1:
-                    theme.text_tracked_at(
-                        surface, " ".join(palavras[1:])[:14], 11,
-                        (caixa.x + 4, caixa.y + 26), theme.TEXT_DIM)
-                theme.text_tracked_at(
-                    surface, f"x{qtd}", 12,
-                    (caixa.right - 26, caixa.bottom - 16), theme.GOLD)
-
-            conjunto = equip_mod.Conjunto(
-                p.arma if p else None, p.escudo if p else None)
-            arte = assets.carregar_equipado(conjunto.chave, escala=1)
-            if arte is not None:
-                surface.blit(arte, arte.get_rect(
-                    midbottom=(painel.centerx, painel.bottom - 4)))
-            theme.text_tracked_at(
-                surface, conjunto.rotulo, 13,
-                (painel.centerx - 50, painel.bottom - 16), theme.GOLD)
-
-        ui_arte.contador_de_moeda(surface, painel, self.estado.ouro)
+        conjunto = equip_mod.Conjunto(
+            p.arma if p else None, p.escudo if p else None)
+        arte_conjunto = assets.carregar_equipado(conjunto.chave, escala=1)
+        ui_arte.desenhar_inventario(
+            surface, painel, linhas,
+            conjunto=arte_conjunto, rotulo=conjunto.rotulo,
+            ouro=self.estado.ouro,
+        )
         theme.text_tracked_at(
             surface, "q ou esc fecha", 13,
             (painel.x, painel.bottom + 8), theme.TEXT_DIM)
@@ -803,7 +770,11 @@ class CityScene(Scene):
             if marcado and botao is not None:
                 pygame.draw.rect(surface, theme.GOLD, botao, 2)
 
-        ui_arte.contador_de_moeda(surface, painel, self.estado.ouro)
+        # o contador e da faixa de baixo do miolo, e nao do miolo inteiro: a
+        # loja usa `base_rel` menor, e com o miolo inteiro o numero
+        # caia abaixo do desenho da moeda
+        _, faixa_rodape = ui_arte._cabe(painel)
+        ui_arte.contador_de_moeda(surface, faixa_rodape, self.estado.ouro)
         rodape = self.loja_aviso or "enter compra   esc sai   setas mudam"
         theme.text_tracked_at(
             surface, rodape, 12, (painel.x, painel.bottom + 8),
