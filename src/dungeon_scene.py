@@ -23,6 +23,7 @@ from . import (  # noqa: I001
     theme,
     wang,
 )
+from . import cenario as cenario_mod
 from . import progresso as progresso_mod
 from . import equipamento as equip_mod
 from . import ui_arte
@@ -337,7 +338,12 @@ class DungeonScene(Scene):
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
         self.passos = 0
-        # o quadro da animacao de morte. A fase "morrendo" roda o
+        # os enfeites de chao. Sao escolhidos uma vez, com semente
+        # fixa: um caco nao muda de lugar entre duas visitas.
+        self.enfeites = cenario_mod.distribuir(
+            self.mapa, quantos=self._quantos_enfeites(),
+            semente=self._semente(),
+        )        # o quadro da animacao de morte. A fase "morrendo" roda o
         # `death` do pacote e so depois chama a abertura.
         self.morte_quadro = 0
         self.andamento = animacao.Passo()
@@ -1066,6 +1072,13 @@ class DungeonScene(Scene):
         surface.fill((12, 11, 10))
         self._limitar_camera()
         self._desenhar_mapa(surface)
+        # os enfeites vem logo apos o chao e antes de qualquer pessoa:
+        # um barril no chao e uma peca de cenario, e nao algo que
+        # atravessa a frente do personagem
+        cenario_mod.desenhar(
+            surface, self.mapa, self.enfeites, self.tile,
+            self.camera, self.size,
+        )
         self._desenhar_saida(surface)
         self._desenhar_item(surface)
         self._desenhar_fogueira(surface)
@@ -1112,6 +1125,31 @@ class DungeonScene(Scene):
             theme.fade_surface(surface, escuro)
         elif self.fase == "acordando" and self.fase_tempo < 0.8:
             theme.fade_surface(surface, int(255 * (1 - self.fase_tempo / 0.8)))
+
+    def _quantos_enfeites(self) -> int:
+        """Quantos enfeites cabem na sala, pela area andavel.
+
+        Um enfeite a cada vinte celulas andaveis. Densidade baixa de
+        proposito: encher a sala de barrel e o mesmo que nao ter
+        nenhum — o olho para de ler o chao.
+        """
+        andaveis = sum(
+            1
+            for y in range(self.mapa.altura)
+            for x in range(self.mapa.largura)
+            if self.mapa.andavel(x, y)
+        )
+        return max(6, min(30, andaveis // 20))
+
+    def _semente(self) -> int:
+        """A semente do mapa, para a decoracao acompanhar o layout."""
+        for nome in ("semente", "seed", "_semente"):
+            valor = getattr(self.mapa, nome, None)
+            if isinstance(valor, int):
+                return valor
+        # sem semente no mapa: o mesmo valor de sempre, e a decoracao
+        # fica igual entre visitas
+        return 12345
 
     def _aplicar_luz(self, surface: pygame.Surface) -> None:
         """Escurece a cena e abre a luz no heroi, na fogueira e nas tochas.
