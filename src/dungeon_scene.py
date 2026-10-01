@@ -834,6 +834,16 @@ class DungeonScene(Scene):
                 self.posicao.x, self.posicao.y
             )
             self.manager.ui_state["ensinar_item"] = self.ensinar_item
+            # o cenario da luta: a sala onde o jogador esta, com o
+            # tileset e os enfeites que ela ja tem. Sem isto a luta
+            # acontece num limbo preto e o jogador perde de vista o
+            # lugar de onde veio: a parede de tras, os barris que ele
+            # tinha acabado de ver, tudo some.
+            self.manager.ui_state["cenario_luta"] = {
+                "tileset": self.cenario.tileset,
+                "sala": self.sala_atual,
+                "enfeites": list(self.enfeites),
+            }
             self.manager.iniciar_combate(1)
         return
 

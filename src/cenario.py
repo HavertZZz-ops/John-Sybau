@@ -105,6 +105,38 @@ def distribuir(mapa, quantos: int, semente: int) -> list[tuple[int, int, str]]:
     return escolhidos
 
 
+_enfeite_cache: dict[tuple[str, int], pygame.Surface | None] = {}
+
+
+def carregar_enfeite(nome: str, lado: int) -> pygame.Surface | None:
+    """Um enfeite ja cortado, no tamanho pedido.
+
+    Compartilhado com a cena de combate, que desenha os mesmos barris e
+    ossos da sala numa faixa atras dos lutadores. O cache e por tamanho:
+    a luta usa meia altura de tile e o mapa inteiro.
+    """
+    chave = (nome, lado)
+    if chave in _enfeite_cache:
+        return _enfeite_cache[chave]
+    caminho = DESTINO / f"{nome}.png"
+    if not caminho.is_file():
+        _enfeite_cache[chave] = None
+        return None
+    try:
+        original = pygame.image.load(str(caminho)).convert_alpha()
+    except (pygame.error, OSError):
+        _enfeite_cache[chave] = None
+        return None
+    escala = max(1, lado // max(1, original.get_height()))
+    arte = pygame.transform.scale(
+        original,
+        (max(1, original.get_width() * escala),
+         max(1, original.get_height() * escala)),
+    )
+    _enfeite_cache[chave] = arte
+    return arte
+
+
 def desenhar(surface: pygame.Surface, mapa, pecas, tile: int,
              camera: pygame.Vector2, janela: tuple[int, int]) -> None:
     """Desenha os enfeites. Sem colisao: sao cacos no chao.

@@ -80,7 +80,13 @@ class CombatScene(Scene):
         # por tamanho de janela, senao a luta redesenha o cenario
         # inteiro sessenta vezes por segundo
         self._tile_cacheado: tuple = ()
+        # o cenario onde a luta acontece, mandado pela masmorra: o
+        # tileset da sala e os enfeites que ela tem. Sem isto a luta
+        # acontece num limbo preto e o jogador nao reconhece o lugar.
+        self.cenario_luta = manager.ui_state.get("cenario_luta") or {}
         self._vinhete_cache: dict = {}
+        # parede e chao da sala, por tileset e tamanho de tile
+        self._parede_cache: dict = {}
 
     # ciclo de vida -------------------------------------------------
     def on_enter(self) -> None:
@@ -298,6 +304,126 @@ class CombatScene(Scene):
                 )
 
     # desenho -------------------------------------------------------
+    def _cenarios_da_sala(self) -> dict | None:
+        """A parede e o chao da sala onde a luta acontece.
+
+        A parede usa as variantes de PAREDE do tileset e o chao as de
+        CHAO, e as duas sao as mesmas da masmorra — a luta acontece no
+        lugar certo e o jogador reconhece a pedra. Sem tileset no
+        estado (luta chamada de fora, ou teste) cai no fundo generico.
+        """
+        nome = self.cenario_luta.get("tileset")
+        if not nome:
+            return None
+        lado = max(16, int(self.size[1] * 0.09))
+        chave = ("sala", nome, lado)
+        if chave in self._parede_cache:
+            return self._parede_cache[chave]
+        partes = None
+        try:
+            from . import cenarios, dungeon_scene
+
+            cenario = cenarios.POR_NOME.get(nome)
+            tabela = (dungeon_scene._tabela_wang(cenario)
+                      if cenario is not None else None)
+            if tabela:
+                chao = tabela.get((False, False, False, False))
+                parede = tabela.get((True, True, True, True))
+                if parede is None:
+                    parede = next(
+                        (v for k, v in tabela.items() if all(k)), None
+                    )
+                if chao is not None and parede is not None:
+                    partes = {
+                        "chao": pygame.transform.scale(chao, (lado, lado)),
+                        "parede": pygame.transform.scale(parede, (lado, lado)),
+                    }
+        except Exception:  # noqa: BLE001 - o tileset e opcional
+            partes = None
+        self._parede_cache[chave] = partes
+        return partes
+
+    def _desenhar_parede_da_sala(self, surface: pygame.Surface,
+                                horizonte: int) -> None:
+        """A parede do fundo da sala, com a fiada de pedra de cima.
+
+        E o que separa a tela de combate de um retangulo: o jogador ve
+        a parede de tras, e ela e a MESMA parede da sala em que ele esta
+        lutando.
+        """
+        partes = self._cenarios_da_sala()
+        if partes is None:
+            return
+        parede = partes["parede"]
+        w = surface.get_width()
+        x = -(int(self.anim_tempo * 6) % parede.get_width())
+        y = 0
+        while x < w and y < horizonte:
+            surface.blit(parede, (x, y))
+            x += parede.get_width()
+            y += parede.get_height()
+        # fecha o que sobrou acima da ultima fiada
+        if y < horizonte:
+            pygame.draw.rect(
+                surface, theme.BACKGROUND,
+                pygame.Rect(0, y, w, horizonte - y),
+            )
+
+    def _desenhar_enfeites_da_sala(self, surface: pygame.Surface,
+                                   horizonte: int) -> None:
+        """Os mesmos barris e ossos que a sala tinha antes da luta.
+
+        Sao distribuidos em DUAS fiadas para dar profundidade: a de
+        tras fica um pouco acima da linha do chao e sai menor, a da
+        frente fica na linha e sai do tamanho normal. Numa fiada so —
+        que foi a primeira versao — os enfeites viravam um palito
+        atravessado na tela, e nao um canto de sala.
+
+        A faixa do meio fica livre: e onde os lutadores ficam, e um
+        barril na frente da cara do heroi atrapalha a leitura do golpe.
+        """
+        enfeites = self.cenario_luta.get("enfeites") or []
+        if not enfeites:
+            return
+        from . import cenario as cenario_mod
+
+        w, h = self.size
+        xs = [p[0] for p in enfeites]
+        ys = [p[1] for p in enfeites]
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        if x1 == x0 or y1 == y0:
+            return
+
+        # So uma PARTE dos enfeites entra, e so nos cantos. Mapear os
+        # vinte e seis numa faixa dava um palito atravessado na tela;
+        # e o meio e onde os lutadores ficam. Nos cantos, em duas
+        # profundidades, le como um canto de sala.
+        canto_esq, canto_dir = [], []
+        for i, p in enumerate(sorted(enfeites, key=lambda q: q[1])):
+            pos = (p[0] - x0) / (x1 - x0)
+            if pos < 0.42:
+                canto_esq.append(p)
+            elif pos > 0.58:
+                canto_dir.append(p)
+        escolhidos = canto_esq[-4:] + canto_dir[-4:]
+
+        for i, (cx, cy, nome) in enumerate(escolhidos):
+            pos = (cx - x0) / (x1 - x0)
+            # dentro de cada canto, duas fiadas: a de tras sobe e
+            # encolhe, a da frente fica na linha do chao
+            profundidade = i % 2
+            px = int(w * (0.04 + pos * 0.92))
+            if profundidade:
+                py = horizonte - int(h * 0.012)
+                lado = max(12, int(h * 0.040))
+            else:
+                py = horizonte + int(h * 0.045)
+                lado = max(15, int(h * 0.062))
+            arte = cenario_mod.carregar_enfeite(nome, lado)
+            if arte is not None:
+                surface.blit(arte, arte.get_rect(midbottom=(px, py)))
+
     def _desenhar_cenario(self, surface: pygame.Surface) -> None:
         """O chao da catacumba, escurecido, com as bordas fechadas.
 
@@ -331,11 +457,19 @@ class CombatScene(Scene):
             escurecer.fill((8, 8, 12, 150))
             surface.blit(escurecer, (0, 0))
 
+        self._desenhar_parede_da_sala(surface, horizonte)
+        # o rodape da parede: uma fiada de pedra mais clara na linha do
+        # chao. Sem ela a parede e o chao se misturam num so plano, e o
+        # fundo da tela volta a ser um retangulo de ladrilho.
+        rodape = pygame.Rect(0, horizonte - 6, w, 6)
+        pygame.draw.rect(surface, (58, 56, 66), rodape)
+        pygame.draw.rect(surface, (22, 21, 26), rodape, 1)
         pygame.draw.rect(
             surface, theme.BACKGROUND_SOFT,
             pygame.Rect(0, horizonte, w, h),
         )
         theme.hairline(surface, 0, horizonte, w)
+        self._desenhar_enfeites_da_sala(surface, horizonte)
 
         # vinhete: escurece as bordas e puxa o olho para o centro da
         # tela, que e onde a briga acontece
