@@ -19,7 +19,7 @@ import pathlib
 
 import pygame
 
-from . import assets, equipamento as equip_mod, itens as itens_mod
+from . import animacao, assets, equipamento as equip_mod, itens as itens_mod
 from . import theme, ui_arte
 from .scene import Scene
 
@@ -119,9 +119,21 @@ class TavernScene(Scene):
         from . import estado as estado_mod
         self.estado = estado_mod.do_gerenciador(manager)
         self.posicao = pygame.Vector2(TILE * 17.5, TILE * 7.4)
+        # o desenho do heroi e o mesmo das outras tres cenas, e ele
+        # calcula a posicao na tela a partir de `camera` e `tile`. A
+        # taverna centraliza a planta em vez de rolar, entao a camera
+        # e recalculada a cada desenho e o tile e o da planta.
+        self.camera = pygame.Vector2(0, 0)
+        self.tile = TILE
         self.direction = "sul"
         self.moving = False
         self.time = 0.0
+        # o relogio do passo do heroi: o corpo sobe duas vezes por
+        # ciclo, inclina e achata. Nao e o mesmo que o metodo
+        # `_passo()`, que calcula o deslocamento em pixels.
+        self.andamento = animacao.Passo()
+        # o relogio do passo do heroi. Antes nenhuma cena do mundo
+        # tinha um: o personagem andava deslizando em vez de pisar.
         self.avisar = ""
         self.avisar_tempo = 0.0
         # onde o Tao Anchieta fica: atras do balcao, no meio do salao
@@ -259,12 +271,50 @@ class TavernScene(Scene):
     # --- laco ----------------------------------------------------------
     def update(self, dt: float) -> None:
         self.time += dt
+        self.andamento.advance(dt, self.moving)
         if self.avisar_tempo > 0:
             self.avisar_tempo -= dt
         if self.falando > 0:
             self.falando -= dt
         if self.moving:
             self.moving = int(self.time * 8) % 2 == 0
+
+    def _desenhar_heroi_equipado(self, surface: pygame.Surface) -> None:
+        """O heroi no mapa, com o que esta nas maos e um passo de verdade.
+
+        O desenho do conjunto manda em TODOS os estados: ele tem a arma
+        certa e o personagem e sempre o mesmo. A animacao de caminhada
+        do pacote de mercado traria uma espada na mao em todos os
+        conjuntos, e o jogador comeca desarmado.
+
+        O que faz o movimento e `animacao.Passo`: o corpo sobe duas
+        vezes por ciclo, inclina e achata na aterrissagem, e a sombra
+        encolhe junto. O desenho nunca sai do lugar no chao, que e o que
+        o olho le como andar de verdade.
+        """
+        p = self.progresso
+        chave = equip_mod.chave_com_desenho(
+            p.arma if p else None, p.escudo if p else None
+        )
+        centro = (
+            int(self.posicao.x - self.camera.x + self.size[0] // 2),
+            int(self.posicao.y - self.camera.y + self.size[1] // 2),
+        )
+        arte = assets.equipado_na_tela(chave, assets.get_sprite_scale())
+        if arte is not None:
+            animacao.desenhar_heroi(
+                surface, arte, self.andamento, centro,
+                direcao=self.direction, movendo=self.moving,
+                tile=self.tile,
+            )
+            return
+        quadros = self.frames
+        if quadros:
+            animacao.desenhar_heroi(
+                surface, quadros[int(self.anim_time * 8) % len(quadros)],
+                self.andamento, centro, direcao=self.direction,
+                movendo=self.moving, tile=self.tile, com_sombra=False,
+            )
 
     # --- desenho -------------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
@@ -353,7 +403,13 @@ class TavernScene(Scene):
 
         # o Tao Anchieta atras do balcao
         self._desenhar_tao(surface, x0, y0)
-        self._desenhar_heroi(surface, x0, y0)
+        # a taverna nao rola o mapa: ela centraliza a planta e pronto.
+        # Mas `_desenhar_heroi_equipado` e o mesmo das outras tres
+        # cenas e calcula a posicao na tela a partir de `camera`. A
+        # camera daqui e a que faz a conta fechar: posicao - camera +
+        # metade da janela = posicao + a origem da planta.
+        self.camera = pygame.Vector2(w // 2 - x0, h // 2 - y0)
+        self._desenhar_heroi_equipado(surface)
 
         theme.text_tracked_at(
             surface, "TAVERNA DE TAO ANCHIETA", 17, (20, 20), theme.TEXT_DIM)
@@ -380,23 +436,6 @@ class TavernScene(Scene):
             theme.text_tracked_at(
                 surface, "Tao Anchieta", 13,
                 (alvo[0] - 46, alvo[1] - altura + 3), theme.GOLD)
-
-    def _desenhar_heroi(self, surface: pygame.Surface, x0: int, y0: int) -> None:
-        arte = self.frames[int(self.time * 8) % len(self.frames)]
-        if arte is None:
-            return
-        # a mesma escala do heroi no mapa: em escala 1 ele ficava
-        # pequeno do lado dos moveis, que sao de 2 a 3 celulas
-        escala = assets.get_sprite_scale()
-        if escala != 1:
-            arte = pygame.transform.scale(
-                arte, (arte.get_width() * escala, arte.get_height() * escala)
-            )
-        surface.blit(
-            arte,
-            arte.get_rect(midbottom=(int(self.posicao.x + x0),
-                                     int(self.posicao.y + y0))),
-        )
 
     def _desenhar_aviso(self, surface: pygame.Surface, w: int, h: int) -> None:
         caixa = pygame.Rect(int(w * 0.16), int(h * 0.84), int(w * 0.68), 54)

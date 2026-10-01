@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import assets, cenarios, settings, theme, wang
+from . import animacao, assets, cenarios, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
 from . import estado as estado_mod
 from . import fogueira as fogueira_mod
@@ -168,6 +168,13 @@ class CityScene(Scene):
         self.direction = "sul"
         self.moving = False
         self.anim_time = 0.0
+        # o relogio do passo do heroi: o corpo sobe duas vezes por
+        # ciclo, inclina e achata. Nao e o mesmo que o metodo
+        # `_passo()`, que calcula o deslocamento em pixels.
+        self.andamento = animacao.Passo()
+        # o relogio do passo do heroi. Antes nenhuma cena do mundo
+        # tinha um: o personagem andava deslizando em vez de pisar.
+
         self.time = 0.0
         self.tile = TILE_BASE * assets.get_sprite_scale()
         self.posicao = pygame.Vector2(
@@ -396,6 +403,7 @@ class CityScene(Scene):
     def update(self, dt: float) -> None:
         self.time += dt
         self.anim_time += dt
+        self.andamento.advance(dt, self.moving)
         if self.avisar_tempo > 0:
             self.avisar_tempo -= dt
         for m in self.moradores:
@@ -869,33 +877,41 @@ class CityScene(Scene):
             surface, "enter usa   esc volta", 12,
             (miolo.x, miolo.bottom + 6), theme.TEXT_DIM)
     def _desenhar_heroi_equipado(self, surface: pygame.Surface) -> None:
-        """O heroi no mapa, com o que esta nas maos.
+        """O heroi no mapa, com o que esta nas maos e um passo de verdade.
 
-        A animacao de caminhada vem sempre do espadachim do pacote de
-        mercado: ela nao tem variante por arma, e um desenho estatico de
-        64px ao lado de uma animacao de 12 quadros faz o personagem
-        piscar de desenho a cada passo. Entao o conjunto equipado
-        aparece na PARADA, e a animacao assume assim que o jogador se
-        move.
+        O desenho do conjunto manda em TODOS os estados: ele tem a arma
+        certa e o personagem e sempre o mesmo. A animacao de caminhada
+        do pacote de mercado traria uma espada na mao em todos os
+        conjuntos, e o jogador comeca desarmado.
+
+        O que faz o movimento e `animacao.Passo`: o corpo sobe duas
+        vezes por ciclo, inclina e achata na aterrissagem, e a sombra
+        encolhe junto. O desenho nunca sai do lugar no chao, que e o que
+        o olho le como andar de verdade.
         """
         p = self.progresso
         chave = equip_mod.chave_com_desenho(
             p.arma if p else None, p.escudo if p else None
         )
+        centro = (
+            int(self.posicao.x - self.camera.x + self.size[0] // 2),
+            int(self.posicao.y - self.camera.y + self.size[1] // 2),
+        )
         arte = assets.equipado_na_tela(chave, assets.get_sprite_scale())
         if arte is not None:
-            surface.blit(arte, arte.get_rect(
-                center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
-                        int(self.posicao.y - self.camera.y + self.size[1] // 2))))
+            animacao.desenhar_heroi(
+                surface, arte, self.andamento, centro,
+                direcao=self.direction, movendo=self.moving,
+                tile=self.tile,
+            )
             return
-        # sem o desenho do conjunto, cai na animacao do pacote
         quadros = self.frames
         if quadros:
-            sprite = quadros[int(self.anim_time * 8) % len(quadros)]
-            surface.blit(sprite, sprite.get_rect(
-                center=(int(self.posicao.x - self.camera.x + self.size[0] // 2),
-                        int(self.posicao.y - self.camera.y + self.size[1] // 2))))
-
+            animacao.desenhar_heroi(
+                surface, quadros[int(self.anim_time * 8) % len(quadros)],
+                self.andamento, centro, direcao=self.direction,
+                movendo=self.moving, tile=self.tile, com_sombra=False,
+            )
     def _fechar_outros_menus(self, mantem_inventario: bool = False) -> None:
         """So um menu por vez.
 

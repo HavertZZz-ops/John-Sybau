@@ -14,6 +14,7 @@ from __future__ import annotations
 import pygame
 
 from . import (  # noqa: I001
+    animacao,
     assets,
     cenarios,
     coffin,
@@ -326,6 +327,10 @@ class DungeonScene(Scene):
         # quadros do esqueleto, carregados uma vez
         self._quadros_esqueleto: list | None = None
         self.passos = 0
+        # o relogio do passo do heroi: o corpo sobe duas vezes por
+        # ciclo, inclina e achata. Nao e o mesmo que o metodo
+        # `_passo()`, que calcula o deslocamento em pixels.
+        self.andamento = animacao.Passo()
         # de onde comecou a caminhada de saida do caixao. None
         # quando nao esta na fase 'saindo'.
         self._saida_inicio: float | None = None
@@ -626,6 +631,7 @@ class DungeonScene(Scene):
             return
         self.time += dt
         self.tempo_jogado += dt
+        self.andamento.advance(dt, self.moving)
         # a acao so vale por um quadro; o tutorial le e esquece
         self._acao_do_quadro = self._acao_deste_quadro
         self._acao_deste_quadro = None
@@ -692,6 +698,12 @@ class DungeonScene(Scene):
         if self.esqueleto is None:
             numero = self.sala_atual
             if numero in (0, 4):
+                return
+            # uma sala vencida nao brota esqueleto de novo. O comentario
+            # abaixo prometia isso e o teste nao existia: voltar para uma
+            # sala ja limpa repetia a luta inteira, e o jogador tinha que
+            # lutar de novo so para receber o aviso de "Voce venceu".
+            if self.progresso.concluida(numero):
                 return
             # NAO ha espera por passos. A espera existia para a aula
             # de "ande um pouco" caber antes do primeiro esqueleto, mas a
