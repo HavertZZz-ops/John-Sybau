@@ -416,3 +416,12 @@ As issues #N sao as do repositorio. Um item por commit entregue.
           e era a altura que estourava. A primeira correcao encolheu
           pela fração da largura e o defeito continuou igual.
       A lista e as seis linhas tambem eram uma copia em cada cena.
+      **O nome do item na loja.** O nome saia pela borda do slot: "Pocao
+      de cura maior" truncado em 12 caracteres ainda era largo demais
+      para o slot de 57px. Cortar string por numero de caracteres nao
+      funciona: cada caractere tem uma largura, e `theme` desenha letra
+      por letra com espacamento.
+      `ui_arte.caber_texto` agora mede com o glifo que a cena usa e corta
+      ate caber. O teste anda pela propriedade, e nao por lista de casos:
+      para qualquer texto e qualquer largura o que volta cabe, e e
+      prefixo do original. Cortar nao pode inventar nem reordenar nada.

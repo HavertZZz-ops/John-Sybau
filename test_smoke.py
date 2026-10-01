@@ -2057,6 +2057,87 @@ def check_corrida_shift() -> None:
     print("[ok] a corrida com Shift funciona nas quatro cenas do mundo")
 
 
+def check_corte_de_texto() -> None:
+    """O texto cortado cabe na largura, medido com a fonte do jogo.
+
+    O nome do item na loja saia pela borda do slot. A correcao truncou a
+    string por numero de caracteres e continuou saindo: o slot tem 57px,
+    cada caractere tem uma largura e `theme` desenha letra por letra com
+    espacamento. Doze caracteres ainda nao cabiam.
+
+    O teste anda pela propriedade, e nao por lista de casos: para
+    qualquer texto e qualquer largura, o que `caber_texto` devolve tem
+    de caber, e tem de ser prefixo do original. Cortar nao pode inventar
+    nem reordenar nada.
+    """
+    from src import theme as _theme
+    from src import ui_arte as _ui
+
+    pygame.init()
+    pygame.display.set_mode((64, 64))
+
+    def largura_real(texto: str, size: int, tracking: int = 2) -> int:
+        glifos = _theme._render_glyphs(texto, size, _theme.TEXT, 255)
+        if not glifos:
+            return 0
+        return (sum(g.get_width() for g in glifos)
+                + tracking * (len(glifos) - 1))
+
+    nomes = (
+        "Pocao", "de cura", "de cura maior",
+        "Espada de ferro muito longo", "Maca / Escudo", "X", "",
+        "Umafraseabsurdamentelongaquesemaisumponto",
+    )
+    for largura in (20, 49, 80, 160):
+        for nome in nomes:
+            for size in (10, 12, 13):
+                cortado = _ui.caber_texto(nome, largura, size)
+                medido = largura_real(cortado, size)
+                assert medido <= largura, (
+                    f"o corte {cortado!r} mede {medido}px e o limite e "
+                    f"{largura}px")
+                assert nome.startswith(cortado), (
+                    f"{cortado!r} nao e prefixo de {nome!r}")
+    print("[ok] nenhum corte vaza em nenhuma largura, e todos sao prefixo")
+
+    # o limite minimo e a largura de um glifo: abaixo dela nao existe
+    # corte que caiba, e o certo e devolver vazio. Uma versao deste
+    # teste pedia vazio com 12px de largura e falhou; a medicao mostrou
+    # que o glifo tem 6px, entao em 12px cabe "U" e o pedido estava
+    # errado, e nao a funcao
+    glifo = _theme._render_glyphs("U", 12, _theme.TEXT, 255)[0]
+    minimo = glifo.get_width()
+    assert _ui.caber_texto("U", minimo - 1, 12) == "", (
+        f"abaixo de {minimo}px nenhum glifo cabe")
+    assert _ui.caber_texto("U", minimo, 12) == "U"
+    assert _ui.caber_texto("Uma frase comprida", minimo, 12) == "U"
+    print(f"[ok] o limite minimo e {minimo}px, a largura de um glifo")
+
+    # e o nome da loja cabe no slot de verdade, com o painel medido
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.switch("title")
+    tela = pygame.Surface(manager.active.size)
+    w, h = tela.get_size()
+    painel = _ui.desenhar(
+        tela, _ui.PAINEL_LOJA, (w // 2, h // 2), int(w * 0.34),
+        topo_rel=0.10, base_rel=0.94)
+    assert painel is not None, "o painel da loja nao carregou"
+    slots = _ui.slots_da_loja(painel, 6)
+    util = slots[0].width - 8
+    from src import itens as _itens
+    for item in _itens.a_venda()[:len(slots)]:
+        palavras = item.nome.split()
+        for pedaco, size in ((palavras[0], 12),
+                             (" ".join(palavras[1:]), 10)):
+            if not pedaco:
+                continue
+            cortado = _ui.caber_texto(pedaco, util, size)
+            assert largura_real(cortado, size) <= util, (
+                f"{item.nome}: {cortado!r} mede mais que {util}px")
+    print(f"[ok] os nomes dos itens cabem no slot de {slots[0].width}px")
+
+
 def check_lista_de_conjuntos() -> None:
     """A lista de conjuntos cabe na linha, nas quatro cenas do mundo.
 
@@ -2404,6 +2485,8 @@ def main() -> int:
     check_taverna()
     print()
     check_corrida_shift()
+    print()
+    check_corte_de_texto()
     print()
     check_lista_de_conjuntos()
     print()

@@ -746,15 +746,21 @@ class CityScene(Scene):
             pygame.draw.rect(
                 surface, theme.GOLD if marcado else theme.HAIRLINE, slot, 1)
 
+            # o nome ocupa duas linhas: a primeira palavra e o resto. O corte e
+            # medido com a fonte do jogo, e nao por numero de
+            # caracteres: o slot tem 57px e "de cura maior" truncado em
+            # 12 caracteres ainda passava da borda
             palavras = item.nome.split()
             cor = theme.GOLD if marcado else theme.TEXT
+            util = slot.width - 8
             theme.text_tracked_at(
-                surface, palavras[0][:8], 12,
+                surface, ui_arte.caber_texto(palavras[0], util, 12), 12,
                 (slot.x + 4, slot.y + 4), cor)
-            if len(palavras) > 1:
+            resto = " ".join(palavras[1:])
+            if resto:
                 theme.text_tracked_at(
-                    surface, " ".join(palavras[1:])[:12], 10,
-                    (slot.x + 4, slot.y + 18), theme.TEXT_DIM)
+                    surface, ui_arte.caber_texto(resto, util, 10), 10,
+                    (slot.x + 4, slot.y + 20), theme.TEXT_DIM)
 
             # o preco fica no canto do SLOT, e nao em cima do BUY: o
             # botao ja tem a palavra BUY desenhada na arte e o numero

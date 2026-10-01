@@ -151,6 +151,40 @@ _EQUIP_LINHAS = 6
 _EQUIP_FOLGA = 3
 
 
+def caber_texto(
+    texto: str, largura: int, size: int, tracking: int = 2
+) -> str:
+    """O texto ate caber em `largura`, medindo com a fonte do jogo.
+
+    Cortar por numero de caracteres nao funciona: cada caractere tem
+    uma largura, e `theme` desenha letra por letra com espacamento. O
+    nome "Pocao de cura maior" truncado em 12 caracteres ainda era largo
+    demais para o slot de 57px da loja e saia pela borda.
+
+    A medida e feita com o mesmo glifo que a cena usa, entao o corte
+    aqui e o mesmo que o olho ve na tela.
+    """
+    from . import theme
+
+    def medir(trecho: str) -> tuple[int, int]:
+        glifos = theme._render_glyphs(trecho, size, theme.TEXT, 255)
+        if not glifos:
+            return 0, 0
+        soma = sum(g.get_width() for g in glifos)
+        return soma + tracking * (len(glifos) - 1), len(glifos)
+
+    total, _n = medir(texto)
+    if total <= largura:
+        return texto
+    # corta do fim ate caber, e tira o espaco que ficou solto
+    for n in range(len(texto) - 1, 0, -1):
+        tentativa = texto[:n].rstrip()
+        total, _n = medir(tentativa)
+        if total <= largura:
+            return tentativa
+    return ""
+
+
 def _caber_pequeno(arte: pygame.Surface, altura: int) -> pygame.Surface:
     """A arte reduzida para caber em `altura`, mantendo a proporcao."""
     if arte.get_height() <= altura:
