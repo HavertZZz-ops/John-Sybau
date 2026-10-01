@@ -310,7 +310,7 @@ class CityScene(Scene):
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type != pygame.KEYDOWN:
             return
-        acoes = self.manager.input.actions_for(event)
+        acoes = self.controls.actions_for(event.key)
 
         if "voltar" in acoes:
             if self.perto is not None:
@@ -732,7 +732,7 @@ class CityScene(Scene):
     def _acoes_do_evento(self, event) -> set:
         if hasattr(self, "key"):
             return {a for a in self.acoes if self.key(event, a)}
-        return set(self.manager.input.actions_for(event))
+        return set(self.controls.actions_for(event.key))
 
     def _desenhar_equipamento(self, surface: pygame.Surface) -> None:
         """A lista de conjuntos, sobre o inventario."""

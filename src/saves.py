@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -101,20 +102,33 @@ class ArquivoSaveStore:
         return self.caminho.is_file()
 
     def salvar(self, save: Save) -> bool:
-        try:
-            self.caminho.parent.mkdir(parents=True, exist_ok=True)
-            # grava em temporario e troca: um save pela metade, de um
-            # disco cheio ou de um Ctrl+C, apagaria o save bom
-            temporario = self.caminho.with_suffix(".tmp")
-            temporario.write_text(
-                json.dumps(save.para_dict(), indent=2) + "\n",
-                encoding="utf-8",
-            )
-            os.replace(temporario, self.caminho)
-            return True
-        except OSError as exc:
-            print(f"[save] nao foi possivel salvar: {exc}")
-            return False
+        # grava em temporario e troca: um save pela metade, de um
+        # disco cheio ou de um Ctrl+C, apagaria o save bom
+        #
+        # A troca pode falhar com acesso negado sem que nada esteja
+        # errado: no Windows o antivírus abre o arquivo recem-criado
+        # por uma fracao de segundo, e o `os.replace` bate na trava.
+        # Isso apareceu com o F5 apertado varias vezes seguidas, e o
+        # jogo so imprimia um aviso e perdia o progresso. Duas
+        # tentativas com uma pausa curta resolvem sem custo quando
+        # nao ha problema nenhum.
+        ultimo: OSError | None = None
+        for tentativa in range(3):
+            try:
+                self.caminho.parent.mkdir(parents=True, exist_ok=True)
+                temporario = self.caminho.with_suffix(".tmp")
+                temporario.write_text(
+                    json.dumps(save.para_dict(), indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                os.replace(temporario, self.caminho)
+                return True
+            except OSError as exc:
+                ultimo = exc
+                if tentativa < 2:
+                    time.sleep(0.05 * (tentativa + 1))
+        print(f"[save] nao foi possivel salvar: {ultimo}")
+        return False
 
     def carregar(self) -> Save | None:
         if not self.caminho.is_file():

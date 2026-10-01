@@ -556,17 +556,18 @@ class DungeonScene(Scene):
         if self.fase != "livre":
             return
         if self.key(event, "inventario"):
+            # o R so entra no submenu com o inventario aberto: trocar
+            # arma sem ver o que esta nas maos seria trocar no escuro
             if self.inventario_aberto and self.key(event, "trocar_equipamento"):
                 self.modo_equip = 0 if self.modo_equip is None else None
                 return
             self.inventario_aberto = not self.inventario_aberto
             return
 
-        if "interagir" in acoes:
+        if self.key(event, "interagir"):
             if self._perto_da_fogueira():
                 self._descansar()
                 return
-        if self.key(event, "interagir"):
             self._pegar_item()
             return
         for direcao, acao in DIRECTION_ACTIONS.items():
@@ -1341,7 +1342,7 @@ class DungeonScene(Scene):
     def _acoes_do_evento(self, event) -> set:
         if hasattr(self, "key"):
             return {a for a in self.acoes if self.key(event, a)}
-        return set(self.manager.input.actions_for(event))
+        return set(self.controls.actions_for(event.key))
 
     def _desenhar_equipamento(self, surface: pygame.Surface) -> None:
         """A lista de conjuntos, sobre o inventario."""

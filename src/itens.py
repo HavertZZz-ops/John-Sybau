@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pygame
+
 
 @dataclass(frozen=True)
 class Item:
