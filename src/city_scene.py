@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import animacao, assets, cenarios, luz, settings, theme, wang
+from . import animacao, assets, cenarios, luz, rocha, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
 from . import estado as estado_mod
 from . import fogueira as fogueira_mod
@@ -488,7 +488,17 @@ class CityScene(Scene):
                 # (talha, entulho, laje) sao andaveis mas nao sao
                 # CHAO: com o teste antigo elas nao eram desenhadas e
                 # apareciam como quadrados PRETOS no meio do chao.
+                #
+                # A parede e desenhada como pedra. Antes ela era
+                # simplesmente pulada, e o que sobrava era a cor do
+                # fundo: a aldeia parecia um retangulo de laje dentro
+                # de um buraco negro, e o preto era tao parecido com
+                # arte faltando que o defeito se lia como bug.
                 if self.mapa.em(x, y) == PAREDE:
+                    surface.blit(
+                        rocha.celula(self.tile, x, y),
+                        (x * self.tile + x_desenho, y * self.tile + y_desenho),
+                    )
                     continue
                 chave, _img = self._wang.tile_e_chave(x, y)
                 surface.blit(

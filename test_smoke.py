@@ -2057,6 +2057,85 @@ def check_corrida_shift() -> None:
     print("[ok] a corrida com Shift funciona nas quatro cenas do mundo")
 
 
+def check_parede_solida() -> None:
+    """A parede do mapa e solida, e nao a cor do fundo.
+
+    A grade de tiles desenha so o chao andavel, entao toda celula de
+    `PAREDE` ficava com a cor do fundo, `(10, 9, 8)`. A aldeia aparecia
+    como um retangulo de pedra dentro de um buraco negro, e o preto era
+    tao parecido com arte faltando que o defeito se lia como bug.
+
+    O teste pergunta as tres coisas que a pedra precisa cumprir:
+
+      - ela e mais clara que o fundo, senao continua sendo buraco;
+      - ela e chapada. Ja houve tres versoes com textura: degrade por
+        tile (listras horizontais a cada 48 pixels), grao de hash
+        (hachura diagonal) e uma fissura por variante (marca d'agua).
+        Nenhuma sobreviveu a olhar a imagem;
+      - ela nao muda de tom de uma celula para a outra. Com tres tons
+        separados por tres canais, os vizinhos viravam faixas de uma
+        tonalidade so, e num mapa escuro, onde os tons vivem entre 24 e
+        33, seis canais de diferenca sao 20% de mudanca: bem visivel.
+    """
+    from pygame import image as _img
+    from src import rocha, theme
+
+    pygame.init()
+    pygame.display.set_mode((64, 64))
+
+    LADO = 48
+    pedra = rocha.tile(LADO)
+    tons_dentro = {tuple(pedra.get_at((x, y)))
+                   for x in range(LADO) for y in range(LADO)}
+    tons_parede = {tuple(rocha.celula(LADO, x, y).get_at((3, 3)))
+                   for x in range(20) for y in range(10)}
+
+    assert len(tons_dentro) == 1, f"a pedra ganhou textura: {sorted(tons_dentro)}"
+    assert len(tons_parede) == 1, f"a parede ganhou faixas: {sorted(tons_parede)}"
+    assert rocha.BASE[0] > theme.BACKGROUND[0], (
+        f"a pedra {rocha.BASE} nao se distingue do fundo {theme.BACKGROUND}")
+    print(f"[ok] a parede e solida e chapada: {rocha.BASE} contra {theme.BACKGROUND}")
+
+    # e a cena usa a pedra: um pixel da janela, no meio da parede da
+    # aldeia, tem de ser a pedra e nao o fundo. Um teste so da cor nao
+    # pegaria a parede se a cena voltasse a pular a celula
+    manager = _manager()
+    manager.ui_state.clear()
+    manager.switch("city")
+    cidade = manager.active
+    tela = pygame.Surface(cidade.size)
+    for _ in range(20):
+        cidade.update(1 / 60)
+        cidade.draw(tela)
+    encontrada = False
+    for y in range(0, tela.get_height(), 4):
+        for x in range(0, tela.get_width(), 4):
+            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE[:3]):
+                encontrada = True
+                break
+        if encontrada:
+            break
+    assert encontrada, "a pedra existe mas a aldeia nao esta desenhando"
+    print("[ok] a aldeia esta desenhando a pedra na tela")
+
+    # a estrada tambem, que e a outra cena com a mesma grade
+    manager.switch("road")
+    estrada = manager.active
+    for _ in range(20):
+        estrada.update(1 / 60)
+        estrada.draw(tela)
+    encontrada = False
+    for y in range(0, tela.get_height(), 4):
+        for x in range(0, tela.get_width(), 4):
+            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE[:3]):
+                encontrada = True
+                break
+        if encontrada:
+            break
+    assert encontrada, "a estrada continua desenhando o fundo na parede"
+    print("[ok] a estrada tambem desenha a pedra")
+
+
 def main() -> int:
     # gerado por tools/fix_test_main.py: a lista abaixo e a unica
     # fonte de verdade da ordem dos testes
@@ -2141,6 +2220,8 @@ def main() -> int:
     check_taverna()
     print()
     check_corrida_shift()
+    print()
+    check_parede_solida()
     print()
     check_ciclo_da_masmorra()
     print()

@@ -1,4 +1,4 @@
-# Kanban - John Sybau
+﻿# Kanban - John Sybau
 
 Espelha o board https://github.com/users/HavertZZz-ops/projects/8
 As issues #N sao as do repositorio. Um item por commit entregue.
@@ -325,3 +325,53 @@ As issues #N sao as do repositorio. Um item por commit entregue.
       os enfeites daquela sala. Os enfeites ficam nos cantos, em duas
       profundidades, para nao virarem uma fileira atras dos lutadores.
       A sala agora e o lugar, e nao um fundo generico.
+
+- [x] #45  Shift e um segundo passo                  (`034575d`)
+      O jogo nao tinha corrida. `animacao.Passo` ja sabia disso desde o
+      começo: o atributo `correndo` existia, o `FATOR_CORRIDA` existia,
+      e nenhuma cena nunca ligava um dos dois. O heroi andava 190 pixels
+      por segundo na masmorra e meio tile por aperto na superficie, e
+      era so isso.
+      Agora Shift e um segundo passo nas quatro cenas do mundo:
+        - na superficie, onde o movimento e um aperto, o aperto passa de
+          meio tile para um tile inteiro (24px para 48px na aldeia, que
+          e o que o olho le como dois passos);
+        - na masmorra, onde o passo e continuo, o que dobra e a
+          velocidade (190 para 295 pixels por segundo);
+        - o ciclo do passo acelera 1.55x e o chao levanta poeira, que
+          sem ela seria so o mesmo boneco com o tempo trocado.
+      O Shift e lido do TECLADO e nao do evento. Com o evento, segurar
+      a seta e apertar o Shift depois nao mudaria nada, e e justo o que
+      o jogador faz.
+      O passo de corrida vale o dobro, entao o MEIO do caminho tambem
+      tem de estar livre. Testando so o destino, o heroi aparecia do
+      outro lado de uma parede no meio do aperto. E a condicao do meio
+      ja foi escrita ao contrario uma vez, na taverna: o teste do meio
+      ocupado existe nas tres cenas justamente por causa disso.
+
+- [x] #46  A parede do mapa parou de ser um buraco      (este commit)
+      A grade de tiles desenha so o chao andavel. Toda celula de
+      `PAREDE` ficava com a cor do fundo, `(10, 9, 8)`, e a aldeia
+      aparecia como um retangulo de pedra cercado de preto. O preto era
+      tao parecido com arte que falhou de carregar que o defeito se lia
+      como bug, e nao como lugar.
+      Agora a parede e solida, uns canais acima do fundo, na aldeia e na
+      estrada.
+      E chapada, e isso custou tres tentativas que a imagem impediu:
+        - degrade dentro do tile: o tile tem 48px e a parede tem dezenas,
+          entao as listras se repetiam a cada 48 pixels;
+        - grao por pixel de hash de duas coordenadas: saiu hachura
+          diagonal, visivel como trincado;
+        - uma fissura por variante: virou marca d'agua, a mesma
+          diagonal em todas as pedras;
+        - tres tons de pedra para a massa nao ser uma cor so: os
+          vizinhos viraram faixas de uma tonalidade so. Num mapa escuro,
+          onde os tons vivem entre 24 e 33, seis canais de diferenca
+          sao 20% de mudanca relativa, bem visivel.
+      A ultima versao nao tinha listra nenhuma. As "faixas" que ainda
+      apareciam na captura eram ilusao de contraste sobre um retangulo
+      quase preto: a coluna de pixels medida tem uma corrida unica de
+      86 pixels em `(28, 25, 21)`. Gastei quatro versoes tentando
+      consertar uma faixa que nao existia, e o jeito de saber foi ler
+      os pixels em vez de olhar a imagem.
+

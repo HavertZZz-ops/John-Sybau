@@ -14,7 +14,7 @@ import random
 
 import pygame
 
-from . import animacao, assets, cenarios, luz, settings, theme, wang
+from . import animacao, assets, cenarios, luz, rocha, settings, theme, wang
 from .dungeon_map import CHAO, PAREDE, Mapa, gerar_mapa
 from . import estado as estado_mod
 from . import equipamento as equip_mod
@@ -248,6 +248,12 @@ class RoadScene(Scene):
                 # CHAO: com o teste antigo elas nao eram desenhadas e
                 # apareciam como quadrados PRETOS no meio do chao.
                 if self.mapa.em(x, y) == PAREDE:
+                    # a parede e pedra, e nao a cor do fundo: a estrada
+                    # ficava desenhada no meio de um buraco negro
+                    surface.blit(
+                        rocha.celula(self.tile, x, y),
+                        (x * self.tile + x_desenho, y * self.tile + y_desenho),
+                    )
                     continue
                 chave, _img = self._wang.tile_e_chave(x, y)
                 surface.blit(
