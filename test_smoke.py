@@ -3128,7 +3128,20 @@ def check_parede_solida() -> None:
         33, seis canais de diferenca sao 20% de mudanca: bem visivel.
     """
     from pygame import image as _img
-    from src import rocha, theme
+    from src import luz, rocha, theme
+
+    def _parede_ao_sol(surface, x, y, base, sol):
+        """O pixel (x, y) e a parede de dia?
+
+        As cenas de fora recebem a luz do dia somada por cima, entao o
+        pixel da parede nao e mais exatamente `base`: e `base` mais o
+        sol. Comparar igual reprovava uma cena que estava certa, e o
+        teste passava a exigir que o sol nao existisse — que e o oposto
+        do que este teste quer proteger.
+        """
+        px = surface.get_at((x, y))[:3]
+        return all(
+            abs(a - (b + s)) <= 3 for a, b, s in zip(px, base, sol))
 
     pygame.init()
     pygame.display.set_mode((64, 64))
@@ -3212,7 +3225,7 @@ def check_parede_solida() -> None:
     encontrada = False
     for y in range(0, tela.get_height(), 4):
         for x in range(0, tela.get_width(), 4):
-            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE_DIA[:3]):
+            if _parede_ao_sol(tela, x, y, rocha.BASE_DIA, luz.SOL):
                 encontrada = True
                 break
         if encontrada:
@@ -3229,7 +3242,8 @@ def check_parede_solida() -> None:
     encontrada = False
     for y in range(0, tela.get_height(), 4):
         for x in range(0, tela.get_width(), 4):
-            if tuple(tela.get_at((x, y))[:3]) == tuple(rocha.BASE_DIA[:3]):
+            if _parede_ao_sol(tela, x, y, rocha.BASE_TERRA,
+                              luz.SOL_ESTRADA):
                 encontrada = True
                 break
         if encontrada:
@@ -3359,6 +3373,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
 
 
 

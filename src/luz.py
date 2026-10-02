@@ -1,4 +1,4 @@
-"""Luz: a masmorra tem que ter escuro e uma tocha, senao e um retangulo.
+﻿"""Luz: a masmorra tem que ter escuro e uma tocha, senao e um retangulo.
 
 O mapa era desenhado com a luz cheia da tela: todo tile com a mesma
 claridade, todas as paredes com o mesmo tom, e o resultado e uma laje
@@ -30,6 +30,15 @@ AMBIENTE = (74, 70, 84)
 LUZ_TOCHA = (255, 196, 120)
 # a fogueira e maior e mais quente
 LUZ_FOGUEIRA = (255, 186, 108)
+
+# a luz do dia, em canais somados por pixel. Amarela e fraca: e sol de
+# manha, e nao sol de meio-dia.
+SOL = (16, 13, 6)
+# A estrada recebe MAIS sol que a aldeia. Nao porque a estrada esteja
+# mais ensolarada, e porque a arte dela e terra escura desenhada para
+# noite: com o mesmo sol dos outros, a terra da estrada ficava varios tons
+# abaixo do entorno e a cena lia como um buraco.
+SOL_ESTRADA = (44, 36, 19)
 
 _cache: dict[tuple[int, int], pygame.Surface] = {}
 
@@ -79,6 +88,29 @@ class Luz:
         surface.blit(mascara, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
 
+def sol(w: int, h: int, valor: tuple[int, int, int] = SOL) -> pygame.Surface:
+    """A luz do dia, somada por cima da cena.
+
+    A arte das cenas de fora foi desenhada para noite — terra quase
+    preta, pedra de caverna — e a luz noturna que existia no codigo
+    escurecia o entorno do heroi em vez de clarear a cena. Tirar a
+    escuridao nao chegou: a arte em si e escura, e a estrada ficava
+    como um retangulo afundado dentro de um campo claro, como se o
+    terreno estivesse abaixo do nivel.
+
+    Somar luz e o que faz o terreno leitura de dia. E somar, e nao
+    clarear: clarear trocaria o pixel por uma media e comeria o
+    desenho, enquanto a soma mantem a proporcao do original.
+
+    O valor e pequeno de proposito. A soma e o TOTAL que a cena recebe,
+    e 16 canais num pixel de terra de 70 e dia; 40 seria lavar o
+    contraste e a cena viraria uma foto estourada.
+    """
+    tela = pygame.Surface((w, h), pygame.SRCALPHA)
+    tela.fill((valor[0], valor[1], valor[2], 0))
+    return tela
+
+
 def vinhete(w: int, h: int) -> pygame.Surface:
     """A borda escura, puxando o olho para o centro."""
     chave = (w, h)
@@ -92,3 +124,4 @@ def vinhete(w: int, h: int) -> pygame.Surface:
                          pygame.Rect(i, i, w - 2 * i, h - 2 * i), 1)
     _cache[chave] = v
     return v
+

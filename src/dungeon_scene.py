@@ -20,6 +20,7 @@ from . import (  # noqa: I001
     cenarios,
     chao as chao_mod,
     coffin,
+    rocha,
     settings,
     theme,
     wang,
@@ -1200,7 +1201,11 @@ class DungeonScene(Scene):
 
     # desenho -------------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill((12, 11, 10))
+        # O fundo e rocha, e nao preto. Fora das salas ainda e caverna, e
+        # o preto ali lia como buraco na tela em vez de pedra no escuro.
+        # E a mesma pedra que a parede usa, ancorada na camera, entao a
+        # fiada do fundo continua na da parede sem emenda.
+        rocha.campo(surface, self.tile, self.camera.x, self.camera.y)
         self._limitar_camera()
         self._desenhar_mapa(surface)
         # os enfeites vem logo apos o chao e antes de qualquer pessoa:
@@ -1463,6 +1468,19 @@ class DungeonScene(Scene):
             linha = y * self.tile + y_desenho
             for x in range(max(0, x0 - 1), min(self.mapa.largura, x1 + 2)):
                 if self.mapa.em(x, y) == PAREDE:
+                    # A parede ANTES nao era desenhada. O que se via de
+                    # parede era so a faixa que o tile do chao carrega na
+                    # borda, entao a massa de rocha ficava preta — e as
+                    # tochas, que sao postas na parede, apareciam
+                    # flutuando no preto sem nada em volta.
+                    #
+                    # A parede e a mesma rocha das cenas de fora, no tom
+                    # da noite: e ela que faz a sala ter fundo em vez de
+                    # recorte flutuando no vazio.
+                    surface.blit(
+                        rocha.celula(self.tile, x, y),
+                        (x * self.tile + x_desenho, linha),
+                    )
                     continue
                 chave, _img = self._wang.tile_e_chave(x, y)
                 surface.blit(
@@ -1952,5 +1970,6 @@ class DungeonScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
 
 

@@ -554,11 +554,13 @@ class CityScene(Scene):
         # desenhada sem o jogador ter mexido — e foi assim que ela
         # apareceu na foto.
         self._limitar_camera()
-        # O fundo e o MESMO material da parede de fora, e nao o preto do
-        # tema. A aldeia e menor que a tela em configuracoes pequenas,
-        # e a camera centraliza a arte; com o preto, a aldeia ficava
-        # cercada de um retangulo vazio que lia como buraco.
-        surface.fill(rocha.BASE_DIA)
+        # O fundo e a MESMA alvenaria da parede de fora, e nao uma cor
+        # chapada. A aldeia e menor que a tela em configuracoes
+        # pequenas e a camera centraliza a arte; com cor chapada sobrava
+        # uma linha onde o fundo encontrava o mapa desenhado, e com o
+        # preto a aldeia ficava cercada de um retangulo vazio.
+        rocha.campo(surface, self.tile, self.camera.x, self.camera.y,
+                    rocha.BASE_DIA)
         tabela = _tabela()
         if tabela is None:
             theme.text_tracked_at(
@@ -619,6 +621,8 @@ class CityScene(Scene):
         # apagava a propria aldeia. A fogueira acima e desenhada como
         # objeto, mas a luz dela e a claridade do dia, nao um foco no
         # escuro.
+        # o sol por ultimo: e luz, entao clareia TUDO que ja foi desenhado
+        surface.blit(luz.sol(w, h), (0, 0), special_flags=pygame.BLEND_RGB_ADD)
         self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E para falar   esc para sair", 14,
@@ -1069,6 +1073,8 @@ class CityScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
+
 
 
 

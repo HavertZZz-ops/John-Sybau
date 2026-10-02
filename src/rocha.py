@@ -46,6 +46,17 @@ BASE = (38, 34, 30)
 # Deixando o tom da noite, a aldeia ficava com um retangulo quase preto
 # em volta, e a cena lia como buraco em vez de lugar.
 BASE_DIA = (104, 96, 78)
+# O entorno da ESTRADA, que e terra e nao pedra.
+#
+# A estrada usa o mesmo tom de dia da aldeia e ficava como um retangulo
+# afundado: o solo clareia a cena inteira por igual, entao ele nao muda a
+# diferenca entre a terra da estrada e o entorno — so levanta os dois. O
+# que faz o terreno ler como buraco e a DIFFERENCA, e nao o nivel.
+#
+# Entao o entorno da estrada e terra tambem, e mais perto do chao dela.
+# A aldeia fica com pedra, porque em volta de um calçamento de aldeia o
+# entorno e calçamento velho e muro; na estrada, e terra batida.
+BASE_TERRA = (74, 62, 46)
 # O quanto a junta e mais escura que a face da pedra, e o quanto o topo
 # da fiada e mais claro.
 #
@@ -157,6 +168,40 @@ def celula(
 
     _cache[chave] = pedra
     return pedra
+
+
+def campo(
+    surface: pygame.Surface,
+    lado: int,
+    camera_x: float = 0.0,
+    camera_y: float = 0.0,
+    base: tuple[int, int, int] = BASE,
+) -> None:
+    """Preenche a tela toda com a mesma pedra, celula por celula.
+
+    E o fundo das cenas de fora. Encher com a cor chapada e mais
+    rapido, mas deixa uma linha visivel onde o preenchimento encontra a
+    alvenaria desenhada: o lado de dentro tem fiada e o de fora nao. O
+    terreno e o mesmo dos dois lados, e o preto aparecia em volta da
+    aldeia.
+
+    Aqui o fundo usa a MESMA pedra, com o mesmo hash por celula, entao a
+    fiada continua de uma ponta a outra da tela. A emenda some porque
+    as duas pontas sao a mesma parede, e nao duas paredes.
+
+    A camera entra para a pedra ficar ancorada no mapa. Sem ela, o
+    fundo nadaria por baixo do mapa quando a camera andasse, e a
+    fiada da tela passaria por cima da fiada desenhada.
+    """
+    w, h = surface.get_size()
+    cx0 = int(camera_x // lado)
+    cy0 = int(camera_y // lado)
+    for cy in range(cy0 - 1, cy0 + h // lado + 2):
+        for cx in range(cx0 - 1, cx0 + w // lado + 2):
+            surface.blit(
+                celula(lado, cx, cy, base),
+                (cx * lado - int(camera_x), cy * lado - int(camera_y)),
+            )
 
 
 def limpar_cache() -> None:

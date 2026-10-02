@@ -249,9 +249,14 @@ class RoadScene(Scene):
 
     # --- desenho -----------------------------------------------------
     def draw(self, surface: pygame.Surface) -> None:
-        # o fundo e o material de fora, e nao o preto do tema: a estrada e
-        # mais estreita que a tela e a borda aparecia como buraco
-        surface.fill(rocha.BASE_DIA)
+        # a camera e limitada aqui, e nao so quando o heroi anda: e o
+        # mesmo limite a cada quadro, e sem isso a borda aparecia sempre
+        # que a cena fosse desenhada sem o jogador ter mexido
+        self._limitar_camera()
+        # o fundo e a mesma alvenaria de fora, ancorada na camera: cor
+        # chapada deixava uma linha visivel onde ela encontrava o mapa
+        rocha.campo(surface, self.tile, self.camera.x, self.camera.y,
+                    rocha.BASE_TERRA)
         tabela = _tabela()
         if tabela is None:
             theme.text_tracked_at(
@@ -313,6 +318,10 @@ class RoadScene(Scene):
         # apagada, com um anel de luz no meio de nada.
         if getattr(self, "fogueira_pos", None) is not None:
             self._desenhar_fogueira(surface)
+        # o sol por ultimo: e luz, entao clareia TUDO que ja foi desenhado,
+        # incluindo o heroi e os enfeites
+        surface.blit(luz.sol(w, h, luz.SOL_ESTRADA), (0, 0),
+                    special_flags=pygame.BLEND_RGB_ADD)
         self._desenhar_inventario_mundo(surface)
         theme.text_tracked_at(
             surface, "E segue para a aldeia", 15,
@@ -482,6 +491,10 @@ class RoadScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
+
+
+
 
 
 

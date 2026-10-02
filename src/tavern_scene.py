@@ -418,6 +418,19 @@ class TavernScene(Scene):
                 img = pygame.transform.scale(
                     arte, (arte.get_width() * escala, arte.get_height() * escala)
                 )
+                if nome_peca in ("piso_terra", "piso_claro"):
+                    # O piso e arte de tabua VERTICAL, repetida na mesma
+                    # posicao a cada celula. Com o contraste que veio no
+                    # pacote, cada tabua clara e cada tabua escura viram
+                    # uma faixa de 48 pixels, e a sala inteira le como
+                    # cortina listrada em vez de chao.
+                    #
+                    # A tabua em si nao e mexida: e ela que faz o chao
+                    # parecer chao. O que se comprime e o CONTRASTE,
+                    # multiplicando por um tom de madeira. O desenho
+                    # continua, a risca some.
+                    img = img.copy()
+                    img.fill((104, 96, 90), special_flags=pygame.BLEND_RGB_MULT)
                 if letra == "#":
                     # a parede e tijolo escurecido: a cor original e
                     # laranja viva demais para uma parede de taberna
@@ -434,6 +447,19 @@ class TavernScene(Scene):
                     if chao is not None:
                         c = pygame.transform.scale(
                             chao, (TILE, TILE))
+                        # A arte do piso sao tabuas verticais, e ela se
+                        # repete na mesma posicao a cada celula: o
+                        # desenho vira uma risca a cada 48 pixels e a
+                        # sala le como cortina listrada, e nao como
+                        # chao.
+                        #
+                        # A tabua em si nao pode ser mexida: e ela que
+                        # faz o chao parecer chao. O que se comprime e o
+                        # CONTRASTE entre tabua clara e tabua escura,
+                        # multiplicando o piso por um tom de madeira. O
+                        # desenho continua, a risca some.
+                        c = c.copy()
+                        c.fill((96, 88, 84), special_flags=pygame.BLEND_RGB_MULT)
                         surface.blit(c, destino)
                     continue
                 if img.get_height() > TILE:
