@@ -578,6 +578,7 @@ class CityScene(Scene):
         x1 = min(self.mapa.largura, x0 + w // self.tile + 3)
         y1 = min(self.mapa.altura, y0 + h // self.tile + 3)
 
+        referencia = None
         for y in range(y0, y1):
             for x in range(x0, x1):
                 # `== PAREDE`, e nao `!= CHAO`. As celulas de enfeite
@@ -599,12 +600,18 @@ class CityScene(Scene):
                 chave, _img = self._wang.tile_e_chave(x, y)
                 pos = (x * self.tile + x_desenho, y * self.tile + y_desenho)
                 surface.blit(_tile(chave, self.tile), pos)
-                # detalhe espalhado no chao, para a peca repetida nao
-                # ler como papel de parede
-                chao_mod.desenhar_celula(
-                    surface, _tile(chave, self.tile), self.tile,
-                    pos[0], pos[1], x, y,
-                )
+                if referencia is None:
+                    # a peca de chao vista na tela serve de referencia
+                    # para a paleta do detalhe espalhado
+                    referencia = _tile(chave, self.tile)
+
+        # o detalhe do chao e uma camada so, e uma blit. Espalhar
+        # pedrinha celula a celula a cada quadro custava tres blits por
+        # celula da tela, e era o que segurava o jogo abaixo de 60 FPS.
+        if referencia is not None:
+            chao_mod.camada(
+                surface, referencia, self.tile, self.camera.x, self.camera.y
+            )
 
         self._desenhar_predios(surface, w, h, x_desenho, y_desenho)
         for m in self.moradores:
@@ -1073,6 +1080,7 @@ class CityScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
 
 
 

@@ -115,5 +115,51 @@ def desenhar_celula(
         surface.blit(_detalhe(fundo, tipo, tamanho), (px, py))
 
 
+_camadas: dict[tuple, pygame.Surface] = {}
+
+
+def camada(
+    surface: pygame.Surface,
+    tile: pygame.Surface,
+    lado: int,
+    camera_x: float,
+    camera_y: float,
+) -> None:
+    """O detalhe do chao da tela inteira, e UMA blit.
+
+    `desenhar_celula` desenha tres pecas por celula, e a tela tem
+    centenas de celulas: sao miles de blits por quadro so para espalhar
+    pedrinha. E o detalhe nao muda enquanto a camera esta na mesma
+    celula, entao ele e montado uma vez e depois e uma blit — a mesma
+    conta que a pedra faz no fundo, pelo mesmo motivo.
+    """
+    w, h = surface.get_size()
+    cx0 = int(camera_x // lado)
+    cy0 = int(camera_y // lado)
+    margem = lado
+    chave = (lado, id(tile), cx0, cy0, w, h)
+    img = _camadas.get(chave)
+    if img is None:
+        img = pygame.Surface((w + margem * 2, h + margem * 2), pygame.SRCALPHA)
+        fundo = paleta_do_chao(tile)
+        for cy in range(cy0 - 1, cy0 + h // lado + 3):
+            for cx in range(cx0 - 1, cx0 + w // lado + 3):
+                for i in range(DETALHES):
+                    h_ = _hash(cx, cy, i)
+                    tipo = h_ % 6
+                    m = lado // 4
+                    px = (cx - cx0 + 1) * lado + m + (h_ >> 8) % max(
+                        1, lado - m * 2)
+                    py = (cy - cy0 + 1) * lado + m + (h_ >> 16) % max(
+                        1, lado - m * 2)
+                    tamanho = 2 + 2 * ((h_ >> 24) % 2)
+                    img.blit(_detalhe(fundo, tipo, tamanho), (px, py))
+        for antiga in [k for k in _camadas if len(_camadas) > 4 and k != chave]:
+            del _camadas[antiga]
+        _camadas[chave] = img
+    surface.blit(
+        img, (cx0 * lado - int(camera_x), cy0 * lado - int(camera_y)))
+
+
 def limpar_cache() -> None:
     _cache.clear()

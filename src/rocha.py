@@ -73,6 +73,17 @@ def relevo(tom: tuple[int, int, int]) -> int:
     """O relevo da fiada para este tom. Nunca zero, nunca listra."""
     return max(1, int(round(tom[0] * RELEVO_DE)))
 _cache: dict[tuple[int, tuple[int, int, int], int], pygame.Surface] = {}
+# a variante de cada celula, lembrada. `celula` e chamada milhares de
+# vezes por quadro (a tela inteira, a cada quadro) e recalcular o hash a
+# cada chamada, mesmo com a pedra ja em cache, era metade do custo da
+# cena. O hash e puro: repetir a conta da o mesmo numero, todo quadro,
+# sem nenhum ganho.
+_variantes: dict[tuple[int, int], int] = {}
+# a tela de fundo pronta, por posicao da camera. O fundo e estatico: e a
+# mesma pedra no mesmo lugar ate a camera cruzar de celula. Desenhar as
+# miles de celulas de novo a cada quadro era o que segurava o jogo em
+# menos de 60 FPS.
+_telas: dict[tuple, pygame.Surface] = {}
 
 
 def _hash(x: int, y: int) -> int:
@@ -84,7 +95,12 @@ def _hash(x: int, y: int) -> int:
 
 
 def _variante(x: int, y: int) -> int:
-    return _hash(x, y) % 4
+    chave = (x, y)
+    achada = _variantes.get(chave)
+    if achada is None:
+        achada = _hash(x, y) % 4
+        _variantes[chave] = achada
+    return achada
 
 
 def tile(lado: int, base: tuple[int, int, int] = BASE) -> pygame.Surface:
@@ -192,16 +208,33 @@ def campo(
     A camera entra para a pedra ficar ancorada no mapa. Sem ela, o
     fundo nadaria por baixo do mapa quando a camera andasse, e a
     fiada da tela passaria por cima da fiada desenhada.
+
+    O fundo e montado UMA VEZ por posicao de camera e depois e uma blit
+    so. Montar a tela inteira a cada quadro custava milhares de blits
+    por quadro — era o gargalo do jogo. A tela so e refeita quando a
+    camera cruza uma celula, porque ate la o resultado e identico.
     """
     w, h = surface.get_size()
     cx0 = int(camera_x // lado)
     cy0 = int(camera_y // lado)
-    for cy in range(cy0 - 1, cy0 + h // lado + 2):
-        for cx in range(cx0 - 1, cx0 + w // lado + 2):
-            surface.blit(
-                celula(lado, cx, cy, base),
-                (cx * lado - int(camera_x), cy * lado - int(camera_y)),
-            )
+    margem = lado
+    chave = (lado, base, cx0, cy0, w, h)
+    tela = _telas.get(chave)
+    if tela is None:
+        tela = pygame.Surface((w + margem * 2, h + margem * 2))
+        for cy in range(cy0 - 1, cy0 + h // lado + 3):
+            for cx in range(cx0 - 1, cx0 + w // lado + 3):
+                tela.blit(
+                    celula(lado, cx, cy, base),
+                    ((cx - cx0 + 1) * lado, (cy - cy0 + 1) * lado),
+                )
+        # so as duas ultimas linhas de cache sao necessarias para a
+        # camera andar: a anterior e a nova. Mais que isso e memoria
+        # gastas com uma tela que ninguem vai pedir de novo.
+        for antiga in [k for k in _telas if len(_telas) > 4 and k != chave]:
+            del _telas[antiga]
+        _telas[chave] = tela
+    surface.blit(tela, (cx0 * lado - int(camera_x), cy0 * lado - int(camera_y)))
 
 
 def limpar_cache() -> None:

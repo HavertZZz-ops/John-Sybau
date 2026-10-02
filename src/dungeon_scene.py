@@ -1461,6 +1461,7 @@ class DungeonScene(Scene):
         x_desenho = w // 2 - self.camera.x - self.tile // 2
         y_desenho = h // 2 - self.camera.y - self.tile // 2
         lado = (self.tile, self.tile)
+        referencia = None
 
         # os tiles sao filtrados antes do desenho: dois em cada direcao,
         # por causa da sombra da parede
@@ -1487,11 +1488,19 @@ class DungeonScene(Scene):
                     _tile_pronto(chave, lado),
                     (x * self.tile + x_desenho, linha),
                 )
-                # detalhe espalhado no chao da masmorra
-                chao_mod.desenhar_celula(
-                    surface, _tile_pronto(chave, lado), self.tile,
-                    x * self.tile + x_desenho, linha, x, y,
-                )
+                if referencia is None:
+                    # a peca de chao vista na tela serve de referencia
+                    # para a paleta do detalhe espalhado
+                    referencia = _tile_pronto(chave, lado)
+
+        # o detalhe do chao e uma camada so, e uma blit — o mesmo que a
+        # cidade e a estrada fazem. Espalhar celula a celula a cada
+        # quadro era o que segurava a masmorra abaixo de 60 FPS.
+        if referencia is not None:
+            chao_mod.camada(
+                surface, referencia, self.tile,
+                self.camera.x, self.camera.y,
+            )
 
         self._desenhar_sombras_das_paredes(surface, x_desenho, y_desenho)
         self._desenhar_luz(surface)
@@ -1970,6 +1979,7 @@ class DungeonScene(Scene):
         self.modo_equip = None
         self.loja = None
         self.loja_aviso = ""
+
 
 
 
