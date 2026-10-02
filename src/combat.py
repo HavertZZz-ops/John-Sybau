@@ -1,4 +1,4 @@
-"""Combate por TURNOS: um age por vez, e o jogador escolhe o que fazer.
+﻿"""Combate por TURNOS: um age por vez, e o jogador escolhe o que fazer.
 
 Antes era ATB, no estilo Chrono Trigger: todo mundo tinha uma barra que
 enchia com o tempo e agia sozinho quando ela transbordava. O jogador
@@ -49,6 +49,59 @@ class Acao(Enum):
 
 
 @dataclass
+class Habilidade:
+    """Uma habilidade que o inimigo pode usar no turno dele."""
+
+    nome: str
+    # o que ela faz: "dano" | "cura" | "defesa" | "fuga"
+    efeito: str
+    # quantas vezes o efeito eforcado. Um golpe e 1x; a investida do
+    # lobisomem e 2x
+    potencia: int = 1
+    # de quanto em quanto tempo ela volta. 1 = sempre
+    recarga: int = 1
+
+
+@dataclass
+class Perfil:
+    """O CARATER do inimigo: como ele pensa e no que ele e bom.
+
+    E aqui que moram as diferencas entre um esqueleto e um lobisomem. O
+    esqueleto e duro e golpeia fraco; o lobisomem e rapido e tem
+    investida; o curandeiro se cura e foge.
+
+    Sem isto todo inimigo era o mesmo esqueleto com numeros
+    diferentes, e a "IA" era um sorteio de 25% para defender. O jogador
+    nao aprendia nada sobre oadversario, porque nao havia nada para aprender.
+    """
+
+    nome: str
+    vida: int
+    forca: int
+    defesa: int
+    velocidade: float
+    # peso de cada opcao na escolha. O que o inimigo mais faz e o que
+    # ele mais faz de verdade
+    peso_ataque: float = 6.0
+    peso_defesa: float = 2.0
+    peso_cura: float = 1.0
+    peso_fuga: float = 0.0
+    # abaixo desta fracao de vida o inimigo comeca a se curar
+    limiar_cura: float = 0.35
+    # quanto ele cura
+    cura: int = 8
+    # habilidades especiais, com a chance de entrar na escolha
+    habilidades: tuple[Habilidade, ...] = ()
+# o que este inimigo e, em uma frase, para o jogador ler no menu
+    descricao: str = ""
+    # quantas vezes seguidas ele pode se defender antes de ser OBRIGADO
+    # a atacar. Sem isto, um inimigo pesado (guardiao, com defesa alta)
+    # passa a luta inteira se defendendo e o golpe do heroi nunca entra:
+    # a luta nao acaba, ela empaca.
+    defesas_seguidas: int = 3
+
+
+@dataclass
 class Combatente:
     """Alguem que luta.
 
@@ -65,6 +118,13 @@ class Combatente:
     defesa: int = 0
     estado: Estado = Estado.VIVO
     defendendo: bool = False
+    # o carater deste inimigo. O heroi nao tem: ele escolhe.
+    perfil: Perfil | None = None
+# quantas vezes cada habilidade ja foi usada, para a recarga
+    _recargas: dict[str, int] = field(default_factory=dict, init=False)
+    # quantas vezes seguidas este inimigo se defendeu. E o que impede a
+    # luta de empacar com um inimigo pesado
+    _defesas_seguidas: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         # o desempate da fila: sem ele, dois inimigos com a mesma
@@ -104,6 +164,18 @@ class Combatente:
         antes = self.vida
         self.vida = min(self.vida_max, self.vida + valor)
         return self.vida - antes
+
+    def habilidade_pronta(self, hab: Habilidade) -> bool:
+        """Esta habilidade ja recarregou?"""
+        return self._recargas.get(hab.nome, 0) <= 0
+
+    def usar_habilidade(self, hab: Habilidade) -> None:
+        self._recargas[hab.nome] = hab.recarga
+
+    def girar_recargas(self) -> None:
+        """Um turno passou: as recargas descem um."""
+        for nome in list(self._recargas):
+            self._recargas[nome] = max(0, self._recargas[nome] - 1)
 
 
 @dataclass
@@ -342,15 +414,124 @@ class Batalha:
         return novos
 
     def _acao_inimigo(self, inimigo: Combatente) -> list[Evento]:
-        """O que o esqueleto faz quando chega a vez dele."""
+        """O que o inimigo DECIDE fazer quando chega a vez dele.
+
+        A decisao e ponderada pelo perfil: cada tipo tem pesos
+        diferentes para atacar, defender, curar e fugir. Um esqueleto
+        ataca quase sempre; um curandeiro se cura quando esta ferido; um
+        covarde foge com a vida baixa. O jogador aprende a ler o tipo,
+        e nao so os numeros.
+"""
         if not self.heroi.vivo:
             return []
-        if self.sorteio.random() < 0.25:
+
+        perfil = inimigo.perfil or PERFIL_ESQUELETO
+        inimigo.girar_recargas()
+        escolha = self._escolher(inimigo, perfil)
+
+        if escolha == "defesa":
             inimigo.defendendo = True
+            inimigo._defesas_seguidas += 1
             return [Evento(f"{inimigo.nome} se defende", "info")]
+
+        # agiu sem se defender: a contagem volta a zero
+        inimigo._defesas_seguidas = 0
+
+        if escolha == "cura":
+            # A opcao "cura" so entra na escolha quando a vida esta no
+            # limiar, entao ela nao pode falhar aqui. Mas se o jogador
+            #-curou o inimigo entre a escolha e o turno — o que nao
+            # acontece hoje, porque o turno e do mesmo instante — o
+            # inimigo ainda teria de fazer alguma coisa. O golpe e o
+            # plano: um turno de inimigo nunca passa sem fazer nada.
+            if inimigo.vida >= inimigo.vida_max:
+                return self._golpe_inimigo(inimigo, perfil)
+            curado = inimigo.curar(perfil.cura)
+            return [Evento(f"{inimigo.nome} se cura por {curado}", "cura")]
+
+        if escolha == "fuga":
+            self.fugiu = True
+            self.concluida = True
+            return [Evento(f"{inimigo.nome} foge da luta", "info")]
+
+        if isinstance(escolha, Habilidade):
+            return self._usar_habilidade(inimigo, escolha)
+
+        return self._golpe_inimigo(inimigo, perfil)
+
+    def _escolher(
+        self, inimigo: Combatente, perfil: Perfil
+    ) -> str | Habilidade:
+        """A escolha ponderada do inimigo. Devolve a opcao escolhida."""
+        opcoes: list[tuple[float, str | Habilidade]] = [
+            (perfil.peso_ataque, "ataque"),
+        ]
+        # defender faz sentido com vida machucada; em vida cheia o
+        # inimigo nao tem o que defender.
+        #
+        # E tem LIMITE: depois de `defesas_seguidas` vezes seguidas, a
+        # defesa sai da lista. Um guardiao pesado se defending em toda
+        # volta mantem a mitigacao alta permanentemente e a luta nunca
+        # acaba — nao e dificuldade, e um empate que o jogador nao pode
+        # resolver.
+        pode_defender = (
+            inimigo.fracao_vida < 0.999
+            and inimigo._defesas_seguidas < perfil.defesas_seguidas
+        )
+        if pode_defender:
+            opcoes.append((perfil.peso_defesa, "defesa"))
+        if inimigo.fracao_vida <= perfil.limiar_cura:
+            opcoes.append((perfil.peso_cura, "cura"))
+        if perfil.peso_fuga > 0 and inimigo.fracao_vida <= 0.3:
+            opcoes.append((perfil.peso_fuga, "fuga"))
+        # as habilidades entram como opcao propria, com o peso do
+        # ataque: elas SAO o ataque deste inimigo
+        for hab in perfil.habilidades:
+            if inimigo.habilidade_pronta(hab):
+                peso = perfil.peso_ataque * (0.5 + 0.1 * hab.potencia)
+                opcoes.append((peso, hab))
+
+        total = sum(p for p, _ in opcoes)
+        if total <= 0:
+            return "ataque"
+        alvo = self.sorteio.random() * total
+        acumulado = 0.0
+        for peso, opcao in opcoes:
+            acumulado += peso
+            if alvo <= acumulado:
+                return opcao
+        return opcoes[-1][1]
+
+    def _golpe_inimigo(
+        self, inimigo: Combatente, perfil: Perfil
+    ) -> list[Evento]:
+        """O ataque basico do inimigo, no dano DELE."""
         dano = max(1, inimigo.forca + self.sorteio.randint(-1, 2))
         real = self.heroi.receber(dano)
         ditos = [Evento(f"{inimigo.nome} acerta o heroi por {real}", "dano")]
+        if not self.heroi.vivo:
+            ditos.append(Evento("O heroi caiu", "morte"))
+        return ditos
+
+    def _usar_habilidade(
+        self, inimigo: Combatente, hab: Habilidade
+    ) -> list[Evento]:
+        """A habilidade especial do inimigo."""
+        inimigo.usar_habilidade(hab)
+        if hab.efeito == "defesa":
+            inimigo.defendendo = True
+            return [Evento(f"{inimigo.nome} usa {hab.nome}", "info")]
+        if hab.efeito == "cura":
+            perfil = inimigo.perfil or PERFIL_ESQUELETO
+            curado = inimigo.curar(perfil.cura)
+            return [Evento(f"{inimigo.nome} usa {hab.nome} e cura {curado}",
+                           "cura")]
+        dano = max(1, inimigo.forca * hab.potencia)
+        real = self.heroi.receber(dano)
+        ditos = [
+            Evento(f"{inimigo.nome} usa {hab.nome}!", "info"),
+            Evento(f"{inimigo.nome} acerta o heroi por {real}", "dano"),
+        ]
         if not self.heroi.vivo:
             ditos.append(Evento("O heroi caiu", "morte"))
         return ditos
@@ -373,6 +554,93 @@ class Batalha:
         return "   ".join(partes)
 
 
+# --- os inimigos, cada um com um jeito de lutar ------------------------
+
+# O ESQUELETO e o inimigo basico: golpeia sempre e quase nunca se
+# defende. Ele e o que ensina o golpe, entao nao pode ter manha.
+PERFIL_ESQUELETO = Perfil(
+    nome="esqueleto",
+    vida=26, forca=5, defesa=1, velocidade=11.0,
+    peso_ataque=9.0, peso_defesa=1.2, peso_cura=0.0, peso_fuga=0.0,
+    limiar_cura=0.3, cura=6,
+    descricao="lento e direto",
+)
+
+# O GUARDIAN e a parede: defesa alta, e se protege quando leva golpe.
+# Ataca pouco porque nao precisa derrubar ninguem, so durar.
+#
+# A defesa e o que define este inimigo, e por isso que ela nao pode ser
+# alta demais. Com defesa 7 e o heroi batendo 9, cada golpe entra 2: o
+# guardiao levaria 27 golpes, e com a mitigacao de quem esta se defendendo
+# a luta media vira minutos de walking. O que faz um inimigo ser duro
+# NAO e a defesa alta e sim nao levar a vida toda de uma vez, entao a
+# defesa aqui e 4: entra 5 por golpe e ele cai em 11.
+PERFIL_GUARDIAN = Perfil(
+    nome="guardiao",
+    vida=54, forca=6, defesa=4, velocidade=7.0,
+    peso_ataque=4.0, peso_defesa=4.0, peso_cura=1.5, peso_fuga=0.0,
+    limiar_cura=0.4, cura=14,
+    defesas_seguidas=2,
+    descricao="duro de furar, se protege",
+)
+
+# O SACERDOTE se cura. E o unico que foge de proposito: ele nao veio
+# brigar, veio terminar a coisa dele. O jogador que tem que ir atras.
+PERFIL_SACERDOTE = Perfil(
+    nome="sacerdote",
+    vida=40, forca=7, defesa=2, velocidade=12.5,
+    peso_ataque=3.5, peso_defesa=1.0, peso_cura=7.0, peso_fuga=4.5,
+    limiar_cura=0.55, cura=20,
+    habilidades=(
+        Habilidade("Maldicao", "dano", potencia=2, recarga=3),
+    ),
+    descricao="se cura e amaldicoa",
+)
+
+# O LOBISOMEM e o oposto do guardiao: rapido, forte, e tem investida.
+# Ele nao se defende e nao se cura — ele nao sabe. Quem bate forte nao
+# precisa de se proteger.
+PERFIL_LOBISOMEM = Perfil(
+    nome="lobisomem",
+    vida=48, forca=11, defesa=3, velocidade=16.0,
+    peso_ataque=8.0, peso_defesa=0.4, peso_cura=0.0, peso_fuga=0.0,
+    limiar_cura=0.3, cura=0,
+    habilidades=(
+        Habilidade("Investida", "dano", potencia=2, recarga=2),
+        Habilidade("Uivo", "defesa", potencia=1, recarga=3),
+    ),
+    descricao="corre e investe",
+)
+
+# O COBRADOR e o chefe: vida alta, defesa alta, e ele comeca a volta
+# curando a si mesmo. Foge nunca.
+PERFIL_COBRADOR = Perfil(
+    nome="cobrador",
+    vida=180, forca=17, defesa=5, velocidade=16.0,
+    peso_ataque=7.0, peso_defesa=2.0, peso_cura=3.0, peso_fuga=0.0,
+    limiar_cura=0.45, cura=30,
+    habilidades=(
+        Habilidade("Cobranca", "dano", potencia=3, recarga=2),
+    ),
+    descricao="nao larga",
+)
+
+PERFIS: tuple[Perfil, ...] = (
+    PERFIL_ESQUELETO,
+    PERFIL_GUARDIAN,
+    PERFIL_SACERDOTE,
+    PERFIL_LOBISOMEM,
+    PERFIL_COBRADOR,
+)
+
+
+def perfil_por_nome(nome: str) -> Perfil:
+    for perfil in PERFIS:
+        if perfil.nome == nome:
+            return perfil
+    return PERFIL_ESQUELETO
+
+
 # --- fabricas de combatentes -------------------------------------------
 
 def novo_heroi(vida: int = 60, forca: int = 9) -> Combatente:
@@ -380,6 +648,25 @@ def novo_heroi(vida: int = 60, forca: int = 9) -> Combatente:
     return Combatente(
         nome="John", vida=vida, vida_max=vida,
         velocidade=18.0, forca=forca, defesa=2,
+    )
+
+
+def novo_inimigo(perfil: Perfil, indice: int = 0) -> Combatente:
+    """Um inimigo a partir do perfil dele.
+
+    `indice` escala os numeros DENTRO do perfil, e nao troca o
+    personagem: dois esqueletos podem ter vidas diferentes e continuam
+    sendo esqueletos. O que diferencia um inimigo de outro e o perfil,
+    e nao um numero a mais ou a menos.
+    """
+    vida = perfil.vida + indice * 6
+    return Combatente(
+        nome=perfil.nome.capitalize(),
+        vida=vida, vida_max=vida,
+        velocidade=perfil.velocidade,
+        forca=perfil.forca + indice * 2,
+        defesa=perfil.defesa,
+        perfil=perfil,
     )
 
 
@@ -409,6 +696,7 @@ def novo_esqueleto(indice: int = 0, fraco: bool = False) -> Combatente:
         nome=nomes[indice % len(nomes)],
         vida=vida, vida_max=vida,
         velocidade=init, forca=forca, defesa=defesa,
+        perfil=PERFIL_ESQUELETO,
     )
 
 
@@ -424,4 +712,5 @@ def novo_chefe() -> Combatente:
         vida=180, vida_max=180,
         velocidade=16.0,
         forca=17, defesa=5,
+        perfil=PERFIL_COBRADOR,
     )
