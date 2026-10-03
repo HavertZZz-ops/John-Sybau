@@ -56,7 +56,7 @@ BASE_DIA = (104, 96, 78)
 # Entao o entorno da estrada e terra tambem, e mais perto do chao dela.
 # A aldeia fica com pedra, porque em volta de um calçamento de aldeia o
 # entorno e calçamento velho e muro; na estrada, e terra batida.
-BASE_TERRA = (74, 62, 46)
+BASE_TERRA = (52, 47, 38)
 # O quanto a junta e mais escura que a face da pedra, e o quanto o topo
 # da fiada e mais claro.
 #

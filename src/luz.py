@@ -34,11 +34,12 @@ LUZ_FOGUEIRA = (255, 186, 108)
 # a luz do dia, em canais somados por pixel. Amarela e fraca: e sol de
 # manha, e nao sol de meio-dia.
 SOL = (16, 13, 6)
-# A estrada recebe MAIS sol que a aldeia. Nao porque a estrada esteja
-# mais ensolarada, e porque a arte dela e terra escura desenhada para
-# noite: com o mesmo sol dos outros, a terra da estrada ficava varios tons
-# abaixo do entorno e a cena lia como um buraco.
-SOL_ESTRADA = (44, 36, 19)
+# A estrada recebe MAIS sol que a aldeia, porque a arte dela e terra
+# escura desenhada para noite. Mas o valor e modesto de proposito: com
+# 44 canais o entorno da estrada chegava a (118, 98, 65), um amarelo
+# claro que competia com o heroi e com o texto da tela. O entorno tem
+# que ficar ATRAS do que importa, e nao ser a coisa mais clara da cena.
+SOL_ESTRADA = (30, 24, 12)
 
 _cache: dict[tuple[int, int], pygame.Surface] = {}
 
