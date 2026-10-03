@@ -1,0 +1,26 @@
+# Arquivos do Django que nao devem ir para o Git
+
+# O banco SQLite e um ARQUIVO, e cada um tem o schema dele dentro..Versionar
+# `.sqlite3` no Git traz tres problemas: cada commit guarda uma copia
+# inteira do banco (o arquivo cresce sem limite), dois Macs que fazem
+# merge conflitam byte a byte e o Git nao sabe resolver, e um `checkout`
+# antigo traz de volta um banco com dados que o codigo atual nao espera.
+# O que vai para o Git e a MIGRACAO, que descreve o schema em texto — e
+# texto o Git sabe mesclar.
+db.sqlite3
+
+# Isso vale ate para um projeto academico, e principalmente para ele: o
+# banco de teste com as notas de exemplo nao deve ser confundir com o
+# banco de quem esta desenvolvendo em paralelo.
+db.sqlite3-journal
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Secrets
+.env
+*.env
