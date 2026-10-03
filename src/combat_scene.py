@@ -50,7 +50,13 @@ HEROI_A_FRENTE = 0.075
 # a pausa entre um inimigo bater e o proximo bater. O golpe precisa ser
 # visto: sem a pausa, os tres inimigos da sala batem em tres quadros
 # seguidos e o log pisca sem ninguem ler.
-PAUSA_ENTRE_INIMIGOS = 0.45
+# A pausa entre um inimigo e o seguinte, em segundos.
+#
+# 0.45 era rapido demais para o olho: com tres inimigos, a fase inteira
+# durava menos de um segundo e o jogador via "3 linhas de dano" sem
+# saber de quem. 0.75 da tempo de ler o nome de quem bateu, ver o
+# golpe e ainda sentir que o turno do inimigo foi um turno.
+PAUSA_ENTRE_INIMIGOS = 0.75
 
 
 class CombatScene(Scene):
@@ -194,10 +200,29 @@ class CombatScene(Scene):
         box_inimigo = (assets.FOE_BASE[0] * escala * 3,
                        assets.FOE_BASE[1] * escala * 3)
         for i, inimigo in enumerate(self.batalha.inimigos):
-            # o chefe usa o esqueleto de chama, que e a variante mais
-            # agressiva do pacote; os outros pegam os quatro na ordem
-            kind = (assets.FOE_CHEFE if self.e_chefe
-                    else assets.FOE_KINDS[i % len(assets.FOE_KINDS)])
+            # O sprite vem do PERFIL do inimigo, e nao da posicao na
+            # lista.
+            #
+            # Antes era `FOE_KINDS[i % 4]`: o sprite girava por indice e
+            # o inimigo era sempre um esqueleto. Com o perfil, um
+            # guardiao podia acabar desenhado com a arte do esqueleto
+            # mais rapido e um lobisomem com a do chefe — o nome na barra
+            # dizia uma coisa e a figura dizia outra. O sprite agora
+            # acompanha quem ele e.
+            #
+            # A paleta do pacote e a mesma para os quatro, entao a
+            # escolha e pela: o mais agressivo para quem ataca, o mais
+            # pesado para quem defende.
+            perfil = inimigo.perfil
+            nome_perfil = perfil.nome if perfil is not None else "esqueleto"
+            if self.e_chefe or nome_perfil == "cobrador":
+                kind = assets.FOE_CHEFE
+            elif nome_perfil == "guardiao":
+                kind = assets.FOE_KINDS[3]
+            elif nome_perfil in ("sacerdote", "lobisomem"):
+                kind = assets.FOE_KINDS[2]
+            else:
+                kind = assets.FOE_KINDS[i % len(assets.FOE_KINDS)]
             self._quadros_inimigo[id(inimigo)] = {
                 estado: assets.load_foe(
                     kind, "oeste", estado, box=box_inimigo, scale=escala
@@ -351,11 +376,16 @@ class CombatScene(Scene):
             self._atualizar_animacao(dt)
             return
 
-        # Um inimigo age por quadro. A fila e andada de um em um, para
-        # que o jogador veja QUEM bateu: com tres inimigos batendo no
-        # mesmo quadro, o log mostrava tres linhas de dano de uma vez e
-        # nao dava para saber de quem foi. Um por quadro e o que a
-        # leitura de "de quem e a vez" precisa.
+        # Um inimigo age por vez, com PAUSA REAL entre eles. E o ritmo do
+        # combate: a decisao do inimigo e mostrada, o golpe e visto, e so
+        # depois o proximo age.
+        #
+        # Antes a pausa valia 0.45s e, pior, ela so era aplicada DEPOIS
+        # que o evento saia — entao o primeiro inimigo batia no mesmo
+        # quadro em que a fase dos inimigos abria, e tres inimigos
+        # resolviam a fase em menos de um segundo. O jogador via tres
+        # linhas de dano quase juntas e nao entendia de quem era cada
+        # golpe. Agora ha uma espera ANTES do primeiro tambem.
         self._espera_turno = max(0.0, self._espera_turno - dt)
         eventos = self.batalha.avancar(dt) if self._espera_turno <= 0.0 else []
         if eventos:
@@ -364,10 +394,12 @@ class CombatScene(Scene):
             if any(e.tipo == "dano" for e in eventos):
                 self.anim_acao = "inimigo"
                 self.anim_quadro = 0
-            # a pausa entre um inimigo e o seguinte: o golpe precisa ser
-            # visto antes do proximo. A espera so vale quando o proximo
-            # da fila tambem e um inimigo: se for o heroi, o jogo abre
-            # o menu na hora e nao ha nada para ver.
+            # a pausa ANTES de cada inimigo agir. O golpe precisa ser visto antes
+            # do proximo, e o primeiro tambem precisa de tempo para o
+            # jogador ver de quem e a vez.
+            #
+            # A espera vale quando o proximo da fila e um inimigo. Se for
+            # o heroi, o jogo abre o menu na hora e nao ha golpe para ver.
             proximo = self.batalha.de_quem_e_a_vez
             if (proximo is not None and proximo is not self.batalha.heroi
                     and not self.batalha.concluida):
@@ -1223,6 +1255,7 @@ class CombatScene(Scene):
             surface, "qualquer tecla para voltar", 15,
             (w // 2, int(h * 0.36)), theme.HAIRLINE,
         )
+
 
 
 

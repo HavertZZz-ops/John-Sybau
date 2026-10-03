@@ -35,7 +35,7 @@ ACHATAMENTO = 0.055
 # o quanto o corpo estica quando esta no alto, em fracao
 ESTICAO = 0.030
 # o balancer de respiro de quem esta parado, em fracao da altura
-RESPIRO = 0.016
+RESPIRO = 0.006
 # quadros por segundo do passo andando
 FPS_PASSO = 8.0
 # o quanto a corrida acelera o passo
@@ -113,7 +113,23 @@ class Passo:
         perfil pisa para a frente, quem olha de frente pisa para o lado.
         """
         if not movendo:
-            sobe = math.sin(self.respiro * math.tau) * RESPIRO * altura
+            # O respiro de parado. Este e o valor que mais aparece na
+            # tela do jogo parado, entao ele nao pode tremer.
+            #
+            # Com RESPIRO alto e periodo de 1s, o heroi subia e descia um
+            # pixel inteiro varias vezes por segundo: em pixel art, sem
+            # meio pixel, isso e um tremor constante, e o jogador lê como
+            # "o personagem esta tremendo" e nao como respiracao. O olho
+            # le movimento de 1px em ~10px/s; o que passa disso e
+            # vibracao.
+            #
+            # Por isso o respiro e lento e pequeno: menos de meio pixel,
+            # arredondado, o que costuma virar zero. A diferenca de um
+            # pixel em cima e embaixo ao longo de 3s e lida como vivo sem
+            # tremer.
+            ciclo = 3.0
+            fase = (self.respiro * (1.0 / ciclo)) % 1.0
+            sobe = math.sin(fase * math.tau) * RESPIRO * altura
             return int(round(sobe)), 0, (1.0, 1.0)
 
         onda = abs(math.sin(self.fase * math.tau))
