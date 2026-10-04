@@ -581,12 +581,13 @@ class Jogo:
                 # janela, a intencao dele ja foi clara.
                 self.rodando = False
 
-        # A tecla segue para o estado atual. O combate tem um menu
-        # proprio, e sem este desvio o W e o S do menu seriam lidos como
-        # "andar para cima" e "andar para baixo" — o jogador veria o
-        # boneco sair andando no meio da luta.
-        if evento.type == pygame.KEYDOWN:
-            self.estado.tratar_tecla(evento.key)
+            elif evento.type == pygame.KEYDOWN:
+                # A tecla segue para o estado atual. O combate tem um
+                # menu proprio, e sem este desvio o W e o S do menu
+                # seriam lidos como "andar para cima" e "andar para
+                # baixo" — o jogador veria o boneco sair andando no
+                # meio da luta.
+                self.estado.tratar_tecla(evento.key)
 
     # --- atualizacao e desenho ---------------------------------------
 
