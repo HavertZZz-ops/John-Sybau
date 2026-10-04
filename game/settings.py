@@ -97,10 +97,18 @@ COR_CHAVE = (255, 0, 255)
 
 # --- grade ----------------------------------------------------------------
 
-# O tile e a unidade do mundo. Com sprites de 16x16 e uma escala de 2, o
-# personagem ocupa 32x32 na tela e o tile de 32x32 deixa um tile de
-# folga, o que faz a colisao por caixa nao raspar na parede.
+# O tile e a unidade do mundo: 32px divide certinho 800x720 (25x22 tiles)
+# e mantem proporcao com sprites de 16x16 dobrados.
 TAMANHO_DO_TILE = 32
+
+# A escala aplicada aos sprites ao carregar. Com 2, um sprite de 16x16
+# vira 32x32 — exatamente um tile. Sprite pequeno demais some no cenario;
+# sprite grande demais engole o mapa.
+ESCALA_SPRITE = 2
+
+# Quantos itens o heroi carrega. O limite existe porque o inventario e o
+# que o jogador ve: sem teto, "pegar tudo" deixa de ser uma decisao.
+MAXIMO_DE_ITENS = 10
 
 # --- caminhos -------------------------------------------------------------
 
