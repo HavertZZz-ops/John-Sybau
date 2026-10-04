@@ -28,6 +28,7 @@ acontece no `atualizar` dele. Um estado novo nao exige mexer no loop.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import pygame
 
@@ -325,20 +326,40 @@ class FimDeJogo(Estado):
 # --- o jogo ----------------------------------------------------------------
 
 
-MAPA_INICIAL = """
-    ##########################
-    #........................#
-    #..................b.....#
-    #.....i..................#
-    #........................#
-    #.......########.........#
-    #.......#......#.........#
-    #.......#......#.........#
-    #.......#......#.........#
-    #.......#......#.........#
-    #....................E...#
-    ##########################
-"""
+def carregar_mundo() -> str:
+    """Le o mapa do arquivo `mapas/mundo.txt`.
+
+    O mapa e um ARQUIVO e nao uma constante no codigo, por dois motivos
+    que os dois apareceram na pratica:
+
+    1. **Editar.** Um mapa de 40x13 escrito em texto no codigo tem que
+       ter cada linha com exatamente o mesmo numero de caractere. Um
+       caractere a mais derruba o jogo com "mapa nao retangular", e o
+       operador passa meia hora contando espacos.
+
+    2. **Gerar.** Com o mapa em arquivo, uma ferramenta consegue
+       desenhar as salas como retangulos e escrever o resultado — o que
+       garante que o retangulo fecha, e que portas e baus caem em celula
+       de chao em vez de dentro da parede. Ver `tools/gerar_mapa.py`.
+
+    Se o arquivo nao existir, volta um mapa minimo em vez de quebrar. Um
+    jogo que nao abre por falta de um arquivo de dados e pior do que um
+    jogo com um mapa pequeno — e o mapa pequeno ainda da para andar.
+    """
+    caminho = Path(__file__).parent / "mapas" / "mundo.txt"
+    try:
+        return caminho.read_text(encoding="utf-8")
+    except OSError:
+        return """
+            ####################
+            #..................#
+            #.........b........#
+            #..................#
+            ####################
+        """
+
+
+MAPA_INICIAL = carregar_mundo()
 
 
 class Jogo:

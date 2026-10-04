@@ -1,4 +1,4 @@
-"""Testes da maquina de estados, da camera e do desenho.
+﻿"""Testes da maquina de estados, da camera e do desenho.
 
 Roda o jogo de verdade, sem abrir janela para sempre: cria o jogo, simula
 teclas, avanca alguns quadros e confere o que mudou.
@@ -138,7 +138,7 @@ def main_teste() -> int:
     # Teleporta o heroi para a saida, que e o que o jogador faz depois
     # de andar ate la.
     saidas = jogo.mapa.saidas()
-    checar("o mapa tem saida", len(saidas) == 1, f"({saidas})")
+    checar("o mapa tem saida", len(saidas) == 1, f"({len(saidas)})")
     if saidas:
         coluna, linha = saidas[0]
         lado = settings.TAMANHO_DO_TILE
@@ -161,7 +161,7 @@ def main_teste() -> int:
     # ANTES: se voltasse com o tile la, o jogador entraria em combate de
     # novo no mesmo quadro.
     inimigos = jogo.mapa.inimigos()
-    checar("o mapa tem inimigo", len(inimigos) == 1, f"({inimigos})")
+    checar("o mapa tem inimigo", len(inimigos) > 0, f"({len(inimigos)})")
     if inimigos:
         coluna, linha = inimigos[0]
         lado = settings.TAMANHO_DO_TILE
@@ -174,8 +174,9 @@ def main_teste() -> int:
         checar("encostar no inimigo abre o combate",
                isinstance(jogo.estado, main.Combate),
                f"(estado {type(jogo.estado).__name__})")
-        checar("o inimigo saiu do mapa", not jogo.mapa.inimigos(),
-               f"({jogo.mapa.inimigos()})")
+        checar("o inimigo saiu do mapa",
+           len(jogo.mapa.inimigos()) == len(inimigos) - 1,
+               f"({len(inimigos)} -> {len(jogo.mapa.inimigos())})")
 
         # E a luta roda ate o fim, com o jogador atacando sempre.
         cena = jogo.estado.cena
@@ -198,7 +199,7 @@ def main_teste() -> int:
     jogo.atualizar(1 / 60)
 
     itens = jogo.mapa.itens()
-    checar("o mapa tem item", len(itens) == 1, f"({itens})")
+    checar("o mapa tem item", len(itens) > 0, f"({len(itens)})")
     if itens:
         coluna, linha = itens[0]
         lado = settings.TAMANHO_DO_TILE
@@ -209,8 +210,9 @@ def main_teste() -> int:
         jogo.atualizar(1 / 60)
         checar("pega o item", len(jogo.jogador.inventario) == antes + 1,
                f"({antes} -> {len(jogo.jogador.inventario)})")
-        checar("o item sai do mapa", not jogo.mapa.itens(),
-               f"({jogo.mapa.itens()})")
+        checar("o item sai do mapa",
+               len(jogo.mapa.itens()) == len(itens) - 1,
+               f"({len(itens)} -> {len(jogo.mapa.itens())})")
 
     # --- desenho ----------------------------------------------------
     print("\nDesenho")
