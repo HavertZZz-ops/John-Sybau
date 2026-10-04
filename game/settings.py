@@ -115,7 +115,7 @@ PASTA_DE_ASSETS = Path(__file__).parent / "assets"
 def caminho_do_asset(nome_do_arquivo: str) -> Path:
     """Caminho de um arquivo dentro de `assets/`.
 
-    Funo e nao constante porque `assets` tem subpastas (`sprites/`,
+    Funcao e nao constante porque `assets` tem subpastas (`sprites/`,
     `tiles/`, `sfx/`) e cada uma delas vai repetir este prefixo.
     """
     return PASTA_DE_ASSETS / nome_do_arquivo

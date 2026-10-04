@@ -8,10 +8,11 @@ Ele faz duas coisas e so duas:
   1. diz ao Django qual arquivo de configuracao usar (`config.settings`);
   2. repassa os argumentos da linha de comando para o Django.
 
-Por que ele precisa existir em vez de um script seu: o Django procura
-o settings pelo nome do modulo em `sys.path`, e o `manage.py` mora na
-raiz — uma pasta acima do pacote `config`. E ele quem coloca essa pasta
-no caminho. Sem ele, todo comando precisaria de `PYTHONPATH` na mao.
+Por que ele precisa existir em vez de um script proprio: o Django
+procura o settings pelo nome do modulo em `sys.path`, e o `manage.py`
+mora na raiz — uma pasta acima do pacote `config`. E ele quem coloca
+essa pasta no caminho de importacao. Sem ele, todo comando precisaria
+de `PYTHONPATH` configurado na mao.
 """
 from __future__ import annotations
 
