@@ -27,10 +27,39 @@ pagina HTML de erro, que o cliente teria que adivinhar.
 """
 from __future__ import annotations
 
+import json
+
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import Ranking
+
+ROTULOS = {
+    "nome": "nome",
+    "tempo": "tempo",
+    "inimigos_derrotados": "inimigos derrotados",
+    "pontuacao": "pontuacao",
+}
+
+
+def _erros_em_texto(erro: ValidationError) -> str:
+    """Junta os erros de validacao em uma frase, um por linha.
+
+    O `ValidationError` do Django guarda os erros por campo, e o
+    `str()` dele devolve o dicionario inteiro. Para uma API, a resposta
+    precisa ser lida por um humano no jogo: "nome: este campo nao pode
+    estar vazio" diz o que aconteceu; o dict nao diz.
+    """
+    if hasattr(erro, "message_dict"):
+        partes = [
+            f"{ROTULOS.get(campo, campo)}: {'; '.join(mensagens)}"
+            for campo, mensagens in erro.message_dict.items()
+        ]
+    else:
+        partes = list(erro.messages)
+
+    return " | ".join(partes) if partes else "dados invalidos"
 
 # Quantas linhas o ranking devolve por padrao.
 #
@@ -102,30 +131,30 @@ def registrar_partida(request):
             {"erro": "use POST para gravar uma partida"}, status=405
         )
 
-    try:
-        dados = request.POST.dict()
-    except AttributeError:
-        dados = {}
-
-    # O POST chega em JSON, e `request.POST` le formulario. Como o
-    # cliente e `requests`, a forma simples e ler o corpo na mao.
-    import json
-
+    # O `import json` fica no topo do arquivo. Um import dentro de funcao
+    # e executado a cada chamada: o modulo ja esta em cache depois da
+    # primeira, entao o custo e proximo de zero, mas o que incomoda e a
+    # leitura — quem le o arquivo nao ve de relance que ele depende de
+    # `json`.
     try:
         corpo = json.loads(request.body or b"{}")
-        if not isinstance(corpo, dict):
-            raise ValueError("o corpo tem de ser um objeto JSON")
-        dados = corpo
-    except (json.JSONDecodeError, ValueError) as erro:
+    except (json.JSONDecodeError, UnicodeDecodeError) as erro:
+        return JsonResponse({"erro": f"JSON invalido: {erro}"}, status=400)
+
+    if not isinstance(corpo, dict):
+        # Uma lista ou um numero no lugar do objeto. Sem esta checagem, o
+        # codigo abaixo quebraria com AttributeError ao chamar `.get` —
+        # e o cliente receberia um 500 em vez de um 400 explicando o que
+        # ele mandou de errado.
         return JsonResponse(
-            {"erro": f"JSON invalido: {erro}"}, status=400
+            {"erro": "o corpo tem de ser um objeto JSON"}, status=400
         )
 
     linha = Ranking(
-        nome=dados.get("nome", ""),
-        tempo=dados.get("tempo", 0),
-        inimigos_derrotados=dados.get("inimigos_derrotados", 0),
-        pontuacao=dados.get("pontuacao", 0),
+        nome=corpo.get("nome", ""),
+        tempo=corpo.get("tempo", 0),
+        inimigos_derrotados=corpo.get("inimigos_derrotados", 0),
+        pontuacao=corpo.get("pontuacao", 0),
     )
 
     # `full_clean` roda a validacao do model: tipos, tamanho do nome,
@@ -133,8 +162,21 @@ def registrar_partida(request):
     # so aparece quando alguem tenta ler de volta.
     try:
         linha.full_clean()
-    except Exception as erro:
-        return JsonResponse({"erro": str(erro)}, status=400)
+    except ValidationError as erro:
+        # O ValidationError do Django guarda os erros POR CAMPO, e o
+        # `str()` dele devolve o dicionario inteiro:
+        #     {'nome': ['Este campo nao pode estar vazio.']}
+        #
+        # Mandar isso para o cliente seria mandar repr de Python como
+        # mensagem de erro. Quem le vai ver chaves e listas, nao uma
+        # frase. A lista abaixo junta em texto, um erro por linha.
+        #
+        # A excecao NAO e capturada aqui como `Exception`: capturar a
+        # classe base esconderia bug de verdade (AttributeError,
+        # TypeError) dentro de um "erro de validacao" que nao existe.
+        return JsonResponse(
+            {"erro": _erros_em_texto(erro)}, status=400
+        )
 
     linha.save()
 
