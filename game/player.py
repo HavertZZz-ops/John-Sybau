@@ -99,6 +99,11 @@ class Mapa:
     CHAO = "."
     SAIDA = "E"
     ITEM = "i"
+    # um inimigo parado no mapa. Derrotado, ele vira chao e o tile some
+    # — e por isso que a cena de combate tira o tile do mapa ANTES de
+    # entrar na luta: se o jogador voltar e o tile ainda estivesse la,
+    # ele entraria em combate de novo no mesmo instante.
+    INIMIGO = "b"
 
     @staticmethod
     def _sem_recuo(linhas: list[str]) -> list[str]:
@@ -199,12 +204,24 @@ class Mapa:
 
     def itens(self) -> list[tuple[int, int]]:
         """Onde estao os itens no chao, em (coluna, linha)."""
-        achados: list[tuple[int, int]] = []
+        return self._celulas_com(Mapa.ITEM)
+
+    def inimigos(self) -> list[tuple[int, int]]:
+        """Onde estao os inimigos, em (coluna, linha)."""
+        return self._celulas_com(Mapa.INIMIGO)
+
+    def _celulas_com(self, simbolo: str) -> list[tuple[int, int]]:
+        """Toda celula com este simbolo. A busca e feita uma vez por mapa.
+
+        O mapa e estatico, entao varrer as celulas a cada quadro seria
+        trabalho repetido sem ganho. Quem chama guarda o resultado.
+        """
+        achadas: list[tuple[int, int]] = []
         for linha in range(self.altura):
             for coluna in range(self.largura):
-                if self.em(coluna, linha) == self.ITEM:
-                    achados.append((coluna, linha))
-        return achados
+                if self.em(coluna, linha) == simbolo:
+                    achadas.append((coluna, linha))
+        return achadas
 
     def para_pixels(self, coluna: int, linha: int) -> tuple[int, int]:
         """O centro da celula, em pixels."""

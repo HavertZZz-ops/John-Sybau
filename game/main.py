@@ -33,6 +33,7 @@ import pygame
 
 import api_client
 import cenario
+import combat_scene
 import settings
 from player import Jogador, Mapa
 
@@ -50,6 +51,24 @@ class Estado(ABC):
 
     def __init__(self, jogo: "Jogo") -> None:
         self.jogo = jogo
+
+    def atualizar_eventos(self) -> None:
+        """Processa os eventos que este estado quer ver.
+
+        O loop chama isto ANTES de `atualizar`, e e o que garante que
+        uma tecla que muda de estado seja vista no mesmo quadro em que
+        chegou. O `pygame.event.get()` esvazia a fila, entao o jogo
+        pega o que e dele e o estado pega o que sobrou — nunca os dois
+        leem a mesma fila, ou um comeria os eventos do outro.
+        """
+
+    def tratar_tecla(self, tecla: int) -> None:
+        """Uma tecla de jogo, quando este estado e o combate.
+
+        O combate tem um menu proprio, e e o unico estado que consome
+        teclas por conta propria. Ele sobrescreve este metodo; os
+        outros estados usam `atualizar_eventos`.
+        """
 
     @abstractmethod
     def atualizar(self, delta: float) -> None:
@@ -76,9 +95,13 @@ class Menu(Estado):
     def atualizar(self, delta: float) -> None:
         self.jogo.tempo_no_menu += delta
 
-        # Qualquer tecla comeca. Voltar ao menu a partir de uma tela de
-        # jogo e uma mudanca de estado, e nao um reinicio: o jogador
-        # continua com a vida e o inventario que tinha.
+    def atualizar_eventos(self) -> None:
+        """Qualquer tecla comeca o jogo.
+
+        Voltar ao menu a partir de uma tela de jogo e uma mudanca de
+        estado, e nao um reinicio: o jogador continua com a vida e o
+        inventario que tinha.
+        """
         for evento in pygame.event.get():
             if evento.type == pygame.KEYDOWN:
                 self.jogo.ir_para(Exploracao)
@@ -107,9 +130,24 @@ class Menu(Estado):
 
 
 class Exploracao(Estado):
-    """O mundo aberto: andar, pegar item, chegar na saida."""
+    """O mundo aberto: andar, pegar item, entrar em combate, sair."""
+
+    def __init__(self, jogo: "Jogo") -> None:
+        super().__init__(jogo)
+        # O combate ainda esta sendo montado. Um inimigo encontrado
+        # entra na luta; um bau de arma abre a tela de escolha. Sao as
+        # duas coisas que levam do mundo para a briga.
+        self.luta_pendente: str | None = None
 
     def atualizar(self, delta: float) -> None:
+        # A ordem importa: PRIMEIRO os eventos (inclusive o "qualquer
+        # tecla comeca", do menu). Sem isto, o jogo comeca no menu, o
+        # menu le o evento e troca de estado, e o `atualizar` desta
+        # exploracao roda com um quadro de atraso — e um teste que so
+        # poste um evento e chama `atualizar` uma vez pegava o estado
+        # antigo, como se o menu nao respondesse.
+        super().atualizar_eventos()
+
         self.jogador.atualizar(delta, self.mapa, pygame.key.get_pressed())
         self.jogo.camera_seguir_o_jogador()
 
@@ -119,15 +157,33 @@ class Exploracao(Estado):
         # grande demais deixa o jogador pegar de longe, o que le como
         # bug.
         coluna, linha = self.jogador.na_celula(self.mapa)
-        if self.mapa.em(coluna, linha) == Mapa.ITEM:
+        celula = self.mapa.em(coluna, linha)
+
+        if celula == Mapa.ITEM:
             self.mapa.linhas[linha] = (
                 self.mapa.linhas[linha][:coluna]
                 + Mapa.CHAO
                 + self.mapa.linhas[linha][coluna + 1:]
             )
             self.jogador.pegar("item")
-            self.jogo.aviso = "pegou um item"
-            self.jogo.tempo_do_aviso = 2.0
+            self.jogo.avisar("pegou um item")
+            return
+
+        # Bater num inimigo abre o combate. O tile `b` do mapa e um
+        # inimigo parado: e o mesmo cuidado que o item, e pelo mesmo
+        # motivo — o jogador tem que chegar em cima dele.
+        if celula == Mapa.INIMIGO:
+            # o tile vira chao ANTES de trocar de estado. Se a luta
+            # devolvesse o jogador ao mesmo tile, ele entraria em
+            # combate de novo no mesmo quadro, e a briga recomeçaria
+            # sozinha.
+            self.mapa.linhas[linha] = (
+                self.mapa.linhas[linha][:coluna]
+                + Mapa.CHAO
+                + self.mapa.linhas[linha][coluna + 1:]
+            )
+            self.jogo.ir_para(Combate)
+            return
 
         # Chegar na saida: e a unica forma de trocar de estado nesta
         # versao. Um portal de verdade viria com uma cena propria; aqui a
@@ -157,10 +213,41 @@ class Exploracao(Estado):
             )
 
 
+class Combate(Estado):
+    """A tela de briga.
+
+    Ela nao e um estado com metodos proprios: ela e uma cena que sabe se
+    desenhar e se atualizar, e este estado so repassa. A razao e que a
+    cena de combate tem uma maquina propria (a fila de eventos com pausa)
+    que nao cabe no `atualizar(delta)` de um estado comum — e esconder
+    essa maquina dentro do estado tornaria o resto do jogo mais dificil
+    de ler, porque o estado de combate teria quatro metodos e os outros
+    teriam tres.
+    """
+
+    def __init__(self, jogo: "Jogo") -> None:
+        super().__init__(jogo)
+        self.cena = combat_scene.Combate(jogo)
+        self.jogo.luta = self.cena.luta
+
+    def atualizar(self, delta: float) -> None:
+        self.cena.atualizar(delta)
+
+    def desenhar(self, tela: pygame.Surface) -> None:
+        self.cena.desenhar(tela)
+
+    def tratar_tecla(self, tecla: int) -> None:
+        self.cena.tratar_tecla(tecla)
+
+
 class Pausa(Estado):
     """O menu de pausa. E daqui que se salva."""
 
     def atualizar(self, delta: float) -> None:
+        pass
+
+    def atualizar_eventos(self) -> None:
+        """ESC volta, S salva."""
         for evento in pygame.event.get():
             if evento.type != pygame.KEYDOWN:
                 continue
@@ -168,8 +255,7 @@ class Pausa(Estado):
                 self.jogo.ir_para(Exploracao)
             elif evento.key == pygame.K_s:
                 self.jogo.salvar()
-                self.jogo.aviso = "partida salva"
-                self.jogo.tempo_do_aviso = 2.0
+                self.jogo.avisar("partida salva")
 
     def desenhar(self, tela: pygame.Surface) -> None:
         tela.fill(settings.PRETO)
@@ -191,6 +277,10 @@ class FimDeJogo(Estado):
         self.ja_registrou = False
 
     def atualizar(self, delta: float) -> None:
+        pass
+
+    def atualizar_eventos(self) -> None:
+        """Qualquer tecla volta ao menu."""
         for evento in pygame.event.get():
             if evento.type == pygame.KEYDOWN:
                 self.jogo.ir_para(Menu)
@@ -238,7 +328,7 @@ class FimDeJogo(Estado):
 MAPA_INICIAL = """
     ##########################
     #........................#
-    #........................#
+    #..................b.....#
     #.....i..................#
     #........................#
     #.......########.........#
@@ -385,12 +475,52 @@ class Jogo:
 
         A formula e o tipo de coisa que nao deve ser mudada depois que o
         ranking tem linhas: mudar o peso de um termo faz o placar de
-        ontem meaningless. Mantida simples e explicita por isso.
+        ontem perder sentido. Mantida simples e explicita por isso.
         """
         return (
             len(self.jogador.inventario) * 100
             + self.jogador.vida * 2
+            + self.inimigos_derrotados * 250
         )
+
+    def registrar_vitoria(
+        self, venceu: bool, fugiu: bool
+    ) -> api_client.Resultado:
+        """Manda a partida para o backend quando a luta acaba.
+
+        Quem registra e o FIM DE COMBATE, e nao o fim de jogo: uma briga
+        e um evento da partida, e o placar precisa contar inimigos
+        derrubados. Uma fuga nao pontua — fugir e o que o jogador faz
+        quando a luta esta feia, e dar pontos por isso incentiva a
+        desistir.
+        """
+        if not venceu:
+            if self.cliente is None:
+                self.cliente = api_client.Cliente()
+            return self.cliente.registrar_partida(
+                nome="John",
+                tempo=int(self.relogio_wang),
+                inimigos_derrotados=self.inimigos_derrotados,
+                pontuacao=self._pontuar(),
+            )
+
+        self.inimigos_derrotados += self.luta_derrotados()
+        self.jogador.vida = min(
+            self.jogador.vida_maxima,
+            self.jogador.vida + 25,  # a vitoria cura um pouco
+        )
+        if self.cliente is None:
+            self.cliente = api_client.Cliente()
+        return self.cliente.registrar_partida(
+            nome="John",
+            tempo=int(self.relogio_wang),
+            inimigos_derrotados=self.inimigos_derrotados,
+            pontuacao=self._pontuar(),
+        )
+
+    def luta_derrotados(self) -> int:
+        """Quantos inimigos cairam na ultima luta."""
+        return getattr(self, "_derrotados_na_luta", 1)
 
     def registrar_no_ranking(self) -> api_client.Resultado:
         """Manda a partida para o backend. Devolve o que aconteceu."""
@@ -412,11 +542,16 @@ class Jogo:
     # --- eventos ------------------------------------------------------
 
     def tratar_eventos(self) -> None:
-        """Esvazia a fila de eventos.
+        """Só o que o JOGO trata, e nao o que os estados tratam.
 
-        `get()` devolve um evento por vez e esvazia a fila. O `for`
-        existe porque fechar a janela e apertar ESC sao dois eventos
-        diferentes, e processar so o primeiro perderia o segundo.
+        O jogo cuida de dois eventos so: fechar a janela, e o ESC que
+        ABANDONA o jogo (sai de um combate ou do fim de jogo). Tudo o
+        mais e do estado.
+
+        A separacao existe porque `event.get()` esvazia a fila. Se o
+        jogo e o estado lessem a fila, um leria os eventos do outro. Por
+        isso o jogo pega o que e dele com `event.get()` e o estado
+        processa o que sobrou com `atualizar_eventos`.
         """
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
@@ -425,14 +560,12 @@ class Jogo:
                 # janela, a intencao dele ja foi clara.
                 self.rodando = False
 
-            elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
-                # O ESC global so vale fora da exploracao e da pausa,
-                # porque dentro delas o estado ja trata o ESC. Os dois
-                # tratadores disparando juntos fariam o ESC pular dois
-                # estados de uma vez — o teste "volta da pausa" pegou
-                # exatamente isso.
-                if isinstance(self.estado, FimDeJogo):
-                    self.ir_para(Menu)
+        # A tecla segue para o estado atual. O combate tem um menu
+        # proprio, e sem este desvio o W e o S do menu seriam lidos como
+        # "andar para cima" e "andar para baixo" — o jogador veria o
+        # boneco sair andando no meio da luta.
+        if evento.type == pygame.KEYDOWN:
+            self.estado.tratar_tecla(evento.key)
 
     # --- atualizacao e desenho ---------------------------------------
 
@@ -446,6 +579,14 @@ class Jogo:
             self.tempo_do_aviso -= delta
             if self.tempo_do_aviso <= 0:
                 self.aviso = ""
+
+        # Os eventos do ESTADO vem antes do `atualizar`. E o que garante
+        # que uma tecla que muda de estado seja vista no mesmo quadro em
+        # que chegou: se o `atualizar` rodasse primeiro, o estado novo
+        # so entraria no quadro seguinte, e um teste que poste um evento
+        # e chame `atualizar` uma vez veria o estado antigo — como se o
+        # menu nao respondesse.
+        self.estado.atualizar_eventos()
 
         # Um estado que precisa de um passo por quadro faz o registro do
         # ranking no seu PRIMEIRO quadro, e nao aqui: o registro pertence

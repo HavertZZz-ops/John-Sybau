@@ -150,6 +150,47 @@ def main_teste() -> int:
                isinstance(jogo.estado, main.FimDeJogo),
                f"(estado {type(jogo.estado).__name__})")
 
+    # --- entrando em combate ----------------------------------------
+    print("\nCombate")
+    jogo = novo_jogo()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_a))
+    jogo.atualizar(1 / 60)
+    checar("comeca explorando", isinstance(jogo.estado, main.Exploracao))
+
+    # Bater num inimigo abre o combate. E o tile tem que sumir do mapa
+    # ANTES: se voltasse com o tile la, o jogador entraria em combate de
+    # novo no mesmo quadro.
+    inimigos = jogo.mapa.inimigos()
+    checar("o mapa tem inimigo", len(inimigos) == 1, f"({inimigos})")
+    if inimigos:
+        coluna, linha = inimigos[0]
+        lado = settings.TAMANHO_DO_TILE
+        jogo.jogador.posicao = pygame.Vector2(
+            coluna * lado + lado // 2, linha * lado + lado // 2
+        )
+        for _ in range(4):
+            jogo.atualizar(1 / 60)
+
+        checar("encostar no inimigo abre o combate",
+               isinstance(jogo.estado, main.Combate),
+               f"(estado {type(jogo.estado).__name__})")
+        checar("o inimigo saiu do mapa", not jogo.mapa.inimigos(),
+               f"({jogo.mapa.inimigos()})")
+
+        # E a luta roda ate o fim, com o jogador atacando sempre.
+        cena = jogo.estado.cena
+        for _ in range(900):
+            cena.atualizar(1 / 60)
+            if cena.menu_aberto:
+                cena.tratar_tecla(pygame.K_d)
+            if cena.luta.concluida:
+                break
+
+        checar("a luta termina", cena.luta.concluida)
+        checar("o heroi venceu", cena.luta.vencida)
+        checar("a luta teve eventos", len(cena.luta.eventos) >= 3,
+               f"({len(cena.luta.eventos)})")
+
     # --- pegando item -----------------------------------------------
     print("\nItem")
     jogo = novo_jogo()
